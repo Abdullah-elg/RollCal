@@ -2,24 +2,62 @@
   "expo": {
     "name": "SociaLink",
     "slug": "SociaLink",
+    "scheme": "socialink",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#FAF6EF",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.abdullah.elg.SociaLink"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FAF6EF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize",
+      "package": "com.abdullah.elg.SociaLink",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAUQLgVNsIcqyKtK786U_cj7dGDaX-2-W0"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#FAF6EF",
+          "resizeMode": "contain",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#17140F"
+          }
+        }
+      ],
+      "expo-status-bar",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow SociaLink to access your location to set event locations."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SociaLink to access your camera to scan event QR codes."
+        }
+      ]
+    ]
   }
 }

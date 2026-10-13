@@ -1,0 +1,290 @@
+import * as Clipboard from '../lib/clipboard';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { CopyIcon, TicketIcon } from '../components/icons';
+import QRScannerModal from '../components/QRScannerModal';
+import RsvpSelector from '../components/RsvpSelector';
+import {
+  Button,
+  ErrorText,
+  Field,
+  FormScreen,
+  PageIntro,
+  SectionLabel,
+} from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { formatSpan } from '../lib/dates';
+import { parseEventDescription } from '../lib/coverPhoto';
+import { hapticLight } from '../lib/haptics';
+import { syncEventReminders } from '../lib/notifications';
+import { setRsvp } from '../lib/rsvp';
+import { supabase } from '../lib/supabase';
+import { AppStackParamList } from '../navigation/types';
+import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { Event, RsvpStatus } from '../types';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'JoinEvent'>;
+
+export default function JoinEventScreen({ navigation, route }: Props) {
+  const { session } = useAuth();
+  const { colors, type } = useTheme();
+  const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
+  const linkedCode = route.params?.code?.toUpperCase() ?? null;
+  const [code, setCode] = useState(linkedCode ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Event | null>(null);
+  const [hostName, setHostName] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [showScanner, setShowScanner] = useState(Boolean(route.params?.openScanner));
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (route.params?.openScanner) {
+      setShowScanner(true);
+    }
+  }, [route.params?.openScanner]);
+
+  const handlePaste = async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (!text) return;
+      hapticLight();
+      const match = text.match(/[A-Za-z0-9]{8}/);
+      const extracted = (match ? match[0] : text.trim().slice(0, 8)).toUpperCase();
+      if (extracted) {
+        setCode(extracted);
+        if (extracted.length === 8) {
+          find(extracted);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Events aren't publicly readable, so the lookup goes through the
+  // get_event_by_code RPC: it only returns the event if the code matches,
+  // the link is enabled, and this user isn't banned.
+  const find = async (rawCode?: string) => {
+    setError(null);
+    setPreview(null);
+    setBusy(true);
+    const { data, error: rpcError } = await supabase.rpc('get_event_by_code', {
+      code: (rawCode ?? code).trim().toUpperCase(),
+    });
+    setBusy(false);
+    if (rpcError) {
+      setError(rpcError.message);
+      return;
+    }
+    const event: Event | undefined = data?.[0];
+    if (!event) {
+      setError('No event found for that code. It may have been turned off by the host.');
+      return;
+    }
+    setPreview(event);
+    const { data: host } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', event.creator_id)
+      .maybeSingle();
+    setHostName(host?.display_name ?? null);
+  };
+
+  // Arrived via an invite link - look the code up immediately.
+  useEffect(() => {
+    if (linkedCode) find(linkedCode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedCode]);
+
+  const choose = async (status: RsvpStatus) => {
+    if (!preview || !session) return;
+    hapticLight();
+    setJoining(true);
+    const err = await setRsvp(preview.id, session.user.id, status);
+    setJoining(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    syncEventReminders();
+    // Into the event proper; back goes Home, not this form.
+    navigation.replace('EventDetail', { eventId: preview.id });
+  };
+
+  return (
+    <FormScreen style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+      >
+        <PageIntro icon={TicketIcon}>
+          Got a code from a friend? Enter it to see the event and RSVP.
+        </PageIntro>
+        <View style={styles.codeFieldWrap}>
+          <Text style={styles.codeFieldLabel}>Invite code</Text>
+          <View style={[styles.inputBox, isFocused && styles.inputBoxFocused]}>
+            <TextInput
+              value={code}
+              onChangeText={(v) => setCode(v.toUpperCase())}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={8}
+              placeholder="ABCD1234"
+              placeholderTextColor={colors.inkMuted}
+              style={styles.codeInput}
+            />
+            <Pressable
+              onPress={handlePaste}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.inlinePasteButton,
+                pressed && { opacity: 0.7 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Paste invite code"
+            >
+              <CopyIcon size={14} color={colors.accent} />
+              <Text style={styles.inlinePasteText}>Paste</Text>
+            </Pressable>
+          </View>
+        </View>
+        <ErrorText message={error} />
+        {!preview && (
+          <View style={{ gap: spacing.sm }}>
+            <Button
+              title="Find event"
+              onPress={() => find()}
+              loading={busy}
+              disabled={code.trim().length < 8}
+            />
+            <Button
+              title="Scan QR code"
+              variant="secondary"
+              onPress={() => setShowScanner(true)}
+            />
+          </View>
+        )}
+
+        {preview && (
+          <>
+            <View style={styles.previewCard}>
+              <Text style={type.h2}>{preview.title}</Text>
+              <Text style={[type.body, { marginTop: spacing.sm }]}>
+                {formatSpan(preview.starts_at, preview.ends_at)}
+              </Text>
+              {preview.location ? (
+                <Text style={type.bodyMuted}>{preview.location}</Text>
+              ) : null}
+              {hostName ? (
+                <Text style={[type.caption, { marginTop: spacing.sm }]}>
+                  Hosted by {hostName}
+                </Text>
+              ) : null}
+              {(() => {
+                const clean = parseEventDescription(preview.description).description;
+                return clean ? (
+                  <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>
+                    {clean}
+                  </Text>
+                ) : null;
+              })()}
+            </View>
+            <SectionLabel>Are you in?</SectionLabel>
+            <RsvpSelector value={null} onSelect={choose} disabled={joining} />
+          </>
+        )}
+      </ScrollView>
+
+      <QRScannerModal
+        visible={showScanner}
+        onScanned={(scannedCode) => {
+          setShowScanner(false);
+          setCode(scannedCode);
+          find(scannedCode);
+        }}
+        onClose={() => setShowScanner(false)}
+      />
+    </FormScreen>
+  );
+}
+
+const makeStyles = (c: Palette, t: TypeTokens) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: c.paper,
+    },
+    content: {
+      padding: spacing.lg,
+      paddingBottom: spacing.xxl,
+    },
+    codeFieldWrap: {
+      marginBottom: spacing.md,
+    },
+    codeFieldLabel: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 13,
+      color: c.inkMuted,
+      marginBottom: spacing.xs,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    inputBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.card,
+      borderWidth: 1,
+      borderColor: c.line,
+      borderRadius: radii.sm,
+      paddingLeft: spacing.md,
+      paddingRight: spacing.sm,
+      height: 54,
+    },
+    inputBoxFocused: {
+      borderColor: c.ink,
+    },
+    codeInput: {
+      flex: 1,
+      fontFamily: 'BricolageGrotesque_600SemiBold',
+      fontSize: 20,
+      letterSpacing: 4,
+      color: c.ink,
+      paddingVertical: 0,
+    },
+    inlinePasteButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: radii.sm,
+      backgroundColor: c.accent + '18',
+    },
+    inlinePasteText: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 13,
+      color: c.accent,
+    },
+    previewCard: {
+      backgroundColor: c.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.line,
+      borderRadius: 16,
+      padding: spacing.md,
+      marginBottom: spacing.lg,
+    },
+  });

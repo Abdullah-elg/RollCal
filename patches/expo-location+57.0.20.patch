@@ -1,0 +1,88 @@
+diff --git a/node_modules/expo-location/ios/LocationModule.swift b/node_modules/expo-location/ios/LocationModule.swift
+index 6d41d09..e583b4d 100644
+--- a/node_modules/expo-location/ios/LocationModule.swift
++++ b/node_modules/expo-location/ios/LocationModule.swift
+@@ -47,13 +47,19 @@ public final class LocationModule: Module {
+       ]
+     }
+ 
+-    AsyncFunction("getCurrentPositionAsync") { (options: LocationOptions) -> [String: Any] in
+-      try ensureForegroundLocationPermissions(appContext)
+-
+-      let requester = await LocationRequester(options: options)
+-      let location = try await requester.requestLocation()
+-
+-      return exportLocation(location)
++    AsyncFunction("getCurrentPositionAsync") { (options: LocationOptions, promise: Promise) in
++      Task {
++        do {
++          try ensureForegroundLocationPermissions(self.appContext)
++          let requester = await LocationRequester(options: options)
++          let location = try await requester.requestLocation()
++          promise.resolve(exportLocation(location))
++        } catch let exception as Exception {
++          promise.reject(exception)
++        } catch {
++          promise.reject(error)
++        }
++      }
+     }
+ 
+     AsyncFunction("watchPositionImplAsync") { (watchId: Int, options: LocationOptions) in
+@@ -83,13 +89,19 @@ public final class LocationModule: Module {
+       }
+     }
+ 
+-    AsyncFunction("getLastKnownPositionAsync") { (requirements: LastKnownLocationRequirements) -> [String: Any]? in
+-      try ensureForegroundLocationPermissions(appContext)
+-
+-      if let location = CLLocationManager().location, isLocation(location, valid: requirements) {
+-        return exportLocation(location)
++    AsyncFunction("getLastKnownPositionAsync") { (requirements: LastKnownLocationRequirements, promise: Promise) in
++      do {
++        try ensureForegroundLocationPermissions(self.appContext)
++        if let location = CLLocationManager().location, isLocation(location, valid: requirements) {
++          promise.resolve(exportLocation(location))
++        } else {
++          promise.resolve(nil)
++        }
++      } catch let exception as Exception {
++        promise.reject(exception)
++      } catch {
++        promise.reject(error)
+       }
+-      return nil
+     }
+ 
+     AsyncFunction("watchDeviceHeading") { (watchId: Int) in
+@@ -178,12 +190,26 @@ public final class LocationModule: Module {
+       motionActivityStreamers[watchId] = nil
+     }
+ 
+-    AsyncFunction("geocodeAsync") { (address: String) in
+-      return try await Geocoder.geocode(address: address)
++    AsyncFunction("geocodeAsync") { (address: String, promise: Promise) in
++      Task {
++        do {
++          let res = try await Geocoder.geocode(address: address)
++          promise.resolve(res)
++        } catch {
++          promise.reject(error)
++        }
++      }
+     }
+ 
+-    AsyncFunction("reverseGeocodeAsync") { (location: CLLocation) in
+-      return try await Geocoder.reverseGeocode(location: location)
++    AsyncFunction("reverseGeocodeAsync") { (location: CLLocation, promise: Promise) in
++      Task {
++        do {
++          let res = try await Geocoder.reverseGeocode(location: location)
++          promise.resolve(res)
++        } catch {
++          promise.reject(error)
++        }
++      }
+     }
+ 
+     AsyncFunction("getMotionActivityPermissionsAsync") { (promise: Promise) in
