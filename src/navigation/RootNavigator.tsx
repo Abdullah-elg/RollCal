@@ -14,14 +14,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useUnread } from '../context/UnreadContext';
-import {
-  ArrowIcon,
-  CalendarIcon,
-  GearIcon,
-  PeopleIcon,
-  PlusIcon,
-  TicketIcon,
-} from '../components/icons';
+import { ArrowIcon } from '../components/icons';
+import { CalendarBlank, Gear, Plus, Ticket, Users } from 'phosphor-react-native';
 import CreateActionSheet from '../components/CreateActionSheet';
 import { hapticLight } from '../lib/haptics';
 import CalendarScreen from '../screens/CalendarScreen';
@@ -112,9 +106,13 @@ function TabsNavigator() {
           component={HomeScreen}
           options={{
             title: 'Events',
-            tabBarIcon: ({ color }) => (
+            tabBarIcon: ({ focused, color }) => (
               <IconDot show={unreadChats.length > 0 || pendingInvites > 0}>
-                <TicketIcon size={21} color={color} />
+                <Ticket
+                  size={22}
+                  color={color}
+                  weight={focused ? 'fill' : 'regular'}
+                />
               </IconDot>
             ),
           }}
@@ -124,7 +122,13 @@ function TabsNavigator() {
           component={CalendarScreen}
           options={{
             title: 'Calendar',
-            tabBarIcon: ({ color }) => <CalendarIcon size={21} color={color} />,
+            tabBarIcon: ({ focused, color }) => (
+              <CalendarBlank
+                size={22}
+                color={color}
+                weight={focused ? 'fill' : 'regular'}
+              />
+            ),
           }}
         />
         <Tabs.Screen
@@ -139,7 +143,9 @@ function TabsNavigator() {
           }}
           options={{
             title: 'New',
-            tabBarIcon: () => <PlusIcon size={21} color={colors.accent} />,
+            tabBarIcon: () => (
+              <Plus size={22} color={colors.accent} weight="bold" />
+            ),
             tabBarLabel: () => (
               <Text
                 style={{
@@ -159,9 +165,13 @@ function TabsNavigator() {
           component={FriendsScreen}
           options={{
             title: 'Friends',
-            tabBarIcon: ({ color }) => (
+            tabBarIcon: ({ focused, color }) => (
               <IconDot show={friendRequests > 0}>
-                <PeopleIcon size={21} color={color} />
+                <Users
+                  size={22}
+                  color={color}
+                  weight={focused ? 'fill' : 'regular'}
+                />
               </IconDot>
             ),
           }}
@@ -171,7 +181,13 @@ function TabsNavigator() {
           component={SettingsScreen}
           options={{
             title: 'Settings',
-            tabBarIcon: ({ color }) => <GearIcon size={21} color={color} />,
+            tabBarIcon: ({ focused, color }) => (
+              <Gear
+                size={22}
+                color={color}
+                weight={focused ? 'fill' : 'regular'}
+              />
+            ),
           }}
         />
       </Tabs.Navigator>
