@@ -9,8 +9,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import MapView, { MapPressEvent, Marker, Region, UrlTile } from 'react-native-maps';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import MapView, { MapPressEvent, Marker, Region } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Button } from './ui';
@@ -120,9 +120,7 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
       });
 
       if (!resolved && !pin) {
-        setNotice(
-          'Location not found yet. In Simulator menu, set Features > Location > Apple, or tap the map to drop a pin.'
-        );
+        setNotice("Couldn't find you yet. Tap the map to drop a pin instead.");
       }
       setBusy(false);
       return;
@@ -131,7 +129,7 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
     // Android: use Expo Location with fallback to last known
     let resolved = false;
     try {
-      // 1. Check if location services are enabled on device
+      // Location services may be switched off for the whole phone.
       const providerStatus = await Location.getProviderStatusAsync().catch(() => null);
       if (providerStatus && !providerStatus.locationServicesEnabled) {
         try {
@@ -143,7 +141,6 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
         }
       }
 
-      // 2. Request foreground permissions
       const perm = await Location.requestForegroundPermissionsAsync().catch((err) => {
         console.warn('requestForegroundPermissionsAsync error:', err);
         return null;
@@ -258,9 +255,12 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
       visible={visible}
       animationType="slide"
       statusBarTranslucent={Platform.OS === 'android'}
+      navigationBarTranslucent={Platform.OS === 'android'}
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.screen} edges={['bottom']}>
+      {/* SafeAreaView doesn't get insets inside a Modal, so the footer pads
+          itself with the screen's insets read outside it. */}
+      <View style={styles.screen}>
         <View style={[styles.header, { paddingTop: topInset }]}>
           <Text style={type.h2}>Where is it?</Text>
           <Pressable onPress={onClose} hitSlop={8}>
@@ -308,7 +308,7 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
         </MapView>
 
         {notice && <Text style={styles.notice}>{notice}</Text>}
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
           <Button
             title="Use current location"
             variant="secondary"
@@ -324,7 +324,7 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
             style={{ flex: 1 }}
           />
         </View>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }

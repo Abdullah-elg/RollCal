@@ -15,7 +15,7 @@ import {
   RowAction,
   RowTag,
 } from '../components/PersonRow';
-import { EmptyNote, Field, PageIntro } from '../components/ui';
+import { Field, PageIntro } from '../components/ui';
 import { useTheme } from '../context/ThemeContext';
 import { useFriendData } from '../hooks/useFriendData';
 import { animateNext } from '../lib/animate';
@@ -25,7 +25,7 @@ import {
   searchProfiles,
   sendFriendRequest,
 } from '../lib/friends';
-import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { Palette, radii, spacing, TypeTokens } from '../theme';
 import { Profile } from '../types';
 
 export default function FindPeopleScreen() {

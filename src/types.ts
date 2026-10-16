@@ -38,23 +38,7 @@ export type Invitation = {
   status: InvitationStatus;
 };
 
-export type EventInviteRequest = {
-  id: string;
-  event_id: string;
-  requested_by: string;
-  suggested_user_id: string;
-  status: 'pending' | 'approved' | 'rejected';
-  created_at?: string;
-};
-
 export type RsvpStatus = 'going' | 'maybe' | 'not_going';
-
-export type Rsvp = {
-  id: string;
-  event_id: string;
-  user_id: string;
-  status: RsvpStatus;
-};
 
 export type Event = {
   id: string;
@@ -69,6 +53,7 @@ export type Event = {
   invite_code: string;
   is_link_enabled: boolean;
   uploads_closed: boolean;
+  uploads_reopened_until?: string | null;
   cover_photo_id?: string | null;
   created_at: string;
 };

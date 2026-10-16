@@ -1,3 +1,4 @@
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Linking,
@@ -14,39 +15,23 @@ import { useTheme } from '../context/ThemeContext';
 import { fonts, Palette, palettes, radii, spacing, TypeTokens } from '../theme';
 import { Button } from './ui';
 
-// Safely resolve expo-camera so the app does not crash if native module isn't linked yet.
-let CameraViewComponent: any = null;
-let getPermissionsAsyncFn: (() => Promise<any>) | null = null;
-let requestPermissionsAsyncFn: (() => Promise<any>) | null = null;
-
-try {
-  const ExpoCamera = require('expo-camera');
-  CameraViewComponent = ExpoCamera.CameraView;
-  getPermissionsAsyncFn = ExpoCamera.getCameraPermissionsAsync;
-  requestPermissionsAsyncFn = ExpoCamera.requestCameraPermissionsAsync;
-} catch (e) {
-  CameraViewComponent = null;
-  getPermissionsAsyncFn = null;
-  requestPermissionsAsyncFn = null;
-}
-
-export function parseInviteCode(scanned: string): string | null {
+function parseInviteCode(scanned: string): string | null {
   if (!scanned) return null;
   const trimmed = scanned.trim();
 
-  // 1. Check query parameter: ?code=XYZ or &code=XYZ
+  // A link with ?code=XYZ
   const queryMatch = trimmed.match(/[?&]code=([A-Za-z0-9_-]+)/i);
   if (queryMatch && queryMatch[1]) {
     return queryMatch[1].toUpperCase();
   }
 
-  // 2. Check path pattern: /join/XYZ or join/XYZ
+  // A link ending in /join/XYZ
   const pathMatch = trimmed.match(/join\/([A-Za-z0-9_-]+)/i);
   if (pathMatch && pathMatch[1]) {
     return pathMatch[1].toUpperCase();
   }
 
-  // 3. Raw invite code string (e.g. 4 to 16 alphanumeric characters)
+  // Or just the code itself
   if (/^[A-Za-z0-9_-]{4,16}$/.test(trimmed)) {
     return trimmed.toUpperCase();
   }
@@ -73,57 +58,15 @@ export default function QRScannerModal({
   const [torch, setTorch] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [mountError, setMountError] = useState(false);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
   const scannedRef = useRef(false);
 
   useEffect(() => {
-    if (!visible) {
-      scannedRef.current = false;
-      return;
-    }
-
-    if (!CameraViewComponent || !getPermissionsAsyncFn) {
-      setMountError(true);
-      return;
-    }
-
-    getPermissionsAsyncFn()
-      .then((res) => {
-        if (res?.granted) {
-          setHasPermission(true);
-        } else if (res?.status === 'denied' && !res?.canAskAgain) {
-          setPermissionDenied(true);
-          setHasPermission(false);
-        } else {
-          setHasPermission(false);
-        }
-      })
-      .catch(() => {
-        setHasPermission(false);
-      });
+    if (!visible) scannedRef.current = false;
   }, [visible]);
 
-  const requestPermission = async () => {
-    if (!requestPermissionsAsyncFn) {
-      setMountError(true);
-      return;
-    }
-    try {
-      const res = await requestPermissionsAsyncFn();
-      if (res?.granted) {
-        setHasPermission(true);
-        setPermissionDenied(false);
-      } else {
-        setHasPermission(false);
-        if (res?.status === 'denied' && !res?.canAskAgain) {
-          setPermissionDenied(true);
-        }
-      }
-    } catch {
-      setHasPermission(false);
-    }
-  };
+  // When the OS stops offering the prompt, the only way back is the Settings app.
+  const permissionDenied = permission?.granted === false && !permission.canAskAgain;
 
   const handleBarcodeScanned = (result: { data: string; type?: string }) => {
     if (scannedRef.current) return;
@@ -149,7 +92,7 @@ export default function QRScannerModal({
       ? Math.max(insets.top, 44)
       : (RNStatusBar.currentHeight ?? insets.top ?? 24) + spacing.xs;
 
-  const isCameraAvailable = Boolean(CameraViewComponent) && hasPermission && !mountError;
+  const isCameraAvailable = Boolean(permission?.granted) && !mountError;
 
   return (
     <Modal
@@ -159,9 +102,8 @@ export default function QRScannerModal({
       onRequestClose={onClose}
     >
       <View style={styles.container}>
-        {/* Camera surface or permission/mount fallback */}
         {isCameraAvailable ? (
-          <CameraViewComponent
+          <CameraView
             style={StyleSheet.absoluteFill}
             facing="back"
             enableTorch={torch}
@@ -175,11 +117,11 @@ export default function QRScannerModal({
           <View style={[styles.fallbackContainer, { paddingTop: topInset + 40 }]}>
             <Text style={type.h2}>Camera Access</Text>
             <Text style={styles.fallbackText}>
-              {!CameraViewComponent || mountError
-                ? 'Camera preview is not available on this simulator. You can enter the invite code manually.'
+              {mountError
+                ? "The camera isn't available right now. You can enter the invite code instead."
                 : 'SociaLink needs camera access to scan event QR codes.'}
             </Text>
-            {CameraViewComponent && !mountError && (
+            {!mountError && (
               <Button
                 title={permissionDenied ? 'Open Settings' : 'Allow Camera'}
                 onPress={() => {
@@ -212,30 +154,23 @@ export default function QRScannerModal({
           </View>
         )}
 
-        {/* Viewfinder overlay shown when camera is active */}
         {isCameraAvailable && (
           <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            {/* Top mask */}
             <View style={[styles.maskTop, { height: topInset + 80 }]} />
 
             <View style={styles.centerRow}>
-              {/* Left mask */}
               <View style={styles.maskSide} />
 
-              {/* Viewfinder Target */}
               <View style={styles.viewfinder}>
-                {/* 4 Corner Markers */}
                 <View style={[styles.corner, styles.cornerTL, { borderColor: colors.accent }]} />
                 <View style={[styles.corner, styles.cornerTR, { borderColor: colors.accent }]} />
                 <View style={[styles.corner, styles.cornerBL, { borderColor: colors.accent }]} />
                 <View style={[styles.corner, styles.cornerBR, { borderColor: colors.accent }]} />
               </View>
 
-              {/* Right mask */}
               <View style={styles.maskSide} />
             </View>
 
-            {/* Bottom mask */}
             <View style={styles.maskBottom}>
               <Text style={styles.instruction}>
                 Point camera at a SociaLink event QR code
@@ -258,7 +193,6 @@ export default function QRScannerModal({
               ) : null}
             </View>
 
-            {/* Top Bar Navigation */}
             <View style={[styles.topBar, { top: topInset }]}>
               <Pressable onPress={onClose} hitSlop={12} style={styles.topBtn}>
                 <Text style={styles.topBtnText}>Cancel</Text>

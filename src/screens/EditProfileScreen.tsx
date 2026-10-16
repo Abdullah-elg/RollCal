@@ -20,7 +20,7 @@ import { pickAndUploadAvatar, removeAvatar } from '../lib/avatar';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
-import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { Palette, spacing, TypeTokens } from '../theme';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'EditProfile'>;
 

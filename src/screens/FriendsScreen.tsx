@@ -13,17 +13,16 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import ConfirmDialog from '../components/ConfirmDialog';
 import { InboxIcon, SearchIcon, SendIcon } from '../components/icons';
 import { PersonList, PersonRow, RowAction } from '../components/PersonRow';
-import { EmptyNote, SectionLabel } from '../components/ui';
+import { SectionLabel } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useFriendData } from '../hooks/useFriendData';
 import { FriendLink, removeFriendship } from '../lib/friends';
 import { TabScreenProps } from '../navigation/types';
 import {
-  floatingTabBar,
+  tabBarHeight,
   fonts,
   Palette,
-  radii,
   spacing,
   TypeTokens,
 } from '../theme';
@@ -38,7 +37,7 @@ export default function FriendsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const bottomInset =
     Platform.OS === 'ios'
-      ? insets.bottom + floatingTabBar.height + floatingTabBar.bottomGap
+      ? insets.bottom + tabBarHeight
       : 0;
   const [unfriend, setUnfriend] = useState<FriendLink | null>(null);
 

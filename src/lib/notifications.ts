@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Platform } from 'react-native';
+import { formatCents } from './money';
+import { rollClosesAt } from './roll';
 import { supabase } from './supabase';
 
 // Local scheduled notifications only - no push server involved. Reminders
@@ -57,11 +59,14 @@ export type ReminderPrefs = {
   friendRequest: boolean;
   friendAccepted: boolean;
   eventInvite: boolean;
+  // Bills: a new one to pay your part of, someone saying they've paid you,
+  // your payment received, and reminders.
+  billShared: boolean;
   // Chat. Individual events can also be muted from inside their chat.
   chatMessage: boolean;
 };
 
-export const DEFAULT_PREFS: ReminderPrefs = {
+const DEFAULT_PREFS: ReminderPrefs = {
   dayBefore: false,
   hourBefore: false,
   thirtyMin: true,
@@ -75,6 +80,7 @@ export const DEFAULT_PREFS: ReminderPrefs = {
   friendRequest: true,
   friendAccepted: true,
   eventInvite: true,
+  billShared: true,
   chatMessage: true,
 };
 
@@ -97,6 +103,7 @@ export const FRIEND_PREF_KEYS = [
   'friendRequest',
   'friendAccepted',
   'eventInvite',
+  'billShared',
 ] as const;
 
 export const CHAT_PREF_KEYS = ['chatMessage'] as const;
@@ -168,7 +175,7 @@ export async function syncEventReminders(): Promise<void> {
     for (const e of events) {
       const starts = new Date(e.starts_at).getTime();
       const ends = new Date(e.ends_at).getTime();
-      const closes = ends + 48 * HOUR;
+      const closes = rollClosesAt(e);
 
       if (prefs.dayBefore) plan(starts - DAY, e.title, 'Happening tomorrow.');
       if (prefs.hourBefore) plan(starts - HOUR, e.title, 'Starts in an hour.');
@@ -177,16 +184,16 @@ export async function syncEventReminders(): Promise<void> {
       if (prefs.atStart) plan(starts, e.title, 'Starting now.');
 
       if (prefs.albumOpen) {
-        plan(ends, e.title, 'The album is open - add your photos.');
+        plan(ends, e.title, 'The roll is open - add your photos.');
       }
       if (prefs.albumDayLeft) {
-        plan(closes - DAY, e.title, 'One day left to add photos to the album.');
+        plan(closes - DAY, e.title, 'One day left to add photos to the roll.');
       }
       if (prefs.albumHourLeft) {
-        plan(closes - HOUR, e.title, 'Last hour to add photos to the album.');
+        plan(closes - HOUR, e.title, 'Last hour to add photos to the roll.');
       }
       if (prefs.albumClosed) {
-        plan(closes, e.title, 'The album is closed. The photos are yours to keep.');
+        plan(closes, e.title, 'The roll is closed. The photos are yours to keep.');
       }
     }
 
@@ -490,4 +497,217 @@ export async function notifyChatMessages(
   } catch (err) {
     console.warn('Chat notification check failed:', err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bills
+//
+// When someone in one of your events shares a bill, you hear about it the
+// next time the app loads your events, once per bill. Tapping it opens the
+// bill (see onNotificationTap).
+// ---------------------------------------------------------------------------
+
+const billStateKey = (userId: string) => `socialink.billNotify.${userId}`;
+
+export async function notifyBillsShared(
+  userId: string,
+  events: { id: string; title: string }[]
+): Promise<void> {
+  const Notifications = getNotifications();
+  if (!Notifications || events.length === 0) return;
+  try {
+    const prefs = await getReminderPrefs();
+    if (!prefs.billShared) return;
+
+    const { data: bills } = await supabase
+      .from('bills')
+      .select('id, event_id, created_by')
+      .in(
+        'event_id',
+        events.map((e) => e.id)
+      )
+      .eq('status', 'open')
+      .neq('created_by', userId);
+
+    const key = billStateKey(userId);
+    const raw = await AsyncStorage.getItem(key);
+    const openIds = (bills ?? []).map((b) => b.id);
+    const announced: string[] = raw ? JSON.parse(raw) : [];
+    await AsyncStorage.setItem(key, JSON.stringify([...new Set([...announced, ...openIds])]));
+    // First run on this account: note what's already there, announce nothing.
+    if (!raw) return;
+
+    const fresh = (bills ?? []).filter((b) => !announced.includes(b.id));
+    if (fresh.length === 0) return;
+    const perm = await Notifications.getPermissionsAsync();
+    if (!perm.granted) return;
+    await ensureAndroidChannel(Notifications);
+
+    const { data: people } = await supabase
+      .from('profiles')
+      .select('id, display_name, first_name')
+      .in('id', [...new Set(fresh.map((b) => b.created_by))]);
+
+    await Promise.all(
+      fresh.slice(0, 5).map((b) => {
+        const person = people?.find((p) => p.id === b.created_by);
+        const who = person?.first_name || person?.display_name || 'Someone';
+        return Notifications.scheduleNotificationAsync({
+          content: {
+            title: events.find((e) => e.id === b.event_id)?.title ?? 'New bill',
+            body: `${who} paid the bill. Tap to pay your part.`,
+            data: { billId: b.id },
+          },
+          trigger: null,
+        });
+      })
+    );
+  } catch (err) {
+    console.warn('Bill notification check failed:', err);
+  }
+}
+
+// What happened on bills since this phone last looked: someone says they've
+// paid you, the person you paid got it, or a bill's creator sent a reminder.
+// Like notifyBillsShared, the first run on an account only takes note.
+type BillPayState = {
+  sent: string[];
+  received: string[];
+  reminded: Record<string, string>;
+};
+
+const billPayKey = (userId: string) => `socialink.billPay.${userId}`;
+
+export async function notifyBillPayments(
+  userId: string,
+  events: { id: string; title: string }[]
+): Promise<void> {
+  const Notifications = getNotifications();
+  if (!Notifications || events.length === 0) return;
+  try {
+    const prefs = await getReminderPrefs();
+    if (!prefs.billShared) return;
+
+    const paymentColumns =
+      'id, user_id, amount_cents, bill_id, bills!inner(title, created_by, currency)';
+    const [{ data: toMe }, { data: mine }, { data: reminders }] = await Promise.all([
+      supabase
+        .from('bill_payments')
+        .select(paymentColumns)
+        .eq('bills.created_by', userId)
+        .neq('user_id', userId)
+        .eq('status', 'sent'),
+      supabase
+        .from('bill_payments')
+        .select(paymentColumns)
+        .eq('user_id', userId)
+        .neq('bills.created_by', userId)
+        .eq('status', 'received'),
+      supabase
+        .from('bills')
+        .select('id, title, created_by, last_reminded_at')
+        .in(
+          'event_id',
+          events.map((e) => e.id)
+        )
+        .eq('status', 'open')
+        .neq('created_by', userId)
+        .not('last_reminded_at', 'is', null),
+    ]);
+    type PaymentRow = {
+      id: string;
+      user_id: string;
+      amount_cents: number;
+      bill_id: string;
+      bills: { title: string | null; created_by: string; currency: string };
+    };
+    const sentToMe = (toMe ?? []) as unknown as PaymentRow[];
+    const receivedFromMe = (mine ?? []) as unknown as PaymentRow[];
+
+    const key = billPayKey(userId);
+    const raw = await AsyncStorage.getItem(key);
+    // Defaults first: state saved by an older version may lack some fields.
+    const seen: BillPayState = { sent: [], received: [], reminded: {}, ...(raw ? JSON.parse(raw) : {}) };
+    await AsyncStorage.setItem(
+      key,
+      JSON.stringify({
+        sent: [...new Set([...seen.sent, ...sentToMe.map((p) => p.id)])],
+        received: [...new Set([...seen.received, ...receivedFromMe.map((p) => p.id)])],
+        reminded: {
+          ...seen.reminded,
+          ...Object.fromEntries((reminders ?? []).map((b) => [b.id, b.last_reminded_at])),
+        },
+      } satisfies BillPayState)
+    );
+    if (!raw) return;
+
+    // whoId is the person the notification names.
+    const messages: { billId: string; title: string; whoId: string; body: (who: string) => string }[] = [];
+    for (const p of sentToMe.filter((p) => !seen.sent.includes(p.id))) {
+      const amount = formatCents(p.amount_cents, p.bills.currency);
+      messages.push({
+        billId: p.bill_id,
+        title: p.bills.title || 'Bill',
+        whoId: p.user_id,
+        body: (who) => `${who} says they sent you ${amount}. Tap to mark it received.`,
+      });
+    }
+    for (const p of receivedFromMe.filter((p) => !seen.received.includes(p.id))) {
+      const amount = formatCents(p.amount_cents, p.bills.currency);
+      messages.push({
+        billId: p.bill_id,
+        title: p.bills.title || 'Bill',
+        whoId: p.bills.created_by,
+        body: (who) => `${who} got your ${amount}.`,
+      });
+    }
+    for (const b of reminders ?? []) {
+      if (b.last_reminded_at === seen.reminded[b.id]) continue;
+      const title = b.title || 'the bill';
+      messages.push({
+        billId: b.id,
+        title: b.title || 'Bill',
+        whoId: b.created_by,
+        body: (who) => `${who} sent a reminder about ${title}. Tap to pay your part.`,
+      });
+    }
+    if (messages.length === 0) return;
+
+    const perm = await Notifications.getPermissionsAsync();
+    if (!perm.granted) return;
+    await ensureAndroidChannel(Notifications);
+    const { data: people } = await supabase
+      .from('profiles')
+      .select('id, display_name, first_name')
+      .in('id', [...new Set(messages.map((m) => m.whoId))]);
+
+    await Promise.all(
+      messages.slice(0, 5).map((m) => {
+        const person = people?.find((p) => p.id === m.whoId);
+        const who = person?.first_name || person?.display_name || 'Someone';
+        return Notifications.scheduleNotificationAsync({
+          content: { title: m.title, body: m.body(who), data: { billId: m.billId } },
+          trigger: null,
+        });
+      })
+    );
+  } catch (err) {
+    console.warn('Bill payment check failed:', err);
+  }
+}
+
+// Calls back with the bill id when someone taps a bill notification,
+// including the one that launched the app. Returns an unsubscribe.
+export function onNotificationTap(open: (target: { billId: string }) => void): () => void {
+  const Notifications = getNotifications();
+  if (!Notifications) return () => {};
+  const handle = (response: { notification: { request: { content: { data?: unknown } } } }) => {
+    const data = response.notification.request.content.data as { billId?: unknown } | undefined;
+    if (typeof data?.billId === 'string') open({ billId: data.billId });
+  };
+  Notifications.getLastNotificationResponseAsync()
+    .then((last) => last && handle(last))
+    .catch(() => {});
+  const sub = Notifications.addNotificationResponseReceivedListener(handle);
+  return () => sub.remove();
 }

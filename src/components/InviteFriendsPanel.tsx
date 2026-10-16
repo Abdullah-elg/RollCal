@@ -148,7 +148,6 @@ export default function InviteFriendsPanel({
 
       {notice && <Text style={styles.notice}>{notice}</Text>}
 
-      {/* Host view: Pending invite requests from guests */}
       {isLeader && pendingRequests.length > 0 && (
         <View style={{ marginBottom: spacing.xl }}>
           <SectionLabel count={pendingRequests.length}>

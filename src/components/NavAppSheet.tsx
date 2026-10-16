@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Modal, Platform, Pressable, StyleSheet, Text } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 

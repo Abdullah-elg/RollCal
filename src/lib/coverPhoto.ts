@@ -1,113 +1,53 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadPhotoAsset } from './photos';
 import { supabase } from './supabase';
-import { Event } from '../types';
 
-const COVER_TAG_REGEX = /(?:\r?\n)?<!--cover:([a-zA-Z0-9_-]+)-->/;
-const ASYNC_PREFIX = '@event_cover_photo_';
-
-/**
- * Extracts clean user-facing description text and any encoded cover photo ID.
- */
-export function parseEventDescription(raw: string | null | undefined): {
-  description: string | null;
-  coverPhotoId: string | null;
-} {
-  if (!raw) return { description: null, coverPhotoId: null };
-  const match = raw.match(COVER_TAG_REGEX);
-  const coverPhotoId = match ? match[1] : null;
-  const cleaned = raw.replace(COVER_TAG_REGEX, '').trim();
-  return {
-    description: cleaned.length > 0 ? cleaned : null,
-    coverPhotoId,
-  };
-}
-
-/**
- * Formats a description text with an encoded cover photo ID.
- */
-export function formatEventDescription(
-  currentRaw: string | null | undefined,
-  coverPhotoId: string | null
-): string | null {
-  const { description } = parseEventDescription(currentRaw);
-  if (!coverPhotoId) {
-    return description;
-  }
-  const tag = `<!--cover:${coverPhotoId}-->`;
-  return description ? `${description}\n${tag}` : tag;
-}
-
-export async function getCoverPhotoId(
-  eventId: string,
-  eventRow?: Event | null
-): Promise<string | null> {
-  // 1. If event row already has cover_photo_id column filled, use it directly
-  if (eventRow?.cover_photo_id) {
-    AsyncStorage.setItem(ASYNC_PREFIX + eventId, eventRow.cover_photo_id).catch(() => {});
-    return eventRow.cover_photo_id;
-  }
-
-  // 2. Check if encoded in event description
-  if (eventRow?.description) {
-    const { coverPhotoId } = parseEventDescription(eventRow.description);
-    if (coverPhotoId) {
-      AsyncStorage.setItem(ASYNC_PREFIX + eventId, coverPhotoId).catch(() => {});
-      return coverPhotoId;
-    }
-  }
-
-  // 3. Fallback to local device cache
-  try {
-    const cached = await AsyncStorage.getItem(ASYNC_PREFIX + eventId);
-    if (cached) return cached;
-  } catch {
-    // Ignore storage errors
-  }
-
-  return null;
-}
+// The cover is an ordinary photo row pointed to by events.cover_photo_id.
+// A host can add one before the event; like every photo it stays out of the
+// roll until the roll opens (see isRollOpen).
 
 export async function setCoverPhoto(
   eventId: string,
-  photoId: string | null,
-  currentDescription?: string | null
+  photoId: string | null
 ): Promise<{ error: string | null }> {
-  // 1. Update local storage cache immediately
-  try {
-    if (photoId) {
-      await AsyncStorage.setItem(ASYNC_PREFIX + eventId, photoId);
-    } else {
-      await AsyncStorage.removeItem(ASYNC_PREFIX + eventId);
-    }
-  } catch {
-    // Ignore cache error
-  }
-
-  // 2. Update Supabase database
-  const formattedDesc = formatEventDescription(currentDescription, photoId);
-
-  // Try updating both cover_photo_id and description
-  const payloadWithCol: Record<string, any> = {
-    description: formattedDesc,
-    cover_photo_id: photoId,
-  };
-
-  const { error: err1 } = await supabase
+  const { error } = await supabase
     .from('events')
-    .update(payloadWithCol)
+    .update({ cover_photo_id: photoId })
     .eq('id', eventId);
+  return { error: error ? error.message : null };
+}
 
-  // If column cover_photo_id doesn't exist, retry updating description alone
-  if (err1) {
-    const { error: err2 } = await supabase
-      .from('events')
-      .update({ description: formattedDesc })
-      .eq('id', eventId);
+// Host picks one image from their library; it becomes the event's cover.
+export async function pickAndUploadCover(
+  eventId: string,
+  userId: string
+): Promise<{ photoId: string | null; error: string | null }> {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: 'images',
+    allowsEditing: true,
+    aspect: [4, 3],
+    quality: 0.8,
+    base64: true,
+  });
+  if (result.canceled || result.assets.length === 0) return { photoId: null, error: null };
 
-    if (err2) {
-      return { error: err2.message };
-    }
+  try {
+    const photoId = await uploadPhotoAsset(eventId, userId, result.assets[0]);
+    const { error } = await setCoverPhoto(eventId, photoId);
+    return { photoId, error };
+  } catch (err) {
+    return { photoId: null, error: err instanceof Error ? err.message : 'Upload failed.' };
   }
+}
 
-  return { error: null };
+// Photos (cover included) only show up in the roll, counts and activity once
+// the event has ended.
+export function isRollOpen(endsAt: string): boolean {
+  return Date.now() >= new Date(endsAt).getTime();
+}
+
+// Reads ends_at from a photo row's embedded `events!inner(ends_at)`.
+// PostgREST returns it as an object; supabase-js may type it as an array.
+export function eventEndsAt(events: { ends_at: string } | { ends_at: string }[]): string {
+  return Array.isArray(events) ? events[0].ends_at : events.ends_at;
 }

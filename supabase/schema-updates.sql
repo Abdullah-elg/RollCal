@@ -196,3 +196,71 @@ end;
 $$;
 
 
+
+-- 2026-10-14: security advisor fixes. Pin search_path on the invite-request
+-- RPCs, and stop signed-out (anon) callers reaching the helpers and RPCs.
+-- Postgres grants EXECUTE to PUBLIC by default, which includes anon.
+alter function public.approve_invite_request(uuid) set search_path = public;
+alter function public.decline_invite_request(uuid) set search_path = public;
+do $$
+declare f text;
+begin
+  foreach f in array array[
+    'public.approve_invite_request(uuid)',
+    'public.decline_invite_request(uuid)',
+    'public.get_event_by_code(text)',
+    'public.can_join(uuid, uuid)',
+    'public.can_see_event(uuid, uuid)',
+    'public.is_banned(uuid, uuid)',
+    'public.is_leader(uuid, uuid)',
+    'public.is_member(uuid, uuid)'
+  ] loop
+    -- The helpers live in policies.sql; skip any that aren't created yet.
+    continue when to_regprocedure(f) is null;
+    execute format('revoke execute on function %s from public, anon', f);
+    execute format('grant execute on function %s to authenticated', f);
+  end loop;
+end $$;
+
+-- 2026-10-14: cover every foreign key with an index (performance advisor).
+create index if not exists event_bans_user_id_idx on public.event_bans (user_id);
+create index if not exists event_invite_requests_requested_by_idx on public.event_invite_requests (requested_by);
+create index if not exists event_invite_requests_suggested_user_id_idx on public.event_invite_requests (suggested_user_id);
+create index if not exists events_creator_id_idx on public.events (creator_id);
+create index if not exists friendships_addressee_id_idx on public.friendships (addressee_id);
+create index if not exists invitations_invited_by_idx on public.invitations (invited_by);
+create index if not exists invitations_invited_user_id_idx on public.invitations (invited_user_id);
+create index if not exists messages_event_id_idx on public.messages (event_id);
+create index if not exists messages_sender_id_idx on public.messages (sender_id);
+create index if not exists photos_event_id_idx on public.photos (event_id);
+create index if not exists photos_uploader_id_idx on public.photos (uploader_id);
+create index if not exists rsvps_user_id_idx on public.rsvps (user_id);
+
+-- 2026-10-14: account deletion (App Store guideline 5.1.1(v)). No SQL needed:
+-- it is the "delete-account" Edge Function (supabase/functions/delete-account),
+-- deployed with JWT verification ON. It uses the service role to remove the
+-- caller's files via the Storage API (avatars/{uid}/*, every file in events
+-- they created, their uploads elsewhere), then auth.admin.deleteUser(uid).
+-- Every public table cascades from auth.users -> profiles (or events), so that
+-- one call removes all their rows. Their events are deleted, not handed off.
+-- An edge function rather than a SECURITY DEFINER RPC because deleting
+-- storage.objects rows in SQL orphans the stored blobs, and a definer RPC
+-- granted to authenticated would add another security-advisor warning.
+
+-- 2026-10-14: the cover_photo_id column above had never been applied, so the
+-- app had been hiding the cover id in the description as <!--cover:ID-->.
+-- Move any such ids into the column and strip the tags.
+create index if not exists events_cover_photo_id_idx on public.events (cover_photo_id);
+update public.events e
+set cover_photo_id = p.id
+from public.photos p
+where e.cover_photo_id is null
+  and p.id::text = substring(e.description from '<!--cover:([a-zA-Z0-9_-]+)-->');
+update public.events
+set description = nullif(btrim(regexp_replace(description, '\r?\n?<!--cover:[a-zA-Z0-9_-]+-->', '', 'g')), '')
+where description like '%<!--cover:%';
+
+-- 2026-10-15: the host can reopen a closed roll for 24 hours, as often as
+-- they like. The roll closes at whichever is later: 48h after the event ends,
+-- or this timestamp.
+alter table public.events add column if not exists uploads_reopened_until timestamptz;

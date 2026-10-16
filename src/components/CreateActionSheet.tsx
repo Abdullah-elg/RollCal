@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Modal,
   Pressable,
@@ -11,10 +12,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { ArrowIcon, CalendarIcon, CameraIcon, CloseIcon, PlusIcon, TicketIcon } from './icons';
-import { hapticLight, hapticSuccess } from '../lib/haptics';
+import { ArrowIcon, CalendarIcon, CameraIcon, CloseIcon, TicketIcon } from './icons';
+import { hapticLight } from '../lib/haptics';
 import { getOpenUploadEvents, pickAndUploadPhotos } from '../lib/photos';
-import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, spacing, TypeTokens } from '../theme';
 import { Event } from '../types';
 
 type Props = {
@@ -34,12 +35,11 @@ export default function CreateActionSheet({
 }: Props) {
   const { session } = useAuth();
   const userId = session?.user.id;
-  const { colors, type, mode } = useTheme();
+  const { colors, type } = useTheme();
   const insets = useSafeAreaInsets();
   const styles = React.useMemo(() => makeStyles(colors, type), [colors, type]);
 
   const [openEvents, setOpenEvents] = useState<Event[]>([]);
-  const [loadingEvents, setLoadingEvents] = useState(false);
   const [viewMode, setViewMode] = useState<'main' | 'photos'>('main');
   const [uploading, setUploading] = useState(false);
 
@@ -56,11 +56,7 @@ export default function CreateActionSheet({
       }).start();
 
       if (userId) {
-        setLoadingEvents(true);
-        getOpenUploadEvents(userId).then((list) => {
-          setOpenEvents(list);
-          setLoadingEvents(false);
-        });
+        getOpenUploadEvents(userId).then(setOpenEvents);
       }
     } else {
       Animated.timing(anim, {
@@ -86,22 +82,24 @@ export default function CreateActionSheet({
     setUploading(true);
     const { count, error } = await pickAndUploadPhotos(event.id, userId);
     setUploading(false);
+    // pickAndUploadPhotos already plays the shutter haptic on success.
     if (count > 0) {
-      hapticSuccess();
       onClose();
       onPhotosUploaded?.(event.id, count);
-    } else if (!error) {
-      // User cancelled picker
+    }
+    if (error) {
+      Alert.alert(
+        count > 0 ? `Uploaded ${count}, then one failed` : 'Upload failed',
+        error
+      );
     }
   };
 
+  // Always pick the event first, even with only one open roll, so it's clear
+  // where the photos are going.
   const handleAddPhotosPress = () => {
     hapticLight();
-    if (openEvents.length === 1) {
-      handleStartPhotoUpload(openEvents[0]);
-    } else if (openEvents.length > 1) {
-      setViewMode('photos');
-    }
+    if (openEvents.length > 0) setViewMode('photos');
   };
 
   if (!visible) return null;
@@ -140,12 +138,10 @@ export default function CreateActionSheet({
             },
           ]}
         >
-          {/* Handle bar */}
           <View style={styles.handleWrap}>
             <View style={styles.handle} />
           </View>
 
-          {/* Header */}
           <View style={styles.header}>
             {viewMode === 'photos' ? (
               <Pressable
@@ -203,7 +199,6 @@ export default function CreateActionSheet({
           ) : (
             /* Main options */
             <View style={styles.optionsList}>
-              {/* Option 1: New event */}
               <Pressable
                 onPress={handleNewEvent}
                 style={({ pressed }) => [
@@ -222,7 +217,6 @@ export default function CreateActionSheet({
                 </View>
               </Pressable>
 
-              {/* Option 2: Join an event */}
               <Pressable
                 onPress={() => {
                   hapticLight();
@@ -245,7 +239,6 @@ export default function CreateActionSheet({
                 </View>
               </Pressable>
 
-              {/* Option 3: Add photos (Only shown if uploads are open for at least one event) */}
               {openEvents.length > 0 && (
                 <Pressable
                   onPress={handleAddPhotosPress}
@@ -331,7 +324,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       padding: spacing.xs,
     },
     optionsList: {
-      gap: spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.line,
     },
     subHint: {
       ...t.caption,
@@ -342,26 +336,16 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flexDirection: 'row',
       alignItems: 'center',
       paddingVertical: spacing.md,
-      paddingHorizontal: spacing.md,
-      backgroundColor: c.paper,
-      borderRadius: radii.md,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.line,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.line,
       gap: spacing.md,
     },
     optionRowPressed: {
-      opacity: 0.7,
-      transform: [{ scale: 0.99 }],
+      opacity: 0.6,
     },
     optionIconWrap: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: c.card,
+      width: 28,
       alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.line,
     },
     optionContent: {
       flex: 1,

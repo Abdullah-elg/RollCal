@@ -4,20 +4,26 @@ import {
   DefaultTheme,
   NavigationContainer,
   useNavigation,
+  useNavigationContainerRef,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as ExpoLinking from 'expo-linking';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { ReactNode, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { PixelRatio, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useUnread } from '../context/UnreadContext';
 import { ArrowIcon } from '../components/icons';
-import { CalendarBlank, Gear, Plus, Ticket, Users } from 'phosphor-react-native';
+import { CalendarBlank, Gear, Ticket, Users } from 'phosphor-react-native';
 import CreateActionSheet from '../components/CreateActionSheet';
 import { hapticLight } from '../lib/haptics';
+import { onNotificationTap } from '../lib/notifications';
+import BillReviewScreen from '../screens/BillReviewScreen';
+import BillScreen from '../screens/BillScreen';
+import BillShareScreen from '../screens/BillShareScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import CreateEventScreen from '../screens/CreateEventScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
@@ -26,6 +32,7 @@ import EventDetailScreen from '../screens/EventDetailScreen';
 import FindPeopleScreen from '../screens/FindPeopleScreen';
 import FriendRequestsScreen from '../screens/FriendRequestsScreen';
 import FriendsScreen from '../screens/FriendsScreen';
+import PaymentMethodsScreen from '../screens/PaymentMethodsScreen';
 import SentRequestsScreen from '../screens/SentRequestsScreen';
 import EventInvitationsScreen from '../screens/EventInvitationsScreen';
 import HomeScreen from '../screens/HomeScreen';
@@ -33,6 +40,7 @@ import JoinEventScreen from '../screens/JoinEventScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
+import VerifyEmailScreen from '../screens/VerifyEmailScreen';
 import { fonts } from '../theme';
 import { AppStackParamList, AuthStackParamList, TabParamList } from './types';
 
@@ -76,6 +84,9 @@ function TabsNavigator() {
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const navigation = useNavigation<any>();
 
+  const tabBarBottom =
+    Platform.OS === 'ios' ? Math.max(insets.bottom - 10, 0) : insets.bottom;
+
   return (
     <>
       <Tabs.Navigator
@@ -88,8 +99,11 @@ function TabsNavigator() {
             backgroundColor: colors.paper,
             borderTopColor: colors.line,
             borderTopWidth: StyleSheet.hairlineWidth,
-            height: 52 + insets.bottom,
-            paddingBottom: insets.bottom,
+            // Same 52pt content row on both platforms. iOS reserves 34pt for
+            // the home indicator, which pushed the row up; ~24pt matches the
+            // space Android's gesture bar leaves.
+            height: 52 + tabBarBottom,
+            paddingBottom: tabBarBottom,
             paddingTop: 6,
             elevation: 0,
             shadowOpacity: 0,
@@ -142,22 +156,13 @@ function TabsNavigator() {
             },
           }}
           options={{
+            // A + needs no caption, so it goes without one and is drawn a little larger.
             title: 'New',
-            tabBarIcon: () => (
-              <Plus size={22} color={colors.accent} weight="bold" />
-            ),
-            tabBarLabel: () => (
-              <Text
-                style={{
-                  fontFamily: fonts.bodyMedium,
-                  fontSize: 10,
-                  letterSpacing: 0.1,
-                  color: colors.accent,
-                }}
-              >
-                New
-              </Text>
-            ),
+            tabBarLabel: () => null,
+            tabBarAccessibilityLabel: 'New',
+            tabBarIcon: () => <NewTabIcon tile={colors.accent} mark={colors.onAccent} />,
+            // With no label, centre the tile in the row instead of the icon slot.
+            tabBarIconStyle: { flex: 1, justifyContent: 'center' },
           }}
         />
         <Tabs.Screen
@@ -216,6 +221,35 @@ const linking = {
   },
 };
 
+// The New tab is a small filled tile rather than a bare glyph, so it reads
+// as the one action in a row of destinations. The + is two views sized in
+// whole pixels, which keeps it exactly symmetrical on every screen density.
+const TILE = PixelRatio.roundToNearestPixel(32);
+const PLUS_THICKNESS = PixelRatio.roundToNearestPixel(2.5);
+const PLUS_ARM = PixelRatio.roundToNearestPixel(6.5);
+const PLUS_SIZE = PLUS_ARM * 2 + PLUS_THICKNESS;
+
+function NewTabIcon({ tile, mark }: { tile: string; mark: string }) {
+  const bar = { position: 'absolute' as const, backgroundColor: mark, borderRadius: 1 };
+  return (
+    <View
+      style={{
+        width: TILE,
+        height: TILE,
+        borderRadius: 9,
+        backgroundColor: tile,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <View style={{ width: PLUS_SIZE, height: PLUS_SIZE }}>
+        <View style={[bar, { left: PLUS_ARM, top: 0, width: PLUS_THICKNESS, height: PLUS_SIZE }]} />
+        <View style={[bar, { left: 0, top: PLUS_ARM, width: PLUS_SIZE, height: PLUS_THICKNESS }]} />
+      </View>
+    </View>
+  );
+}
+
 export default function RootNavigator() {
   const { session, loading } = useAuth();
   const { mode, colors } = useTheme();
@@ -253,14 +287,40 @@ export default function RootNavigator() {
     [colors]
   );
 
-  // While the persisted session restores, hold the paper background
-  // instead of flashing the login screen.
-  if (loading) {
-    return <View style={{ flex: 1, backgroundColor: colors.paper }} />;
-  }
+  useEffect(() => {
+    if (!loading) SplashScreen.hide();
+  }, [loading]);
+
+  // Tapping a "bill shared" notification opens that bill. If the tap launched
+  // the app, navigation isn't ready yet, so the bill waits for onReady.
+  const navRef = useNavigationContainerRef<AppStackParamList>();
+  const pendingBill = useRef<string | null>(null);
+  const openPendingBill = () => {
+    if (pendingBill.current && navRef.isReady()) {
+      navRef.navigate('Bill', { billId: pendingBill.current });
+      pendingBill.current = null;
+    }
+  };
+  useEffect(() => {
+    if (!session) return;
+    return onNotificationTap(({ billId }) => {
+      pendingBill.current = billId;
+      openPendingBill();
+    });
+    // openPendingBill only reads refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  // The native splash is still covering the screen while this renders.
+  if (loading) return null;
 
   return (
-    <NavigationContainer theme={navTheme} linking={linking}>
+    <NavigationContainer
+      ref={navRef}
+      theme={navTheme}
+      linking={linking}
+      onReady={openPendingBill}
+    >
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
       {session ? (
         <AppStack.Navigator
@@ -318,6 +378,28 @@ export default function RootNavigator() {
             options={{ title: 'Edit profile' }}
           />
           <AppStack.Screen
+            name="PaymentMethods"
+            component={PaymentMethodsScreen}
+            options={{ title: 'Payment methods' }}
+          />
+          <AppStack.Screen
+            name="BillReview"
+            component={BillReviewScreen}
+            options={({ route }) => ({
+              title: route.params.draft ? 'Check the bill' : 'New bill',
+            })}
+          />
+          <AppStack.Screen
+            name="BillShare"
+            component={BillShareScreen}
+            options={{ title: 'Share bill' }}
+          />
+          <AppStack.Screen
+            name="Bill"
+            component={BillScreen}
+            options={{ title: '' }}
+          />
+          <AppStack.Screen
             name="FindPeople"
             component={FindPeopleScreen}
             options={{ title: 'Search users' }}
@@ -342,6 +424,7 @@ export default function RootNavigator() {
         <AuthStack.Navigator screenOptions={{ headerShown: false }}>
           <AuthStack.Screen name="SignIn" component={SignInScreen} />
           <AuthStack.Screen name="SignUp" component={SignUpScreen} />
+          <AuthStack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
         </AuthStack.Navigator>
       )}
     </NavigationContainer>

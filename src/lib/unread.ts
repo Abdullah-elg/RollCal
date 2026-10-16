@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { eventEndsAt, isRollOpen } from './coverPhoto';
 
 // Per-event "last read" times, kept on the device, so the app can mark which
 // chats have said something since you last looked.
@@ -95,7 +96,7 @@ export async function loadUnreadPhotos(
   const [{ data: photos }, readMap] = await Promise.all([
     supabase
       .from('photos')
-      .select('event_id, uploader_id, created_at')
+      .select('event_id, uploader_id, created_at, events!inner(ends_at)')
       .in('event_id', eventIds)
       .order('created_at', { ascending: false })
       .limit(300),
@@ -105,6 +106,8 @@ export async function loadUnreadPhotos(
   const unread = new Set<string>();
   for (const p of photos ?? []) {
     if (p.uploader_id === userId) continue;
+    // A cover added before the event isn't news until the roll opens.
+    if (!isRollOpen(eventEndsAt(p.events))) continue;
     const readAt = readMap[p.event_id];
     if (!readAt || p.created_at > readAt) unread.add(p.event_id);
   }

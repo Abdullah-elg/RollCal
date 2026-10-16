@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import SocialSignIn from '../components/SocialSignIn';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -27,9 +28,10 @@ export default function SignInScreen({ navigation }: Props) {
   const submit = async () => {
     setError(null);
     setBusy(true);
-    const { error } = await signIn(email, password);
+    const { error, needsEmailConfirm } = await signIn(email, password);
     setBusy(false);
     if (error) setError(error);
+    else if (needsEmailConfirm) navigation.navigate('VerifyEmail', { email: email.trim() });
     // On success the auth listener flips the app to the signed-in stack.
   };
 
@@ -42,8 +44,10 @@ export default function SignInScreen({ navigation }: Props) {
       >
         <Text style={styles.wordmark}>SociaLink</Text>
         <Text style={[type.bodyMuted, { marginBottom: spacing.xl }]}>
-          Every event ends in one shared album.
+          Every event ends in one shared roll.
         </Text>
+
+        <SocialSignIn />
 
         <Field
           label="Email"
@@ -93,7 +97,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     wordmark: {
       ...t.title,
-      fontSize: 36,
+      fontSize: 32,
       marginBottom: spacing.xs,
     },
     switchRow: {

@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -11,7 +11,6 @@ import LocationPicker, { PickedLocation } from '../components/LocationPicker';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { formatEventDescription, parseEventDescription } from '../lib/coverPhoto';
 import { generateInviteCode } from '../lib/inviteCode';
 import { hapticSuccess } from '../lib/haptics';
 import { syncEventReminders } from '../lib/notifications';
@@ -62,7 +61,6 @@ export default function CreateEventScreen({ navigation, route }: Props) {
   // The saved start time, so editing other fields of an already-started
   // event doesn't trip the no-past-events rule.
   const [originalStart, setOriginalStart] = useState<Date | null>(null);
-  const coverPhotoIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (initialDate && !editEventId) {
@@ -83,11 +81,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
         .maybeSingle();
       if (data) {
         setTitle(data.title);
-        const { description: cleanDesc, coverPhotoId } = parseEventDescription(
-          data.description
-        );
-        setDescription(cleanDesc ?? '');
-        coverPhotoIdRef.current = coverPhotoId ?? data.cover_photo_id ?? null;
+        setDescription(data.description ?? '');
         setLocation(data.location ?? '');
         setCoords(
           data.location_lat != null && data.location_lng != null
@@ -125,13 +119,9 @@ export default function CreateEventScreen({ navigation, route }: Props) {
     setError(null);
     setBusy(true);
 
-    const savedDescription = editEventId
-      ? formatEventDescription(description.trim(), coverPhotoIdRef.current)
-      : description.trim() || null;
-
     const fields = {
       title: title.trim(),
-      description: savedDescription,
+      description: description.trim() || null,
       location: location.trim() || null,
       location_lat: coords?.lat ?? null,
       location_lng: coords?.lng ?? null,

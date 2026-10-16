@@ -1,7 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Image,
   Pressable,
   RefreshControl,
@@ -37,11 +36,12 @@ import {
   PendingInvitation,
 } from '../lib/invitations';
 import {
+  notifyBillPayments,
+  notifyBillsShared,
   notifyChatMessages,
   notifyEventInvitations,
   syncEventReminders,
 } from '../lib/notifications';
-import { getCoverPhotoId } from '../lib/coverPhoto';
 import { supabase } from '../lib/supabase';
 import { TabScreenProps } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
@@ -65,7 +65,7 @@ type EventSection = {
 export default function HomeScreen({ navigation }: Props) {
   const { profile, session } = useAuth();
   const userId = session!.user.id;
-  const { colors, type, mode } = useTheme();
+  const { colors, type } = useTheme();
   const { unreadChats, unreadPhotos, refresh: refreshUnread } = useUnread();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
@@ -90,12 +90,11 @@ export default function HomeScreen({ navigation }: Props) {
     if (!error && data) {
       setEvents(data);
       syncEventReminders();
-      notifyChatMessages(
-        userId,
-        data.map((e) => ({ id: e.id, title: e.title }))
-      );
+      const eventList = data.map((e) => ({ id: e.id, title: e.title }));
+      notifyChatMessages(userId, eventList);
+      notifyBillsShared(userId, eventList);
+      notifyBillPayments(userId, eventList);
 
-      // Fetch photo counts, cover photos, and RSVP counts for events
       const eventIds = data.map((e) => e.id);
       if (eventIds.length > 0) {
         const [{ data: photosData }, { data: rsvpsData }] = await Promise.all([
@@ -111,14 +110,12 @@ export default function HomeScreen({ navigation }: Props) {
             .eq('status', 'going'),
         ]);
 
-        // Group photos count per event
         const photoCountByEvent: Record<string, number> = {};
         photosData?.forEach((p) => {
           photoCountByEvent[p.event_id] = (photoCountByEvent[p.event_id] ?? 0) + 1;
         });
 
 
-        // Fetch display names for attendee avatars
         const userIdsToFetch = Array.from(
           new Set([
             ...data.map((e) => e.creator_id),
@@ -142,18 +139,10 @@ export default function HomeScreen({ navigation }: Props) {
           });
         }
 
-        // Fetch chosen cover photo id for each event (null by default)
-        const coverIdByEvent: Record<string, string | null> = {};
-        await Promise.all(
-          data.map(async (e) => {
-            coverIdByEvent[e.id] = await getCoverPhotoId(e.id, e);
-          })
-        );
-
-        // Find storage path for explicitly chosen cover photos ONLY
+        // Storage paths of the covers hosts have chosen
         const chosenCoverPaths: string[] = [];
         data.forEach((e) => {
-          const chosenId = coverIdByEvent[e.id];
+          const chosenId = e.cover_photo_id;
           if (chosenId) {
             const photo = photosData?.find(
               (p) => p.id === chosenId && p.event_id === e.id
@@ -164,7 +153,6 @@ export default function HomeScreen({ navigation }: Props) {
           }
         });
 
-        // Create signed URLs ONLY for chosen cover photos
         let signedUrlMap = new Map<string, string>();
         if (chosenCoverPaths.length > 0) {
           const { data: signed } = await supabase.storage
@@ -178,7 +166,7 @@ export default function HomeScreen({ navigation }: Props) {
         const newMeta: Record<string, EventMeta> = {};
         data.forEach((e) => {
           const count = photoCountByEvent[e.id] ?? 0;
-          const chosenId = coverIdByEvent[e.id];
+          const chosenId = e.cover_photo_id;
           let url: string | undefined = undefined;
           if (chosenId) {
             const photo = photosData?.find(
@@ -189,7 +177,6 @@ export default function HomeScreen({ navigation }: Props) {
             }
           }
 
-          // Build list of attendees for avatars
           const eventRsvps = rsvpsData?.filter((r) => r.event_id === e.id) ?? [];
           const attendeeList: Array<{
             userId: string;
@@ -217,7 +204,6 @@ export default function HomeScreen({ navigation }: Props) {
             }
           });
 
-          // Count distinct attendees who are going or host
           const going = Math.max(1, attendeeList.length);
 
           newMeta[e.id] = {
@@ -261,7 +247,6 @@ export default function HomeScreen({ navigation }: Props) {
     [unreadChats, unreadPhotos]
   );
 
-  // Filter visible events
   const visible = useMemo(
     () =>
       events.filter(
@@ -281,7 +266,6 @@ export default function HomeScreen({ navigation }: Props) {
     () =>
       visible
         .filter((e) => new Date(e.ends_at).getTime() < now)
-        // Show most recently ended first
         .sort((a, b) => new Date(b.ends_at).getTime() - new Date(a.ends_at).getTime()),
     [visible, now]
   );
@@ -297,13 +281,11 @@ export default function HomeScreen({ navigation }: Props) {
     return null;
   }, [upcomingAll, weekAhead]);
 
-  // Remaining upcoming events (excluding the hero shown at top)
   const upcomingRemaining = useMemo(() => {
     if (!heroEvent) return upcomingAll;
     return upcomingAll.filter((e) => e.id !== heroEvent.id);
   }, [upcomingAll, heroEvent]);
 
-  // Split events into Coming up and Past
   const sections = useMemo<EventSection[]>(() => {
     const list: EventSection[] = [];
 
@@ -326,6 +308,11 @@ export default function HomeScreen({ navigation }: Props) {
     return list;
   }, [upcomingRemaining, past]);
 
+  const isPhotoCard = (event: Event | undefined, section: EventSection) => {
+    const meta = event && metaMap[event.id];
+    return section.type === 'past' && !!meta && meta.photoCount > 0 && !!meta.coverUrl;
+  };
+
   const renderItem = ({
     item,
     section,
@@ -337,10 +324,8 @@ export default function HomeScreen({ navigation }: Props) {
     const meta = metaMap[event.id];
     const hasUnread = unreadSet.has(event.id);
     const isPast = section.type === 'past';
-    const hasPhotos = isPast && meta && meta.photoCount > 0 && meta.coverUrl;
-
-    // Past events with photos: wide image cards using first photo as cover
-    if (hasPhotos && meta.coverUrl) {
+    // Past events with a chosen cover get a wide photo card.
+    if (meta?.coverUrl && isPhotoCard(event, section)) {
       return (
         <Pressable
           style={({ pressed }) => [
@@ -350,7 +335,6 @@ export default function HomeScreen({ navigation }: Props) {
           onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
         >
           <Image source={{ uri: meta.coverUrl }} style={styles.photoCardImage} />
-          {/* Bottom gradient */}
           <Svg height={90} width="100%" style={styles.cardGradient}>
             <Defs>
               <SvgLinearGradient id={`grad-${event.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -366,6 +350,11 @@ export default function HomeScreen({ navigation }: Props) {
               {event.title}
             </Text>
             <Text style={styles.photoCountLabel}>
+              {new Date(event.starts_at).toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+              })}{' '}
+              ·{' '}
               {meta.photoCount} {meta.photoCount === 1 ? 'photo' : 'photos'}
             </Text>
           </View>
@@ -375,7 +364,6 @@ export default function HomeScreen({ navigation }: Props) {
       );
     }
 
-    // Plain rows: Upcoming events or Past events without photos
     return (
       <Pressable
         style={({ pressed }) => [
@@ -384,7 +372,6 @@ export default function HomeScreen({ navigation }: Props) {
         ]}
         onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
       >
-        {/* Date block on left */}
         <View style={styles.dateBlock}>
           <Text style={[styles.dateDay, isPast && styles.quieterText]}>
             {dayOfMonth(event.starts_at)}
@@ -394,7 +381,6 @@ export default function HomeScreen({ navigation }: Props) {
           </Text>
         </View>
 
-        {/* Content in middle */}
         <View style={styles.rowContent}>
           <Text
             style={[styles.rowTitle, isPast && styles.quieterText]}
@@ -407,7 +393,6 @@ export default function HomeScreen({ navigation }: Props) {
           </Text>
         </View>
 
-        {/* Unread indicator & chevron */}
         {hasUnread && <View style={styles.rowUnreadDot} />}
         <ChevronRightIcon size={16} color={colors.inkMuted} />
       </Pressable>
@@ -416,9 +401,8 @@ export default function HomeScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      {/* Header bar: Small muted line "Hey, name" + Title row with Instrument Serif "Your events" & + icon */}
       <View style={styles.topBar}>
-        <Text style={styles.greetingText}>Hey, {profile?.display_name ?? '…'}</Text>
+        <Text style={styles.greetingText}>Hey, {profile?.first_name || profile?.display_name || '…'}</Text>
         <View style={styles.titleRow}>
           <Text style={styles.displayTitle}>Your events</Text>
           <Pressable
@@ -446,7 +430,6 @@ export default function HomeScreen({ navigation }: Props) {
       </View>
 
       {!loaded ? (
-        // Skeleton placeholder while loading
         <View style={styles.skeletonContainer}>
           {[1, 2, 3, 4].map((i) => (
             <View key={i} style={styles.skeletonRow}>
@@ -488,7 +471,14 @@ export default function HomeScreen({ navigation }: Props) {
               <Text style={styles.sectionHeaderTitle}>{title}</Text>
             </View>
           )}
-          ItemSeparatorComponent={() => <View style={styles.rowDivider} />}
+          ItemSeparatorComponent={({ leadingItem, trailingItem, section }) =>
+            // Photo cards carry their own edges, so no hairline next to them.
+            isPhotoCard(leadingItem, section) || isPhotoCard(trailingItem, section) ? (
+              <View style={styles.cardGap} />
+            ) : (
+              <View style={styles.rowDivider} />
+            )
+          }
           SectionSeparatorComponent={() => <View style={styles.sectionSpacer} />}
           contentContainerStyle={[
             styles.listContent,
@@ -506,7 +496,7 @@ export default function HomeScreen({ navigation }: Props) {
           ListEmptyComponent={
             !heroEvent ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>Nothing planned. Start something.</Text>
+                <Text style={styles.emptyText}>No events yet.</Text>
                 <Button
                   title="Plan something"
                   onPress={() => navigation.navigate('CreateEvent')}
@@ -565,7 +555,6 @@ function NextUpHero({
       >
         <Image source={{ uri: meta.coverUrl }} style={styles.photoCardImage} />
 
-        {/* Gradient overlay for contrast */}
         <Svg height="100%" width="100%" style={StyleSheet.absoluteFill}>
           <Defs>
             <SvgLinearGradient id={`hero-grad-${event.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -579,7 +568,6 @@ function NextUpHero({
         </Svg>
 
         <View style={styles.photoOverlayContent}>
-          {/* Top Row: Countdown badge & unread dot */}
           <View style={styles.topRow}>
             <View style={[styles.badge, styles.photoBadge]}>
               <View
@@ -593,7 +581,6 @@ function NextUpHero({
             {hasUnread && <View style={styles.unreadDot} />}
           </View>
 
-          {/* Bottom Area: Title and stacked avatars */}
           <View style={styles.bottomArea}>
             <Text style={styles.photoTitle} numberOfLines={2}>
               {event.title}
@@ -626,7 +613,6 @@ function NextUpHero({
     );
   }
 
-  // No photo cover: Big Instrument Serif title
   return (
     <Pressable
       accessibilityRole="button"
@@ -637,7 +623,6 @@ function NextUpHero({
         pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
       ]}
     >
-      {/* Top Row: Countdown badge & unread dot */}
       <View style={styles.topRow}>
         <View
           style={[
@@ -664,18 +649,15 @@ function NextUpHero({
         {hasUnread && <View style={styles.unreadDot} />}
       </View>
 
-      {/* Middle: Big Instrument Serif Title */}
       <Text style={styles.cardTitle} numberOfLines={2}>
         {event.title}
       </Text>
 
-      {/* Subtitle: Date & Time · Location */}
       <Text style={styles.cardSubtitle} numberOfLines={1}>
         {formatDay(event.starts_at)} · {formatTime(event.starts_at)}
         {event.location ? ` · ${event.location}` : ''}
       </Text>
 
-      {/* Bottom: Stacked avatars & count */}
       <View style={styles.avatarsRow}>
         {displayAttendees.length > 0 && (
           <View style={styles.avatarStack}>
@@ -791,14 +773,16 @@ const makeHeroStyles = (c: Palette, mode: 'light' | 'dark') =>
     },
     photoTitle: {
       fontFamily: fonts.display,
-      fontSize: 28,
-      lineHeight: 32,
+      fontSize: 24,
+      lineHeight: 29,
+      letterSpacing: -0.4,
       color: '#FFFFFF',
     },
     cardTitle: {
       fontFamily: fonts.display,
-      fontSize: 32,
-      lineHeight: 36,
+      fontSize: 26,
+      lineHeight: 32,
+      letterSpacing: -0.4,
       color: c.ink,
       marginTop: spacing.md,
       marginBottom: 4,
@@ -823,7 +807,7 @@ const makeHeroStyles = (c: Palette, mode: 'light' | 'dark') =>
     },
     avatarBorderPhoto: {
       borderWidth: 2,
-      borderColor: '#17140F',
+      borderColor: '#111513',
     },
     avatarBorderCard: {
       borderWidth: 2,
@@ -873,8 +857,9 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     displayTitle: {
       fontFamily: fonts.display,
-      fontSize: 34,
-      lineHeight: 38,
+      fontSize: 28,
+      lineHeight: 34,
+      letterSpacing: -0.5,
       color: c.ink,
     },
     iconBtn: {
@@ -923,6 +908,9 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       alignItems: 'center',
       paddingVertical: spacing.md,
       gap: spacing.md,
+    },
+    cardGap: {
+      height: spacing.xs,
     },
     rowDivider: {
       height: 1,

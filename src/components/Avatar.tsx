@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import { useRef } from 'react';
 import {
   Animated,
   Image,
@@ -14,7 +14,7 @@ import { useTheme } from '../context/ThemeContext';
 import { hapticLight } from '../lib/haptics';
 import { fonts } from '../theme';
 
-// Curated palette of muted, earthy tones that pair naturally with warm paper and darkroom surfaces
+// Curated palette of muted, earthy tones that pair naturally with the paper and darkroom surfaces
 const LIGHT_BG = [
   '#E5DFD4', // warm driftwood
   '#DFE4DA', // dusty sage
@@ -37,7 +37,7 @@ const DARK_BG = [
   '#252525', // deep ash
 ];
 
-export function getAvatarBgColor(userId: string | undefined | null, mode: 'light' | 'dark'): string {
+function getAvatarBgColor(userId: string | undefined | null, mode: 'light' | 'dark'): string {
   if (!userId) return mode === 'dark' ? '#2A241E' : '#E5DFD4';
   let hash = 0;
   for (let i = 0; i < userId.length; i++) {
@@ -48,7 +48,7 @@ export function getAvatarBgColor(userId: string | undefined | null, mode: 'light
   return mode === 'dark' ? DARK_BG[idx] : LIGHT_BG[idx];
 }
 
-export function getInitials(name: string | undefined | null): string {
+function getInitials(name: string | undefined | null): string {
   if (!name || !name.trim()) return '?';
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) {

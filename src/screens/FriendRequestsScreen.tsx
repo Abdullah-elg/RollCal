@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View,
 } from 'react-native';
 import { InboxIcon } from '../components/icons';
 import { PersonList, PersonRow, RowAction } from '../components/PersonRow';
@@ -14,7 +13,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useFriendData } from '../hooks/useFriendData';
 import { acceptFriendRequest, removeFriendship } from '../lib/friends';
 import { hapticLight } from '../lib/haptics';
-import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { Palette, spacing, TypeTokens } from '../theme';
 
 // Requests waiting on me.
 export default function FriendRequestsScreen() {

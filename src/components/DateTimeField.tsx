@@ -151,7 +151,6 @@ export default function DateTimeField({ label, value, onChange, minDate }: Props
         </Text>
       </View>
 
-      {/* Date - tap the chip to unfold the themed calendar */}
       <Pressable
         style={[styles.dateChip, showCalendar && styles.dateChipActive]}
         onPress={() => setShowCalendar((s) => !s)}
@@ -171,7 +170,6 @@ export default function DateTimeField({ label, value, onChange, minDate }: Props
         </View>
       )}
 
-      {/* Time wheels + AM/PM */}
       <View style={styles.timeRow}>
         <Wheel
           items={HOURS}

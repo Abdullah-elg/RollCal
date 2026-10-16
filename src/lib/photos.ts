@@ -2,8 +2,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
 import { Event } from '../types';
 import { hapticShutter } from './haptics';
+import { rollState } from './roll';
 
-const UPLOAD_WINDOW_MS = 48 * 60 * 60 * 1000;
 const BUCKET = 'event-photos';
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -36,9 +36,7 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return arrayBuffer;
 }
 
-/**
- * Returns all events where the user is host or attendee and uploads are currently open.
- */
+// Events the user is part of whose 48-hour upload window is open right now.
 export async function getOpenUploadEvents(userId: string): Promise<Event[]> {
   const { data, error } = await supabase
     .from('events')
@@ -47,19 +45,37 @@ export async function getOpenUploadEvents(userId: string): Promise<Event[]> {
 
   if (error || !data) return [];
 
-  const now = Date.now();
-  const openEvents = data.filter((e) => {
-    const endsAt = new Date(e.ends_at).getTime();
-    const withinWindow = now >= endsAt && now <= endsAt + UPLOAD_WINDOW_MS;
-    return withinWindow && !e.uploads_closed;
-  });
-
-  return openEvents;
+  return data.filter((e) => rollState(e, e.uploads_closed).uploadOpen);
 }
 
-/**
- * Opens image picker and uploads selected photos for an event.
- */
+// Uploads one picked image to the event's folder and records it in photos.
+// Returns the new photo row's id.
+export async function uploadPhotoAsset(
+  eventId: string,
+  userId: string,
+  asset: ImagePicker.ImagePickerAsset
+): Promise<string> {
+  if (!asset.base64) throw new Error('Could not read that photo.');
+  const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const path = `${eventId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, base64ToArrayBuffer(asset.base64), {
+      contentType: asset.mimeType ?? 'image/jpeg',
+    });
+  if (uploadError) throw new Error(uploadError.message);
+
+  const { data, error: rowError } = await supabase
+    .from('photos')
+    .insert({ event_id: eventId, uploader_id: userId, storage_path: path })
+    .select('id')
+    .single();
+  if (rowError) throw new Error(rowError.message);
+  return data.id;
+}
+
+// Opens the photo picker and uploads what the user chose to the event's roll.
 export async function pickAndUploadPhotos(
   eventId: string,
   userId: string
@@ -79,25 +95,7 @@ export async function pickAndUploadPhotos(
   let done = 0;
   for (const asset of result.assets) {
     try {
-      if (!asset.base64) continue;
-      const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-      const path = `${eventId}/${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, base64ToArrayBuffer(asset.base64), {
-          contentType: asset.mimeType ?? 'image/jpeg',
-        });
-
-      if (uploadError) throw new Error(uploadError.message);
-
-      const { error: rowError } = await supabase
-        .from('photos')
-        .insert({ event_id: eventId, uploader_id: userId, storage_path: path });
-
-      if (rowError) throw new Error(rowError.message);
+      await uploadPhotoAsset(eventId, userId, asset);
       done += 1;
     } catch (err) {
       return {
@@ -112,4 +110,12 @@ export async function pickAndUploadPhotos(
   }
 
   return { count: done, error: null };
+}
+
+// Deletes every file in an event's folder. Called before the event row is
+// deleted, since removing the rows alone leaves the files in storage.
+export async function removeEventFiles(eventId: string): Promise<void> {
+  const { data } = await supabase.storage.from(BUCKET).list(eventId, { limit: 1000 });
+  const paths = (data ?? []).map((f) => `${eventId}/${f.name}`);
+  if (paths.length > 0) await supabase.storage.from(BUCKET).remove(paths);
 }

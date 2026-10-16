@@ -10,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import Avatar from '../components/Avatar';
 import { BellIcon, CalendarIcon, ChevronRightIcon, MapPinIcon } from '../components/icons';
 import { Button, PageIntro } from '../components/ui';
 import { useAuth } from '../context/AuthContext';

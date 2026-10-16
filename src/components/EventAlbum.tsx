@@ -11,7 +11,6 @@ import {
   GestureResponderEvent,
   Image,
   Modal,
-  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -22,9 +21,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle } from 'react-native-svg';
 import { useTheme } from '../context/ThemeContext';
 import { animateNext } from '../lib/animate';
+import { uploadPhotoAsset } from '../lib/photos';
+import { rollState } from '../lib/roll';
 import { hapticLight, hapticShutter } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
@@ -34,7 +34,6 @@ import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon } from './icons
 import { Button, EmptyNote } from './ui';
 
 const BUCKET = 'event-photos';
-const UPLOAD_WINDOW_MS = 48 * 60 * 60 * 1000;
 const GRID_GAP = 2;
 
 export type LoadedPhoto = Photo & {
@@ -49,6 +48,8 @@ type Props = {
   refreshSeq: number;
   onPhotosChange?: (photos: LoadedPhoto[]) => void;
   uploadsClosedOverride?: boolean;
+  // Host only: reopens a closed roll for 24 hours.
+  onReopenRoll?: () => void;
   coverPhotoId?: string | null;
   onSetCoverPhoto?: (photoId: string | null) => void;
 };
@@ -68,14 +69,7 @@ function getMediaLibrary(): MediaLibraryModule | null {
   return mediaLibrary;
 }
 
-function base64ToArrayBuffer(b64: string): ArrayBuffer {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
-// Analog exposure counter badge modeled on vintage 35mm cameras
+// Photo count styled like a film camera's exposure counter.
 function ExposureCounter({ count }: { count: number }) {
   const { colors, mode } = useTheme();
   const formatted = count < 10 ? `0${count}` : String(count);
@@ -85,7 +79,7 @@ function ExposureCounter({ count }: { count: number }) {
       style={{
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: mode === 'dark' ? '#25201A' : '#F0EAE1',
+        backgroundColor: mode === 'dark' ? '#202622' : '#ECE9E1',
         borderWidth: 1,
         borderColor: colors.line,
         borderRadius: 4,
@@ -120,45 +114,7 @@ function ExposureCounter({ count }: { count: number }) {
   );
 }
 
-// Subtle procedural static film grain overlay for album header (0 performance impact)
-function FilmGrainHeader() {
-  const { mode } = useTheme();
-  const dots = useMemo(() => {
-    const list: Array<{ x: number; y: number; r: number; o: number }> = [];
-    for (let i = 0; i < 48; i++) {
-      const x = (i * 37 + 13) % 100;
-      const y = (i * 47 + 23) % 100;
-      const r = i % 3 === 0 ? 0.7 : 0.45;
-      const o = 0.03 + (i % 4) * 0.015;
-      list.push({ x, y, r, o });
-    }
-    return list;
-  }, []);
-
-  const dotColor = mode === 'dark' ? '#FFFFFF' : '#000000';
-
-  return (
-    <Svg
-      style={StyleSheet.absoluteFill}
-      width="100%"
-      height="100%"
-      pointerEvents="none"
-    >
-      {dots.map((d, i) => (
-        <Circle
-          key={i}
-          cx={`${d.x}%`}
-          cy={`${d.y}%`}
-          r={d.r}
-          fill={dotColor}
-          opacity={d.o}
-        />
-      ))}
-    </Svg>
-  );
-}
-
-// Grid photo item with darkroom print developing animation on new uploads
+// Grid tile; new uploads fade in like a print developing.
 function DevelopingPhotoItem({
   uri,
   style,
@@ -197,7 +153,7 @@ function DevelopingPhotoItem({
     );
   }
 
-  // Darkroom print developing: starts faint & washed out, then deepens into rich color
+  // Starts faint and washed out, then deepens to full colour.
   const imageOpacity = anim.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: [0.4, 0.8, 1],
@@ -208,7 +164,7 @@ function DevelopingPhotoItem({
     outputRange: [0.85, 0.35, 0],
   });
 
-  const washColor = mode === 'dark' ? '#2A241C' : '#FFFDF6';
+  const washColor = mode === 'dark' ? '#232A26' : '#FFFEFA';
 
   return (
     <Pressable onPress={onPress} style={[style, { overflow: 'hidden' }]}>
@@ -219,7 +175,6 @@ function DevelopingPhotoItem({
         />
       ) : null}
 
-      {/* Translucent developing paper wash */}
       <Animated.View
         pointerEvents="none"
         style={[
@@ -231,7 +186,6 @@ function DevelopingPhotoItem({
         ]}
       />
 
-      {/* Dissolving print blur */}
       <Animated.View
         pointerEvents="none"
         style={[StyleSheet.absoluteFill, { opacity: washOpacity }]}
@@ -255,6 +209,7 @@ export default function EventAlbum({
   refreshSeq,
   onPhotosChange,
   uploadsClosedOverride,
+  onReopenRoll,
   coverPhotoId,
   onSetCoverPhoto,
 }: Props) {
@@ -287,11 +242,8 @@ export default function EventAlbum({
 
   const now = Date.now();
   const endsAt = new Date(event.ends_at).getTime();
-  const windowCloses = endsAt + UPLOAD_WINDOW_MS;
-  const withinWindow = now >= endsAt && now <= windowCloses;
-  const uploadOpen = withinWindow && !uploadsClosed;
-  const beforeEnd = now < endsAt;
-  const hoursLeft = Math.max(1, Math.round((windowCloses - now) / (60 * 60 * 1000)));
+  const { beforeEnd, withinWindow, uploadOpen, msLeft } = rollState(event, uploadsClosed, now);
+  const hoursLeft = Math.max(1, Math.round(msLeft / (60 * 60 * 1000)));
 
   const countdownText = useMemo(() => {
     const startsAt = new Date(event.starts_at).getTime();
@@ -443,24 +395,7 @@ export default function EventAlbum({
     setUploading(`0/${result.assets.length}`);
     for (const asset of result.assets) {
       try {
-        if (!asset.base64) continue;
-        const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-        const path = `${event.id}/${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 8)}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from(BUCKET)
-          .upload(path, base64ToArrayBuffer(asset.base64), {
-            contentType: asset.mimeType ?? 'image/jpeg',
-          });
-        if (uploadError) throw new Error(uploadError.message);
-        const { data: rowData, error: rowError } = await supabase
-          .from('photos')
-          .insert({ event_id: event.id, uploader_id: userId, storage_path: path })
-          .select('id')
-          .single();
-        if (rowError) throw new Error(rowError.message);
-        if (rowData?.id) newUploadedIds.push(rowData.id);
+        newUploadedIds.push(await uploadPhotoAsset(event.id, userId, asset));
         done += 1;
         setUploading(`${done}/${result.assets.length}`);
       } catch (err) {
@@ -489,7 +424,7 @@ export default function EventAlbum({
     if (!MediaLibrary) {
       Alert.alert(
         'Saving unavailable',
-        "This build can't reach your photo library. Viewing the album still works."
+        "This build can't reach your photo library. Viewing the roll still works."
       );
       return false;
     }
@@ -573,7 +508,6 @@ export default function EventAlbum({
     load();
   };
 
-  const msLeft = windowCloses - now;
   const isUrgentWindow = uploadOpen && msLeft > 0 && msLeft <= 3 * 60 * 60 * 1000;
   const minutesLeft = Math.max(1, Math.round(msLeft / (60 * 1000)));
   const timeLeftText = hoursLeft <= 1 ? `${minutesLeft} minutes` : `${hoursLeft} hours`;
@@ -583,6 +517,8 @@ export default function EventAlbum({
     [photos]
   );
   const peopleCount = Math.max(1, uniqueUploaderCount);
+
+  const photoSummary = `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'} from ${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}.`;
 
   let statusLine = '';
   let mutedSummaryLine: string | null = null;
@@ -594,13 +530,12 @@ export default function EventAlbum({
   } else if (withinWindow && uploadsClosed) {
     statusLine = isLeader ? 'The roll was closed early.' : 'The host closed the roll.';
     if (photos.length > 0) {
-      mutedSummaryLine = `${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}. ${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}.`;
+      mutedSummaryLine = photoSummary;
     }
   } else {
-    // Roll is closed
     if (photos.length > 0) {
-      statusLine = `Roll closed. ${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}.`;
-      mutedSummaryLine = `${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}. ${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}.`;
+      statusLine = 'Roll closed.';
+      mutedSummaryLine = photoSummary;
     } else {
       statusLine = 'Roll closed. No photos taken.';
     }
@@ -628,19 +563,16 @@ export default function EventAlbum({
   const canDeleteViewer =
     viewerPhoto != null && (isLeader || viewerPhoto.uploader_id === userId);
 
-  // Layout calculations for edge-to-edge grid with 2px gaps
   const colWidth = Math.floor((screenWidth - GRID_GAP * 2) / 3);
   const featureSize = colWidth * 2 + GRID_GAP;
   const sideRemainingWidth = screenWidth - featureSize - GRID_GAP;
 
   return (
     <View style={styles.container}>
-      {/* Album Header with subtle film grain */}
       <View style={styles.headerRow}>
-        <FilmGrainHeader />
         <View style={styles.titleWrap}>
           <Text style={styles.sectionTitle}>Photos</Text>
-          {photos.length > 0 && <ExposureCounter count={photos.length} />}
+          {photos.length > 0 && !beforeEnd && <ExposureCounter count={photos.length} />}
         </View>
         {photos.length > 0 && !beforeEnd && (
           <Pressable
@@ -685,8 +617,8 @@ export default function EventAlbum({
         </View>
       )}
 
-      {/* Action Buttons: Add photos (terracotta primary) & Set event photo for host */}
-      {(uploadOpen || (isLeader && photos.length > 0)) && (
+      {/* Before the roll opens, the host sets the cover from the event info sheet. */}
+      {(uploadOpen || (isLeader && !beforeEnd)) && (
         <View style={styles.actionRow}>
           {uploadOpen && (
             <Button
@@ -696,7 +628,14 @@ export default function EventAlbum({
               style={styles.actionButton}
             />
           )}
-          {isLeader && photos.length > 0 && (
+          {isLeader && !beforeEnd && !uploadOpen && onReopenRoll && (
+            <Button
+              title="Reopen for 24 hours"
+              onPress={onReopenRoll}
+              style={styles.actionButton}
+            />
+          )}
+          {isLeader && photos.length > 0 && !beforeEnd && (
             <Button
               title={hasCover ? 'Change event photo' : 'Set event photo'}
               variant="secondary"
@@ -709,8 +648,9 @@ export default function EventAlbum({
 
       {notice && <Text style={styles.notice}>{notice}</Text>}
 
-      {/* Edge-to-edge photo grid */}
-      {!loaded ? (
+      {/* Edge-to-edge photo grid. Sealed until the event ends, even if the
+          host has already added a cover. */}
+      {beforeEnd ? null : !loaded ? (
         <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.lg }} />
       ) : displayPhotos.length > 0 ? (
         <View style={[styles.gridWrap, { width: screenWidth }]}>
@@ -780,10 +720,9 @@ export default function EventAlbum({
               />
             </View>
           ) : (
-            // 3 or more photos: Cover photo is the 2x2 featured big one that pops up first!
+            // With a cover chosen, it leads the grid as a 2x2 tile.
             <>
               <View style={[styles.featureRow, { height: featureSize }]}>
-                {/* 2x2 Feature photo (Cover) */}
                 <DevelopingPhotoItem
                   uri={displayPhotos[0].url}
                   imageStyle={styles.gridImage}
@@ -800,7 +739,6 @@ export default function EventAlbum({
                   </View>
                 </DevelopingPhotoItem>
 
-                {/* Stack of 2 side photos */}
                 <View
                   style={{
                     width: sideRemainingWidth,
@@ -825,7 +763,6 @@ export default function EventAlbum({
                 </View>
               </View>
 
-              {/* Photos from index 3 onward */}
               {displayPhotos.length > 3 && (
                 <View style={styles.trailingGrid}>
                   {displayPhotos.slice(3).map((photo, idx) => {
@@ -859,7 +796,6 @@ export default function EventAlbum({
         </View>
       ) : null}
 
-      {/* Full-screen photo viewer: swipe, left/right arrows, pinch-to-zoom, uploader name, save button in corner */}
       <Modal
         visible={viewerPhoto !== null}
         animationType="fade"
@@ -883,7 +819,6 @@ export default function EventAlbum({
                 }),
               }}
             >
-              {/* Top Bar */}
             <View
               style={[
                 styles.viewerTop,
@@ -936,7 +871,6 @@ export default function EventAlbum({
               </View>
             </View>
 
-            {/* Horizontal paging FlatList with pinch-to-zoom ScrollViews + Floating Nav Arrows */}
             <View style={styles.viewerCenterArea}>
               <FlatList
                 ref={flatListRef}
@@ -1018,7 +952,6 @@ export default function EventAlbum({
                 }
               />
 
-              {/* Left arrow button */}
               {viewerIndex !== null && viewerIndex > 0 && (
                 <Pressable
                   onPress={() => {
@@ -1037,7 +970,6 @@ export default function EventAlbum({
                 </Pressable>
               )}
 
-              {/* Right arrow button */}
               {viewerIndex !== null && viewerIndex < viewerList.length - 1 && (
                 <Pressable
                   onPress={() => {
@@ -1059,7 +991,6 @@ export default function EventAlbum({
 
             {notice && <Text style={styles.viewerNotice}>{notice}</Text>}
 
-            {/* Bottom Bar with Set as cover photo (for host) and Delete photo */}
             {(isLeader || canDeleteViewer) && (
               <View style={styles.viewerBottom}>
                 {isLeader && (
@@ -1102,7 +1033,6 @@ export default function EventAlbum({
         )}
       </Modal>
 
-      {/* Cover Photo Selection Modal */}
       <Modal
         visible={showCoverPicker}
         animationType="slide"
@@ -1116,7 +1046,6 @@ export default function EventAlbum({
             style={styles.pickerModalScreen}
             edges={['top', 'bottom']}
           >
-            {/* Modal Header */}
             <View style={styles.pickerHeader}>
               <View style={styles.pickerHeaderLeft}>
                 <Text style={styles.pickerTitle}>Event photo</Text>
@@ -1136,7 +1065,6 @@ export default function EventAlbum({
               </Pressable>
             </View>
 
-            {/* Scrollable grid of photos */}
             <ScrollView
               contentContainerStyle={[
                 styles.pickerScrollContent,
@@ -1184,7 +1112,6 @@ export default function EventAlbum({
               </View>
             </ScrollView>
 
-            {/* Floating pop-up button at the bottom middle of the screen */}
             <View
               pointerEvents="box-none"
               style={[
@@ -1226,7 +1153,7 @@ export default function EventAlbum({
       <ConfirmDialog
         visible={confirmDeleteId !== null}
         title="Delete this photo?"
-        message="It comes out of the album for everyone."
+        message="It comes out of the roll for everyone."
         confirmLabel="Delete"
         destructive
         onConfirm={deletePhoto}

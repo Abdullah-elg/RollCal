@@ -7,14 +7,20 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "backgroundColor": "#FAF6EF",
+    "backgroundColor": "#F6F4EE",
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.abdullah.elg.SociaLink"
+      "supportsTablet": false,
+      "bundleIdentifier": "com.abdullah.elg.SociaLink",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "usesAppleSignIn": true
     },
     "android": {
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#FAF6EF",
+        "backgroundColor": "#1F5C4A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -26,7 +32,11 @@
         "googleMaps": {
           "apiKey": "AIzaSyAUQLgVNsIcqyKtK786U_cj7dGDaX-2-W0"
         }
-      }
+      },
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -37,27 +47,49 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
-          "backgroundColor": "#FAF6EF",
+          "backgroundColor": "#F6F4EE",
           "resizeMode": "contain",
           "dark": {
             "image": "./assets/splash-icon.png",
-            "backgroundColor": "#17140F"
-          }
+            "backgroundColor": "#111513"
+          },
+          "imageWidth": 120
         }
       ],
       "expo-status-bar",
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow SociaLink to access your location to set event locations."
+          "locationWhenInUsePermission": "Allow SociaLink to access your location to set event locations.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "motionUsagePermission": false
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow SociaLink to access your camera to scan event QR codes."
+          "cameraPermission": "Allow SociaLink to access your camera to scan event QR codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow SociaLink to access your photos to upload event photos and profile pictures."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow SociaLink to access your photos to upload event photos and profile pictures.",
+          "savePhotosPermission": "Allow SociaLink to save event photos to your library.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      "expo-web-browser",
+      "expo-apple-authentication"
     ]
   }
 }

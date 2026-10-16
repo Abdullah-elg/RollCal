@@ -1,12 +1,9 @@
+import { eventEndsAt, isRollOpen } from './coverPhoto';
 import { supabase } from './supabase';
 import { getChatReadMap, getPhotoReadMap } from './unread';
 
-/**
- * Computes a short, friendly activity line for an event:
- * - "3 new messages" (when unread chat messages exist)
- * - "Sara added 6 photos" (when photos were added recently by an attendee)
- * - "2 people joined today" / "Sara joined today" (when people RSVP'd going today)
- */
+// One short line of news for an event card: "3 new messages",
+// "Sara added 6 photos", or "2 people joined today".
 export async function loadEventActivity(
   eventId: string,
   userId: string
@@ -20,7 +17,7 @@ export async function loadEventActivity(
     const chatReadAt = chatReadMap[eventId];
     const photoReadAt = photoReadMap[eventId];
 
-    // 1. Priority: Check unread chat messages for this event
+    // Unread chat beats new photos, which beat people joining today.
     const { data: messages } = await supabase
       .from('messages')
       .select('id, sender_id, created_at')
@@ -38,16 +35,18 @@ export async function loadEventActivity(
       }`;
     }
 
-    // 2. Priority: Check recent photos added by others
     const { data: photos } = await supabase
       .from('photos')
-      .select('id, uploader_id, created_at')
+      .select('id, uploader_id, created_at, events!inner(ends_at)')
       .eq('event_id', eventId)
       .neq('uploader_id', userId)
       .order('created_at', { ascending: false })
       .limit(30);
 
-    if (photos && photos.length > 0) {
+    // Nothing to report until the roll opens (a host may add a cover early).
+    const rollOpen = photos?.[0] ? isRollOpen(eventEndsAt(photos[0].events)) : false;
+
+    if (photos && photos.length > 0 && rollOpen) {
       const now = Date.now();
       const twoDaysAgo = new Date(now - 48 * 60 * 60 * 1000).toISOString();
       const recentPhotos = photos.filter(
@@ -73,7 +72,6 @@ export async function loadEventActivity(
       }
     }
 
-    // 3. Priority: Check people joined today
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const todayIso = startOfToday.toISOString();

@@ -47,7 +47,7 @@ import { hapticLight } from '../lib/haptics';
 type ButtonProps = {
   title: string;
   onPress: () => void;
-  // primary = filled terracotta (one per screen); secondary = outlined; danger = plain red text.
+  // primary = filled accent (one per screen); secondary = outlined; danger = plain red text.
   variant?: 'primary' | 'secondary' | 'danger';
   disabled?: boolean;
   loading?: boolean;
@@ -94,13 +94,12 @@ export function Button({
     }).start();
   };
 
+  // flex sizes the outer wrapper only. On the inner Pressable it would
+  // override the fixed height, and a button in a row collapsed to nothing.
+  const { flex, ...innerStyle } = StyleSheet.flatten(style) ?? {};
+
   return (
-    <Animated.View
-      style={[
-        { transform: [{ scale }] },
-        style?.flex !== undefined ? { flex: style.flex } : null,
-      ]}
-    >
+    <Animated.View style={[{ transform: [{ scale }] }, flex !== undefined ? { flex } : null]}>
       <Pressable
         onPress={() => {
           hapticLight();
@@ -118,7 +117,7 @@ export function Button({
             : styles.buttonSecondary,
           (disabled || loading) && { opacity: 0.5 },
           pressed && { opacity: 0.9 },
-          style,
+          innerStyle,
         ]}
       >
         {loading ? (

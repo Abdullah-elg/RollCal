@@ -3,10 +3,12 @@
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { BillDraft } from '../lib/bills';
 
 export type AuthStackParamList = {
   SignIn: undefined;
   SignUp: undefined;
+  VerifyEmail: { email: string };
 };
 
 // The bottom tabs live inside the app stack, so pushed screens (event
@@ -27,6 +29,13 @@ export type AppStackParamList = {
   EventChat: { eventId: string; title: string };
   JoinEvent: { code?: string; openScanner?: boolean } | undefined;
   EditProfile: undefined;
+  PaymentMethods: undefined;
+  // Bill splitting. BillReview is where a bill is typed in or a scanned one
+  // is checked; BillShare picks payment methods and shares it; Bill shows a
+  // shared bill.
+  BillReview: { eventId: string; draft?: BillDraft };
+  BillShare: { draft: BillDraft };
+  Bill: { billId: string };
   FindPeople: undefined;
   FriendRequests: undefined;
   SentRequests: undefined;

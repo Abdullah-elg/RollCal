@@ -117,15 +117,15 @@ export function SendIcon({ size = 18, color }: IconProps) {
   );
 }
 
-// Arrow leaving the corner - opens something outside the app.
-export function ArrowUpRightIcon({ size = 14, color }: IconProps) {
+// A cross - closing a full-screen view.
+export function CloseIcon({ size = 18, color }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
-        d="M7 17L17 7M8 7h9v9"
+        d="M18 6L6 18M6 6l12 12"
         fill="none"
         stroke={color}
-        strokeWidth={2.4}
+        strokeWidth={2.2}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -133,27 +133,12 @@ export function ArrowUpRightIcon({ size = 14, color }: IconProps) {
   );
 }
 
-// Plus - the one button that starts something new.
-export function PlusIcon({ size = 24, color }: IconProps) {
+// A plus - adding a row.
+export function PlusIcon({ size = 18, color }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
         d="M12 5v14M5 12h14"
-        fill="none"
-        stroke={color}
-        strokeWidth={2.4}
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
-
-// A cross - closing a full-screen view.
-export function CloseIcon({ size = 18, color }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M18 6L6 18M6 6l12 12"
         fill="none"
         stroke={color}
         strokeWidth={2.2}
@@ -260,22 +245,6 @@ export function TicketIcon({ size = 18, color }: IconProps) {
   );
 }
 
-// Gear for settings.
-export function GearIcon({ size = 18, color }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Circle cx={12} cy={12} r={3} stroke={color} strokeWidth={2} />
-      <Path
-        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 // Box with a split where the pen enters - the classic edit/compose icon.
 export function EditIcon({ size = 18, color }: IconProps) {
   return (
@@ -291,28 +260,6 @@ export function EditIcon({ size = 18, color }: IconProps) {
         d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
         stroke={color}
         strokeWidth={2.2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-// QR Code icon for invite sharing and scanner.
-export function QrCodeIcon({ size = 20, color }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M3 3h6v6H3V3zm12 0h6v6h-6V3zm0 12h6v6h-6v-6zM3 15h6v6H3v-6z"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M6 6h.01M18 6h.01M6 18h.01M15 15h2v2h-2zm3 3h3v3h-3zm0-3h3M15 21v-3"
-        stroke={color}
-        strokeWidth={2}
         strokeLinecap="round"
         strokeLinejoin="round"
       />

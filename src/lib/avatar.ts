@@ -48,16 +48,6 @@ export async function pickAndUploadAvatar(
       });
 
     if (uploadError) {
-      if (
-        uploadError.message.includes('bucket not found') ||
-        uploadError.message.includes('Bucket not found')
-      ) {
-        return {
-          url: null,
-          error:
-            'The "avatars" storage bucket has not been created yet in Supabase. Please run the provided SQL migration.',
-        };
-      }
       return { url: null, error: uploadError.message };
     }
 
@@ -70,13 +60,6 @@ export async function pickAndUploadAvatar(
       .eq('id', userId);
 
     if (updateError) {
-      if (updateError.message.includes('column') && updateError.message.includes('avatar_url')) {
-        return {
-          url: null,
-          error:
-            'The avatar_url column does not exist on profiles yet. Please run the provided SQL migration.',
-        };
-      }
       return { url: null, error: updateError.message };
     }
 

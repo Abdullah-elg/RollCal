@@ -11,7 +11,6 @@ import { useColorScheme } from 'react-native';
 import { makeType, Palette, palettes, TypeTokens } from '../theme';
 
 const STORAGE_KEY = 'socialink.themePreference';
-const OLD_STORAGE_KEY = 'socialink.themeMode';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type ThemeMode = 'light' | 'dark';

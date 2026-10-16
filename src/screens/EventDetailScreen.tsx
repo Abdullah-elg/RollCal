@@ -1,6 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import * as ExpoLinking from 'expo-linking';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,7 +12,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  Share,
   StatusBar as RNStatusBar,
   StyleSheet,
   Text,
@@ -31,6 +29,7 @@ import {
   ChevronRightIcon,
   EditIcon,
   MapPinIcon,
+  PlusIcon,
 } from '../components/icons';
 import InviteFriendsPanel from '../components/InviteFriendsPanel';
 import NavAppSheet from '../components/NavAppSheet';
@@ -40,6 +39,8 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useUnread } from '../context/UnreadContext';
 import { animateNext } from '../lib/animate';
+import { BillSummary, listEventBills } from '../lib/bills';
+import { formatCents } from '../lib/money';
 import { formatSpan } from '../lib/dates';
 import { hapticLight, hapticMedium } from '../lib/haptics';
 import { syncEventReminders } from '../lib/notifications';
@@ -49,12 +50,9 @@ import {
   loadEventInvitations,
   removeInvitation,
 } from '../lib/invitations';
-import {
-  formatEventDescription,
-  getCoverPhotoId,
-  parseEventDescription,
-  setCoverPhoto,
-} from '../lib/coverPhoto';
+import { pickAndUploadCover, setCoverPhoto } from '../lib/coverPhoto';
+import { removeEventFiles } from '../lib/photos';
+import { reopenRoll, rollState } from '../lib/roll';
 import { setRsvp } from '../lib/rsvp';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
@@ -77,7 +75,6 @@ const STATUS_LABEL: Record<Attendee['status'], string> = {
   not_going: "Can't go",
 };
 
-const UPLOAD_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 function SlideInAvatar({
   name,
@@ -146,6 +143,13 @@ function SlideInAvatar({
   );
 }
 
+function billStatusLabel(b: BillSummary): string {
+  if (b.bill.status === 'draft') return 'Draft';
+  const left = b.totalCents - b.paidCents;
+  if (b.bill.status === 'settled' || left <= 0) return 'Paid up';
+  return `${formatCents(left, b.bill.currency)} left`;
+}
+
 export default function EventDetailScreen({ navigation, route }: Props) {
   const { eventId } = route.params;
   const { session } = useAuth();
@@ -166,6 +170,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   const [confirmAction, setConfirmAction] = useState<'leave' | 'cancel' | null>(null);
   const [showNavApps, setShowNavApps] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<Attendee | null>(null);
+  const [bills, setBills] = useState<BillSummary[]>([]);
   const [invitations, setInvitations] = useState<EventInvitation[]>([]);
   const [albumPhotos, setAlbumPhotos] = useState<LoadedPhoto[]>([]);
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
@@ -207,8 +212,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       { data: rsvps },
       eventInvites,
       { data: latestMsg },
-      coverId,
       activity,
+      eventBills,
     ] = await Promise.all([
       supabase.from('rsvps').select('user_id, status, created_at').eq('event_id', eventId),
       loadEventInvitations(eventId),
@@ -219,8 +224,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
-      getCoverPhotoId(ev.id, ev),
       loadEventActivity(eventId, session?.user.id ?? ''),
+      listEventBills(eventId),
     ]);
 
     const ids = [
@@ -271,9 +276,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     setEvent(ev);
     setActivityLine(activity);
     setUploadsClosed(ev.uploads_closed);
-    setCoverPhotoId(coverId);
+    setCoverPhotoId(ev.cover_photo_id ?? null);
     setAttendees(list);
     setInvitations(eventInvites);
+    setBills(eventBills);
     setMyStatus(
       ((rsvps ?? []).find((r) => r.user_id === session?.user.id)?.status as RsvpStatus) ??
         null
@@ -316,11 +322,24 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     if (!event) return;
     hapticLight();
     setCoverPhotoId(photoId);
-    const updatedDesc = formatEventDescription(event.description, photoId);
-    setEvent((prev) =>
-      prev ? { ...prev, description: updatedDesc, cover_photo_id: photoId } : prev
-    );
-    await setCoverPhoto(event.id, photoId, event.description);
+    setEvent((prev) => (prev ? { ...prev, cover_photo_id: photoId } : prev));
+    const { error } = await setCoverPhoto(event.id, photoId);
+    if (error) Alert.alert('Could not update the event photo', error);
+  };
+
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const uploadCover = async () => {
+    if (!event || !session?.user.id) return;
+    setUploadingCover(true);
+    const { photoId, error } = await pickAndUploadCover(event.id, session.user.id);
+    setUploadingCover(false);
+    if (error) {
+      Alert.alert('Upload failed', error);
+    } else if (photoId) {
+      hapticLight();
+      // Reload so the album fetches the new photo and the header shows it.
+      load();
+    }
   };
 
   if (!loaded || !event) {
@@ -361,12 +380,12 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       !attendees.some((a) => a.userId === row.profile.id)
   );
 
-  const now = Date.now();
-  const endsAt = new Date(event.ends_at).getTime();
-  const windowCloses = endsAt + UPLOAD_WINDOW_MS;
-  const withinUploadWindow = now >= endsAt && now <= windowCloses;
-  const uploadOpen = withinUploadWindow && !uploadsClosed;
-  const msLeft = windowCloses - now;
+  const {
+    beforeEnd,
+    withinWindow: withinUploadWindow,
+    uploadOpen,
+    msLeft,
+  } = rollState(event, uploadsClosed);
   const under3Hours = uploadOpen && msLeft > 0 && msLeft <= 3 * 60 * 60 * 1000;
   const hoursLeft = Math.max(1, Math.round(msLeft / (60 * 60 * 1000)));
   const minutesLeft = Math.max(1, Math.round(msLeft / (60 * 1000)));
@@ -384,6 +403,21 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       setUploadsClosed(!next);
       Alert.alert('Could not update', error.message);
     }
+  };
+
+  const reopen = async () => {
+    hapticLight();
+    const { until, error } = await reopenRoll(event.id);
+    if (error) {
+      Alert.alert('Could not reopen the roll', error);
+      return;
+    }
+    setUploadsClosed(false);
+    setEvent((prev) =>
+      prev ? { ...prev, uploads_closed: false, uploads_reopened_until: until } : prev
+    );
+    // Move the "roll closing" reminders to the new close time.
+    syncEventReminders();
   };
 
   const chooseRsvp = async (status: RsvpStatus) => {
@@ -468,6 +502,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
   const cancelEvent = async () => {
     setConfirmAction(null);
+    await removeEventFiles(event.id);
     const { error } = await supabase.from('events').delete().eq('id', event.id);
     if (error) {
       Alert.alert('Could not cancel', error.message);
@@ -515,7 +550,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           />
         }
       >
-        {/* Full-width Cover Photo if the album has photos */}
         {coverPhoto && (
           <View style={[styles.coverContainer, { width: screenWidth }]}>
             <Image
@@ -527,7 +561,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         )}
 
         <View style={styles.bodyWrap}>
-          {/* Title Row */}
           <View style={styles.titleRow}>
             <Text
               style={coverPhoto ? styles.titleWithCover : styles.bigDisplayTitle}
@@ -551,12 +584,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             </Pressable>
           </View>
 
-          {/* Hosted by line */}
           <Text style={styles.hostLine}>
             {isLeader ? 'Hosted by you' : hostName ? `Hosted by ${hostName}` : ''}
           </Text>
 
-          {/* Date and time in text primary, location as muted text with small map icon */}
           <View style={styles.metaBlock}>
             <Text style={styles.dateText}>
               {formatSpan(event.starts_at, event.ends_at)}
@@ -575,7 +606,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             ) : null}
           </View>
 
-          {/* Live Activity Line */}
           {activityLine ? (
             <View style={styles.activityWrap}>
               <View style={styles.activityDot} />
@@ -593,16 +623,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          {(() => {
-            const cleanDesc = parseEventDescription(event.description).description;
-            return cleanDesc ? (
-              <Text style={[type.body, styles.descriptionText]}>
-                {cleanDesc}
-              </Text>
-            ) : null;
-          })()}
+          {event.description ? (
+            <Text style={[type.body, styles.descriptionText]}>{event.description}</Text>
+          ) : null}
 
-          {/* Who's going: row of overlapping circular avatars + "14 going" (tap opens member sheet) */}
           {goingCount > 0 && (
             <>
               <View style={styles.divider} />
@@ -639,7 +663,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             </>
           )}
 
-          {/* RSVP: segmented row of three options (Going / Maybe / Can't go) */}
           {!isLeader && (
             <>
               <View style={styles.divider} />
@@ -659,7 +682,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             </>
           )}
 
-          {/* Chat row: latest message preview + sender name + red unread dot */}
           {isMember && (
             <>
               <View style={styles.divider} />
@@ -692,9 +714,42 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             </>
           )}
 
+          {isMember && (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.sectionHeader}>Bills</Text>
+              {bills.map((b) => (
+                <Pressable
+                  key={b.bill.id}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [styles.billRow, pressed && { opacity: 0.7 }]}
+                  onPress={() => navigation.navigate('Bill', { billId: b.bill.id })}
+                >
+                  <View style={styles.chatInfoWrap}>
+                    <Text style={styles.chatTitle} numberOfLines={1}>
+                      {b.bill.title || 'Bill'}
+                    </Text>
+                    <Text style={styles.chatPreview} numberOfLines={1}>
+                      Paid by {b.creatorName} · {formatCents(b.totalCents, b.bill.currency)}
+                    </Text>
+                  </View>
+                  <Text style={styles.chatPreview}>{billStatusLabel(b)}</Text>
+                  <ChevronRightIcon size={16} color={colors.inkMuted} />
+                </Pressable>
+              ))}
+              <Pressable
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.billRow, pressed && { opacity: 0.7 }]}
+                onPress={() => navigation.navigate('BillReview', { eventId: event.id })}
+              >
+                <PlusIcon size={18} color={colors.ink} />
+                <Text style={[styles.chatTitle, { flex: 1 }]}>Split a bill</Text>
+              </Pressable>
+            </>
+          )}
+
           <View style={styles.divider} />
 
-          {/* Album: Photos header, Add photos terracotta button, Save all text button, 2x2 feature grid */}
           <EventAlbum
             event={event}
             isLeader={isLeader}
@@ -702,6 +757,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             refreshSeq={refreshSeq}
             onPhotosChange={setAlbumPhotos}
             uploadsClosedOverride={uploadsClosed}
+            onReopenRoll={reopen}
             coverPhotoId={coverPhotoId}
             onSetCoverPhoto={handleSetCoverPhoto}
           />
@@ -717,7 +773,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         onClose={() => setShowNavApps(false)}
       />
 
-      {/* Event Info Sheet: invite code + who's in + photo upload toggle */}
       <Modal
         visible={showInfo}
         animationType="slide"
@@ -779,7 +834,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 <EventQrPanel event={event} />
               ) : (
                 <>
-                  {/* Close uploads early toggle in info sheet */}
                   {isLeader && withinUploadWindow && (
                     <View style={styles.sheetSection}>
                       <Text style={styles.sectionHeader}>Photo uploads</Text>
@@ -801,8 +855,24 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     </View>
                   )}
 
-                  {/* Event cover photo management in info sheet */}
-                  {isLeader && albumPhotos.length > 0 && (
+                  {isLeader && !beforeEnd && !withinUploadWindow && (
+                    <View style={styles.sheetSection}>
+                      <Text style={styles.sectionHeader}>Photo uploads</Text>
+                      <Text style={type.caption}>
+                        The roll is closed. Reopen it and everyone can add photos for the
+                        next 24 hours.
+                      </Text>
+                      <Button
+                        title="Reopen for 24 hours"
+                        variant="secondary"
+                        onPress={reopen}
+                        style={{ marginTop: spacing.md }}
+                      />
+                      <View style={styles.divider} />
+                    </View>
+                  )}
+
+                  {isLeader && (
                     <View style={styles.sheetSection}>
                       <Text style={styles.sectionHeader}>Event photo</Text>
                       {coverPhoto ? (
@@ -827,17 +897,22 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                         </View>
                       ) : (
                         <Text style={type.caption}>
-                          No photo chosen. Open any photo in the album and tap "Set as event photo".
+                          Shows at the top of the event. Guests only see it in the roll once
+                          the roll opens.
                         </Text>
                       )}
+                      <Button
+                        title={coverPhoto ? 'Upload a different photo' : 'Upload a photo'}
+                        variant="secondary"
+                        onPress={uploadCover}
+                        loading={uploadingCover}
+                        style={{ marginTop: spacing.md }}
+                      />
                       <View style={styles.divider} />
                     </View>
                   )}
 
-
-                  <Text style={styles.sectionHeader}>
-                    Who's coming · {goingCount} going
-                  </Text>
+                  <Text style={styles.sectionHeader}>Who's coming</Text>
 
                   <View style={{ gap: spacing.md }}>
                     {(
@@ -1089,15 +1164,17 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     bigDisplayTitle: {
       fontFamily: fonts.display,
-      fontSize: 34,
-      lineHeight: 38,
+      fontSize: 28,
+      lineHeight: 34,
+      letterSpacing: -0.5,
       color: c.ink,
       flexShrink: 1,
     },
     titleWithCover: {
       fontFamily: fonts.display,
-      fontSize: 28,
-      lineHeight: 32,
+      fontSize: 24,
+      lineHeight: 29,
+      letterSpacing: -0.4,
       color: c.ink,
       flexShrink: 1,
     },
@@ -1246,6 +1323,12 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       alignItems: 'center',
       gap: spacing.md,
       paddingVertical: spacing.xs,
+    },
+    billRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.sm,
     },
     chatIconWrap: {
       width: 32,

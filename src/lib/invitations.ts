@@ -213,7 +213,6 @@ export async function requestInviteFriend(
 
   if (!error) return null;
   if (error.code === '23505') return 'This friend has already been requested or invited.';
-  if (error.code === '42P01') return 'Database table not ready yet. Please run the migration script.';
   return error.message;
 }
 

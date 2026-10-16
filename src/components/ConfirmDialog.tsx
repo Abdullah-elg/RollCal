@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { Palette, radii, spacing, TypeTokens } from '../theme';
 
 type Props = {
   visible: boolean;
@@ -15,7 +15,7 @@ type Props = {
 };
 
 // Themed replacement for Alert.alert confirmations, so dialogs stay in the
-// app's paper-and-terracotta language instead of the system gray.
+// app's paper-and-ink language instead of the system gray.
 export default function ConfirmDialog({
   visible,
   title,

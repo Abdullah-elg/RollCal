@@ -9,11 +9,12 @@ import {
   View,
 } from 'react-native';
 import { CheckIcon, CloseIcon } from '../components/icons';
+import SocialSignIn from '../components/SocialSignIn';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { AuthStackParamList } from '../navigation/types';
-import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, spacing, TypeTokens } from '../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
 
@@ -29,7 +30,6 @@ export default function SignUpScreen({ navigation }: Props) {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [awaitingConfirm, setAwaitingConfirm] = useState(false);
 
   const submit = async () => {
     setError(null);
@@ -44,29 +44,12 @@ export default function SignUpScreen({ navigation }: Props) {
     if (error) {
       setError(error);
     } else if (needsEmailConfirm) {
-      // Supabase's "Confirm email" setting is on: no session until the link
-      // in the email is clicked.
-      setAwaitingConfirm(true);
+      // Supabase's "Confirm email" setting is on: no session until the
+      // code from the email is entered.
+      navigation.navigate('VerifyEmail', { email: email.trim() });
     }
     // Otherwise the auth listener flips straight to the signed-in stack.
   };
-
-  if (awaitingConfirm) {
-    return (
-      <View style={[styles.screen, styles.confirmWrap]}>
-        <Text style={type.h2}>Check your email</Text>
-        <Text style={[type.bodyMuted, { marginTop: spacing.sm, marginBottom: spacing.lg }]}>
-          We sent a confirmation link to {email.trim()}. Tap it, then come back
-          and log in.
-        </Text>
-        <Button
-          title="Back to log in"
-          variant="secondary"
-          onPress={() => navigation.navigate('SignIn')}
-        />
-      </View>
-    );
-  }
 
   return (
     <FormScreen style={styles.screen}>
@@ -75,10 +58,9 @@ export default function SignUpScreen({ navigation }: Props) {
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
       >
-        <Text style={[type.title, { marginBottom: spacing.xs }]}>Create account</Text>
-        <Text style={[type.bodyMuted, { marginBottom: spacing.xl }]}>
-          Your name is how friends find you.
-        </Text>
+        <Text style={[type.title, { marginBottom: spacing.xl }]}>Create account</Text>
+
+        <SocialSignIn onShowTerms={() => setShowTermsModal(true)} />
 
         <View style={styles.nameRow}>
           <View style={{ flex: 1 }}>
@@ -86,7 +68,7 @@ export default function SignUpScreen({ navigation }: Props) {
               label="First name"
               value={firstName}
               onChangeText={setFirstName}
-              placeholder="Abdullah"
+              placeholder="Sam"
               autoComplete="given-name"
             />
           </View>
@@ -95,7 +77,7 @@ export default function SignUpScreen({ navigation }: Props) {
               label="Last name"
               value={lastName}
               onChangeText={setLastName}
-              placeholder="Elganainy"
+              placeholder="Rivera"
               autoComplete="family-name"
             />
           </View>
@@ -215,7 +197,7 @@ export default function SignUpScreen({ navigation }: Props) {
               <Text style={styles.termsSectionTitle}>3. User Content and Photos</Text>
               <Text style={type.body}>
                 You own the photos, messages, and content you post. By adding photos to a
-                shared event album, you give fellow attendees permission to view and download
+                shared event roll, you give fellow attendees permission to view and download
                 those photos. Do not upload content that violates copyright, privacy, or any laws.
               </Text>
 
@@ -257,10 +239,6 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       justifyContent: 'center',
       paddingHorizontal: spacing.lg,
     },
-    confirmWrap: {
-      justifyContent: 'center',
-      paddingHorizontal: spacing.lg,
-    },
     nameRow: {
       flexDirection: 'row',
       gap: spacing.sm,
@@ -268,8 +246,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     termsRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: spacing.md,
-      marginBottom: spacing.xs,
+      marginTop: spacing.xs,
+      marginBottom: spacing.md,
       gap: spacing.sm,
     },
     checkbox: {

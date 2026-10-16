@@ -4,7 +4,7 @@
 import { ReactNode, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, spacing, TypeTokens } from '../theme';
 import { Profile } from '../types';
 
 import Avatar from './Avatar';

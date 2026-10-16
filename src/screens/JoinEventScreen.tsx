@@ -15,7 +15,6 @@ import RsvpSelector from '../components/RsvpSelector';
 import {
   Button,
   ErrorText,
-  Field,
   FormScreen,
   PageIntro,
   SectionLabel,
@@ -23,7 +22,6 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { formatSpan } from '../lib/dates';
-import { parseEventDescription } from '../lib/coverPhoto';
 import { hapticLight } from '../lib/haptics';
 import { syncEventReminders } from '../lib/notifications';
 import { setRsvp } from '../lib/rsvp';
@@ -194,14 +192,11 @@ export default function JoinEventScreen({ navigation, route }: Props) {
                   Hosted by {hostName}
                 </Text>
               ) : null}
-              {(() => {
-                const clean = parseEventDescription(preview.description).description;
-                return clean ? (
-                  <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>
-                    {clean}
-                  </Text>
-                ) : null;
-              })()}
+              {preview.description ? (
+                <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>
+                  {preview.description}
+                </Text>
+              ) : null}
             </View>
             <SectionLabel>Are you in?</SectionLabel>
             <RsvpSelector value={null} onSelect={choose} disabled={joining} />
@@ -259,7 +254,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     codeInput: {
       flex: 1,
-      fontFamily: 'BricolageGrotesque_600SemiBold',
+      fontFamily: fonts.headingMedium,
       fontSize: 20,
       letterSpacing: 4,
       color: c.ink,

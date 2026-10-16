@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { ArrowIcon } from './icons';
-import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, spacing, TypeTokens } from '../theme';
 
 type Props = {
   value: Date;
@@ -153,7 +153,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     monthTitle: {
       fontFamily: fonts.display,
-      fontSize: 22,
+      fontSize: 18,
       color: c.ink,
     },
     weekRow: {

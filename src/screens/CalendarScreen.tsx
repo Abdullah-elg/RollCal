@@ -5,7 +5,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  SectionList,
   StyleSheet,
   Text,
   View,
@@ -14,7 +13,7 @@ import { Calendar, DateData } from 'react-native-calendars';
 import { MarkedDates } from 'react-native-calendars/src/types';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowIcon } from '../components/icons';
-import { Button, EmptyNote } from '../components/ui';
+import { Button } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useUnread } from '../context/UnreadContext';
@@ -29,7 +28,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { TabScreenProps } from '../navigation/types';
 import {
-  floatingTabBar,
+  tabBarHeight,
   fonts,
   Palette,
   radii,
@@ -72,7 +71,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const bottomInset =
     Platform.OS === 'ios'
-      ? insets.bottom + floatingTabBar.height + floatingTabBar.bottomGap
+      ? insets.bottom + tabBarHeight
       : 0;
 
   const [events, setEvents] = useState<Event[]>([]);
@@ -206,7 +205,6 @@ export default function CalendarScreen({ navigation }: Props) {
       <View style={styles.header}>
         <Text style={type.title}>Calendar</Text>
         <View style={styles.headerRight}>
-          {/* Month grid or single Day view */}
           <View style={styles.toggle}>
             {(['month', 'day'] as ViewMode[]).map((m) => (
               <Pressable
@@ -257,7 +255,7 @@ export default function CalendarScreen({ navigation }: Props) {
               textDayFontFamily: fonts.body,
               textMonthFontFamily: fonts.display,
               textDayHeaderFontFamily: fonts.bodySemiBold,
-              textMonthFontSize: 22,
+              textMonthFontSize: 18,
               textDayHeaderFontSize: 12,
             }}
           />
@@ -277,7 +275,7 @@ export default function CalendarScreen({ navigation }: Props) {
               </View>
             ) : (
               <View style={styles.emptyDayWrap}>
-                <Text style={styles.emptyText}>Nothing planned. Start something.</Text>
+                <Text style={styles.emptyText}>Nothing planned this day.</Text>
                 <Button
                   title="Plan something"
                   variant="secondary"
@@ -298,7 +296,6 @@ export default function CalendarScreen({ navigation }: Props) {
           ]}
           refreshControl={refreshControl}
         >
-          {/* Day Cycling Navigation Bar */}
           <View style={styles.dayNavCard}>
             <Pressable
               onPress={() => shiftDay(-1)}
@@ -334,7 +331,6 @@ export default function CalendarScreen({ navigation }: Props) {
             </Pressable>
           </View>
 
-          {/* Events for selected day */}
           <View style={styles.dayList}>
             {dayEvents.length > 0 ? (
               <View style={styles.eventListWrap}>
@@ -347,7 +343,7 @@ export default function CalendarScreen({ navigation }: Props) {
               </View>
             ) : (
               <View style={styles.emptyDayWrap}>
-                <Text style={styles.emptyText}>Nothing planned. Start something.</Text>
+                <Text style={styles.emptyText}>Nothing planned this day.</Text>
                 <Button
                   title="Plan something"
                   variant="secondary"

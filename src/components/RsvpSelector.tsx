@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { hapticLight, hapticMedium } from '../lib/haptics';
 import { fonts, Palette, radii, spacing } from '../theme';

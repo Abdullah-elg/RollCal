@@ -1,5 +1,5 @@
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -21,6 +21,7 @@ import { Button, ThemedSwitch } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { pickAndUploadAvatar, removeAvatar } from '../lib/avatar';
+import { supabase } from '../lib/supabase';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import {
   ALBUM_PREF_KEYS,
@@ -34,9 +35,10 @@ import {
   setReminderPrefs,
   syncEventReminders,
 } from '../lib/notifications';
+import { listPaymentMethods } from '../lib/paymentMethods';
 import { TabScreenProps } from '../navigation/types';
 import {
-  floatingTabBar,
+  tabBarHeight,
   fonts,
   Palette,
   radii,
@@ -67,7 +69,7 @@ const EVENT_ROWS: ToggleRow[] = [
 const ALBUM_ROWS: ToggleRow[] = [
   {
     key: 'albumOpen',
-    label: 'When the album opens',
+    label: 'When the roll opens',
     caption: 'When the event ends and photo uploads begin',
   },
   { key: 'albumDayLeft', label: '1 day till it closes' },
@@ -86,6 +88,11 @@ const FRIEND_ROWS: ToggleRow[] = [
     key: 'eventInvite',
     label: 'Event invitations',
     caption: 'When a friend invites you to an event',
+  },
+  {
+    key: 'billShared',
+    label: 'Bills',
+    caption: 'New bills, payments sent and received, and reminders',
   },
 ];
 
@@ -133,10 +140,29 @@ export default function SettingsScreen({ navigation }: Props) {
   const [prefs, setPrefsState] = useState<ReminderPrefs | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [paymentCount, setPaymentCount] = useState(0);
   const [openSheet, setOpenSheet] = useState<
     'event' | 'album' | 'friend' | 'chat' | null
   >(null);
+
+  // Server side lives in supabase/functions/delete-account: it removes the
+  // user's files, then the auth user, which cascades to every row of theirs.
+  const handleDeleteAccount = async () => {
+    setConfirmDelete(false);
+    setDeleting(true);
+    const { error } = await supabase.functions.invoke('delete-account', {
+      method: 'POST',
+    });
+    if (error) {
+      setDeleting(false);
+      Alert.alert('Delete account', 'Could not delete your account. Please try again.');
+      return;
+    }
+    await signOut();
+  };
 
   const handleAvatarPress = () => {
     if (uploadingAvatar || !session?.user.id) return;
@@ -196,6 +222,14 @@ export default function SettingsScreen({ navigation }: Props) {
     getReminderPrefs().then(setPrefsState);
   }, []);
 
+  const userId = session?.user.id;
+  useFocusEffect(
+    useCallback(() => {
+      if (!userId) return;
+      listPaymentMethods(userId).then((res) => setPaymentCount(res.methods.length));
+    }, [userId])
+  );
+
   const toggleReminder = async (key: keyof ReminderPrefs, next: boolean) => {
     if (!prefs) return;
     // Where notifications can't run at all (Expo Go on Android), still save
@@ -228,7 +262,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const bottomInset =
     Platform.OS === 'ios'
-      ? insets.bottom + floatingTabBar.height + floatingTabBar.bottomGap
+      ? insets.bottom + tabBarHeight
       : 0;
 
   const handleSelectPreference = (opt: 'system' | 'light' | 'dark') => {
@@ -301,7 +335,7 @@ export default function SettingsScreen({ navigation }: Props) {
             onPress={() => setOpenSheet('album')}
           >
             <View style={styles.rowText}>
-              <Text style={type.body}>Photo album reminders</Text>
+              <Text style={type.body}>Photo roll reminders</Text>
               <Text style={type.caption}>
                 {countOn([...ALBUM_PREF_KEYS])} of {ALBUM_PREF_KEYS.length} on
               </Text>
@@ -345,6 +379,24 @@ export default function SettingsScreen({ navigation }: Props) {
           ? "Reminders are scheduled on this device for events you're part of."
           : "Expo Go on Android can't deliver notifications. Your choices are saved and will start working in a development build."}
       </Text>
+
+      <Text style={styles.sectionLabel}>Payments</Text>
+      <View style={styles.card}>
+        <Pressable
+          style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+          onPress={() => navigation.navigate('PaymentMethods')}
+        >
+          <View style={styles.rowText}>
+            <Text style={type.body}>Payment methods</Text>
+            <Text style={type.caption}>
+              {paymentCount > 0
+                ? `${paymentCount} saved`
+                : 'Add where friends can pay you back'}
+            </Text>
+          </View>
+          <ChevronRightIcon size={16} color={colors.inkMuted} />
+        </Pressable>
+      </View>
 
       <Text style={styles.sectionLabel}>Account</Text>
       <View style={styles.card}>
@@ -390,18 +442,38 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
         </View>
 
-        <Button
-          title="Edit profile"
-          variant="secondary"
-          onPress={() => navigation.navigate('EditProfile')}
-          style={{ marginTop: spacing.md }}
-        />
-        <Pressable
-          onPress={() => setConfirmLogout(true)}
-          style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.7 }]}
-        >
-          <Text style={styles.logoutText}>Log out</Text>
-        </Pressable>
+        <View style={styles.accountActions}>
+          <Button
+            title="Edit profile"
+            variant="secondary"
+            onPress={() => navigation.navigate('EditProfile')}
+            style={{ flex: 1 }}
+          />
+          <Button
+            title="Log out"
+            variant="secondary"
+            onPress={() => setConfirmLogout(true)}
+            style={{ flex: 1 }}
+            textStyle={{ color: colors.danger }}
+          />
+        </View>
+
+        {/* Plain text rather than a button, so it's clearly the rarer action. */}
+        <View style={styles.deleteSection}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={deleting}
+            onPress={() => setConfirmDelete(true)}
+            hitSlop={8}
+            style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.7 }]}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color={colors.danger} />
+            ) : (
+              <Text style={styles.deleteText}>Delete account</Text>
+            )}
+          </Pressable>
+        </View>
       </View>
 
       {/* Reminder toggles live in their own slide-up sheet, one per group. */}
@@ -429,7 +501,7 @@ export default function SettingsScreen({ navigation }: Props) {
             <View style={styles.sheetHeader}>
               <Text style={type.h2}>
                 {openSheet === 'album'
-                  ? 'Album reminders'
+                  ? 'Roll reminders'
                   : openSheet === 'friend'
                     ? 'Friend notifications'
                     : openSheet === 'chat'
@@ -443,7 +515,7 @@ export default function SettingsScreen({ navigation }: Props) {
           <ScrollView contentContainerStyle={styles.content}>
             <Text style={[type.bodyMuted, { marginBottom: spacing.md }]}>
               {openSheet === 'album'
-                ? 'Nudges around the 48 hours the album stays open for uploads.'
+                ? 'Nudges around the 48 hours the roll stays open for uploads.'
                 : openSheet === 'friend'
                   ? 'Friend activity happens on other people’s phones, so these arrive when you next open the app.'
                   : openSheet === 'chat'
@@ -487,6 +559,16 @@ export default function SettingsScreen({ navigation }: Props) {
           signOut();
         }}
         onCancel={() => setConfirmLogout(false)}
+      />
+      <ConfirmDialog
+        visible={confirmDelete}
+        title="Delete your account?"
+        message="This permanently deletes your profile, friends, RSVPs, messages and photos, plus every event you created and its album. This can't be undone."
+        confirmLabel="Delete forever"
+        cancelLabel="Keep account"
+        destructive
+        onConfirm={handleDeleteAccount}
+        onCancel={() => setConfirmDelete(false)}
       />
     </ScrollView>
   </SafeAreaView>
@@ -610,13 +692,19 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       color: c.inkMuted,
       marginTop: 2,
     },
-    logoutBtn: {
+    accountActions: {
+      flexDirection: 'row',
+      gap: spacing.sm,
       marginTop: spacing.md,
-      paddingVertical: spacing.sm,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
-    logoutText: {
+    deleteSection: {
+      marginTop: spacing.md,
+    },
+    deleteBtn: {
+      alignSelf: 'center',
+      paddingVertical: spacing.xs,
+    },
+    deleteText: {
       ...t.button,
       color: c.danger,
     },

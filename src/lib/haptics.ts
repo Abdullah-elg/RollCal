@@ -1,61 +1,27 @@
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 
+// Haptics are a nice-to-have, so failures are swallowed rather than surfaced.
+const ignore = () => {};
+const enabled = Platform.OS !== 'web';
+
 export function hapticLight() {
-  if (Platform.OS === 'web') return;
-  try {
-    if (typeof Haptics?.impactAsync === 'function') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    }
-  } catch {
-    // Ignore environments where native haptics are not linked or available
-  }
+  if (enabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(ignore);
 }
 
 export function hapticMedium() {
-  if (Platform.OS === 'web') return;
-  try {
-    if (typeof Haptics?.impactAsync === 'function') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    }
-  } catch {
-    // Ignore
-  }
+  if (enabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(ignore);
 }
 
-// Vintage mechanical camera shutter release: two crisp successive clicks
+// Two quick clicks, like a mechanical camera shutter.
 export function hapticShutter() {
-  if (Platform.OS === 'web') return;
-  try {
-    if (typeof Haptics?.impactAsync === 'function') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-      setTimeout(() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      }, 70);
-    }
-  } catch {
-    // Ignore
-  }
+  if (!enabled) return;
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(ignore);
+  setTimeout(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(ignore);
+  }, 70);
 }
 
 export function hapticSuccess() {
-  if (Platform.OS === 'web') return;
-  try {
-    if (typeof Haptics?.notificationAsync === 'function') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    }
-  } catch {
-    // Ignore
-  }
-}
-
-export function hapticError() {
-  if (Platform.OS === 'web') return;
-  try {
-    if (typeof Haptics?.notificationAsync === 'function') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-    }
-  } catch {
-    // Ignore
-  }
+  if (enabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(ignore);
 }

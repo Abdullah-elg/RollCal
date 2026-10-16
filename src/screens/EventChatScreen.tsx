@@ -132,10 +132,7 @@ export default function EventChatScreen({ navigation, route }: Props) {
   }, [eventId, learnSenders, markRead]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await loadData();
-    })();
+    loadData();
 
     const channel = subscribeToMessages(eventId, (message) => {
       setMessages((prev) => {
@@ -159,7 +156,6 @@ export default function EventChatScreen({ navigation, route }: Props) {
     });
 
     return () => {
-      cancelled = true;
       channel.unsubscribe();
     };
   }, [eventId, loadData, learnSenders, markRead]);

@@ -45,7 +45,7 @@ export function formatSpan(startIso: string, endIso: string): string {
 }
 
 // "7 PM" or "7:30 PM"
-export function formatHourTime(iso: string): string {
+function formatHourTime(iso: string): string {
   const d = new Date(iso);
   const hasMins = d.getMinutes() !== 0;
   return d.toLocaleTimeString(undefined, {

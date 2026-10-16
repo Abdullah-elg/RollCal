@@ -4,8 +4,10 @@ import {
   ReactNode,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from 'react';
+import * as social from '../lib/socialAuth';
 import { supabase } from '../lib/supabase';
 import { Profile } from '../types';
 
@@ -20,7 +22,16 @@ type AuthContextValue = {
     firstName: string,
     lastName: string
   ) => Promise<{ error: string | null; needsEmailConfirm: boolean }>;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  // needsEmailConfirm: the account exists but the email code was never entered.
+  signIn: (
+    email: string,
+    password: string
+  ) => Promise<{ error: string | null; needsEmailConfirm: boolean }>;
+  // Confirms the code from the sign-up email; success signs the user in.
+  verifyEmail: (email: string, code: string) => Promise<{ error: string | null }>;
+  resendEmailCode: (email: string) => Promise<{ error: string | null }>;
+  signInWithApple: () => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   // Refetch the profile row after edits so the whole app sees new names.
   refreshProfile: () => Promise<void>;
@@ -32,6 +43,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  // Set just before an Apple sign-in, read when that new user's profile is
+  // created. A ref (not state) so the profile effect sees it immediately.
+  const pendingName = useRef<social.AppleName | null>(null);
 
   // Restore the persisted session once, then track every auth change.
   // The listener only sets state - doing Supabase calls inside it can
@@ -58,29 +72,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     let cancelled = false;
     (async () => {
-      const { data: existing, error: selectError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
-      if (selectError) {
-        console.warn('Profile load failed:', selectError.message);
+      // Retry a failed read instead of treating it as "no profile yet". Right
+      // after sign-in a phone clock that runs a little slow makes the server
+      // reject the new token ("JWT issued at future") for a second or two.
+      let existing = null;
+      for (let attempt = 0; ; attempt++) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (cancelled) return;
+        if (!error) {
+          existing = data;
+          break;
+        }
+        if (attempt === 3) {
+          console.warn('Profile load failed:', error.message);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
-      if (cancelled) return;
       if (existing) {
+        pendingName.current = null;
         setProfile(existing);
         return;
       }
-      // Names travel in auth metadata from sign-up to here; the username is
-      // the email's local part, with digits appended if it's already taken
-      // (two people at different domains can share a local part).
+      // Names come from sign-up metadata (email), the provider's profile
+      // (Google), or the one-time name Apple hands over. The username is the
+      // email's local part, with digits appended if it's already taken (two
+      // people at different domains can share a local part).
       const meta = user.user_metadata ?? {};
-      const firstName = (meta.first_name as string | undefined)?.trim() || null;
-      const lastName = (meta.last_name as string | undefined)?.trim() || null;
+      const str = (v: unknown) => (typeof v === 'string' && v.trim()) || null;
+      const [providerFirst, ...providerRest] = (str(meta.full_name) ?? str(meta.name) ?? '').split(' ');
+      const firstName =
+        pendingName.current?.first ?? str(meta.first_name) ?? str(meta.given_name) ?? str(providerFirst);
+      const lastName =
+        pendingName.current?.last ??
+        str(meta.last_name) ??
+        str(meta.family_name) ??
+        str(providerRest.join(' '));
+      pendingName.current = null;
       const displayName =
-        (meta.display_name as string | undefined) ??
-        [firstName, lastName].filter(Boolean).join(' ') ??
-        user.email?.split('@')[0] ??
+        str(meta.display_name) ||
+        [firstName, lastName].filter(Boolean).join(' ') ||
+        user.email?.split('@')[0] ||
         'Someone';
       const usernameBase =
         user.email?.split('@')[0]?.toLowerCase().replace(/[^a-z0-9._-]/g, '') ||
@@ -99,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             first_name: firstName,
             last_name: lastName,
             username,
+            avatar_url: str(meta.avatar_url) ?? str(meta.picture),
           })
           .select()
           .single();
@@ -145,8 +182,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: email.trim(),
       password,
     });
+    if (error?.code === 'email_not_confirmed') {
+      // Send a fresh code so the verify screen has something to check.
+      await supabase.auth.resend({ type: 'signup', email: email.trim() });
+      return { error: null, needsEmailConfirm: true };
+    }
+    return { error: error ? error.message : null, needsEmailConfirm: false };
+  };
+
+  const verifyEmail: AuthContextValue['verifyEmail'] = async (email, code) => {
+    const { error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: code.trim(),
+      type: 'email',
+    });
     return { error: error ? error.message : null };
   };
+
+  const resendEmailCode: AuthContextValue['resendEmailCode'] = async (email) => {
+    const { error } = await supabase.auth.resend({ type: 'signup', email: email.trim() });
+    return { error: error ? error.message : null };
+  };
+
+  const signInWithApple = () =>
+    social.signInWithApple((name) => {
+      pendingName.current = name;
+    });
+
+  const signInWithGoogle = social.signInWithGoogle;
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -165,7 +228,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ session, profile, loading, signUp, signIn, signOut, refreshProfile }}
+      value={{
+        session,
+        profile,
+        loading,
+        signUp,
+        signIn,
+        verifyEmail,
+        resendEmailCode,
+        signInWithApple,
+        signInWithGoogle,
+        signOut,
+        refreshProfile,
+      }}
     >
       {children}
     </AuthContext.Provider>

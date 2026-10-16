@@ -1,12 +1,4 @@
-import { LayoutAnimation, Platform, UIManager } from 'react-native';
-
-// Older Android architectures need layout animations switched on explicitly.
-if (
-  Platform.OS === 'android' &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import { LayoutAnimation, Platform } from 'react-native';
 
 // Call right before a setState that *replaces* content already on screen  - 
 // a pull-to-refresh, a list changing after an action - so the swap eases
