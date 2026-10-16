@@ -33,7 +33,7 @@ export default function CreateActionSheet({
   onNavigateJoinEvent,
   onPhotosUploaded,
 }: Props) {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const userId = session?.user.id;
   const { colors, type } = useTheme();
   const insets = useSafeAreaInsets();
@@ -80,7 +80,7 @@ export default function CreateActionSheet({
   const handleStartPhotoUpload = async (event: Event) => {
     if (!userId) return;
     setUploading(true);
-    const { count, error } = await pickAndUploadPhotos(event.id, userId);
+    const { count, error } = await pickAndUploadPhotos(event.id, userId, !!profile?.is_pro);
     setUploading(false);
     // pickAndUploadPhotos already plays the shutter haptic on success.
     if (count > 0) {

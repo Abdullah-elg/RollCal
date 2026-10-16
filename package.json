@@ -51,7 +51,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "postinstall": "patch-package",
-    "test": "node --test \"src/**/*.test.ts\""
+    "test": "node --test \"src/**/*.test.ts\" \"supabase/functions/**/*.test.ts\""
   },
   "private": true
 }

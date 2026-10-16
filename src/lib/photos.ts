@@ -75,16 +75,21 @@ export async function uploadPhotoAsset(
   return data.id;
 }
 
+// Free uploads are saved at 80% JPEG quality: hard to tell from the original
+// on a phone, at a fraction of the size. Pro keeps full quality.
+export const photoQuality = (isPro: boolean) => (isPro ? 1 : 0.8);
+
 // Opens the photo picker and uploads what the user chose to the event's roll.
 export async function pickAndUploadPhotos(
   eventId: string,
-  userId: string
+  userId: string,
+  isPro: boolean
 ): Promise<{ count: number; error: string | null }> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: 'images',
     allowsMultipleSelection: true,
     selectionLimit: 10,
-    quality: 0.7,
+    quality: photoQuality(isPro),
     base64: true,
   });
 

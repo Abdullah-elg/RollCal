@@ -442,6 +442,22 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
         </View>
 
+        <View style={styles.rowDivider} />
+        <Pressable
+          style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+          onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
+        >
+          <View style={styles.rowText}>
+            <Text style={type.body}>SociaLink Pro</Text>
+            <Text style={type.caption}>
+              {profile?.is_pro
+                ? 'You’re on Pro'
+                : 'Unlimited receipt scans, photos kept for good, and more'}
+            </Text>
+          </View>
+          <ChevronRightIcon size={16} color={colors.inkMuted} />
+        </Pressable>
+
         <View style={styles.accountActions}>
           <Button
             title="Edit profile"
@@ -474,6 +490,29 @@ export default function SettingsScreen({ navigation }: Props) {
             )}
           </Pressable>
         </View>
+      </View>
+
+      <Text style={styles.sectionLabel}>About</Text>
+      <View style={styles.card}>
+        {(
+          [
+            { doc: 'terms', label: 'Terms of Service' },
+            { doc: 'pro', label: 'Pro Terms' },
+            { doc: 'privacy', label: 'Privacy Policy' },
+          ] as const
+        ).map(({ doc, label }, i) => (
+          <View key={doc}>
+            {i > 0 && <View style={styles.rowDivider} />}
+            <Pressable
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+              onPress={() => navigation.navigate('Legal', { doc })}
+            >
+              <Text style={[type.body, styles.rowText]}>{label}</Text>
+              <ChevronRightIcon size={16} color={colors.inkMuted} />
+            </Pressable>
+          </View>
+        ))}
       </View>
 
       {/* Reminder toggles live in their own slide-up sheet, one per group. */}

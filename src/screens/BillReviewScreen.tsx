@@ -1,14 +1,26 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CloseIcon, PlusIcon } from '../components/icons';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { BillDraft, DraftItem, itemsTotal } from '../lib/bills';
 import { percentOf, subtotalMismatch } from '../lib/billSplit';
-import { hapticLight } from '../lib/haptics';
+import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
+import { loadScansLeft } from '../lib/pro';
+import { scanReceipt, ScanSource } from '../lib/receiptScan';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, spacing, TypeTokens } from '../theme';
 
@@ -16,8 +28,6 @@ type Props = NativeStackScreenProps<AppStackParamList, 'BillReview'>;
 
 type Line = { key: number; name: string; price: string; quantity: string };
 type TipMode = 'amount' | 'percent';
-
-const CURRENCY = 'CAD';
 
 const amountText = (cents: number) => (cents > 0 ? centsToInput(cents) : '');
 
@@ -33,9 +43,12 @@ const parseQuantity = (text: string): number | null => {
 
 export default function BillReviewScreen({ navigation, route }: Props) {
   const { eventId, draft } = route.params;
+  const { profile } = useAuth();
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const insets = useSafeAreaInsets();
+  // A scanned receipt can name its currency; typed bills are in dollars.
+  const currency = draft?.currency ?? 'CAD';
 
   const nextKey = useRef(0);
   const newLine = (item?: DraftItem): Line => ({
@@ -54,6 +67,18 @@ export default function BillReviewScreen({ navigation, route }: Props) {
   const [tipMode, setTipMode] = useState<TipMode>('amount');
   const [fees, setFees] = useState(amountText(draft?.feesCents ?? 0));
   const [submitted, setSubmitted] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  // Free scans left this month; null when Pro or not known yet.
+  const isPro = !!profile?.is_pro;
+  const [scansLeft, setScansLeft] = useState<number | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isPro) return;
+      loadScansLeft().then(setScansLeft);
+    }, [isPro])
+  );
 
   const parsed = lines.map((l) => ({
     priceCents: parseCents(l.price),
@@ -115,7 +140,7 @@ export default function BillReviewScreen({ navigation, route }: Props) {
     const bill: BillDraft = {
       eventId,
       title: title.trim(),
-      currency: CURRENCY,
+      currency,
       subtotalCents: draft ? draft.subtotalCents : itemsTotal(items),
       taxCents,
       tipCents,
@@ -126,7 +151,35 @@ export default function BillReviewScreen({ navigation, route }: Props) {
     navigation.navigate('BillShare', { draft: bill });
   };
 
-  const fmt = (cents: number) => formatCents(cents, CURRENCY);
+  const fmt = (cents: number) => formatCents(cents, currency);
+
+  // Reading takes a few seconds. On success the screen starts over with the
+  // scanned lines, so everything below is filled in for checking.
+  const scan = async (source: ScanSource) => {
+    setScanError(null);
+    if (!isPro && scansLeft === 0) {
+      navigation.navigate('Upgrade', { reason: 'scan' });
+      return;
+    }
+    const result = await scanReceipt(eventId, source, () => setScanning(true));
+    setScanning(false);
+    if ('error' in result) setScanError(result.error);
+    if ('limitReached' in result) {
+      setScansLeft(0);
+      navigation.navigate('Upgrade', { reason: 'scan' });
+    }
+    if ('draft' in result) {
+      hapticSuccess();
+      navigation.replace('BillReview', { eventId, draft: result.draft });
+    }
+  };
+  const scanCaption =
+    isPro || scansLeft === null
+      ? 'Scan the receipt and the lines fill in, or type them below.'
+      : scansLeft > 0
+        ? `${scansLeft} free ${scansLeft === 1 ? 'scan' : 'scans'} left this month. Or type the lines below.`
+        : 'You’ve used this month’s free scans. Type the lines below, or get Pro to keep scanning.';
+
   const lineError = (l: Line, i: number): string | null => {
     if (!submitted) return null;
     if (!l.name.trim()) return 'Give this line a name.';
@@ -142,6 +195,46 @@ export default function BillReviewScreen({ navigation, route }: Props) {
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
       >
+        {draft ? (
+          <Text style={[type.bodyMuted, { marginBottom: spacing.md }]}>
+            Filled in from the receipt. Check each line before you share.
+          </Text>
+        ) : scanning ? (
+          <View style={styles.scanning}>
+            <ActivityIndicator color={colors.ink} />
+            <Text style={type.bodyMuted}>Reading the receipt…</Text>
+          </View>
+        ) : (
+          <View style={{ marginBottom: spacing.md }}>
+            <View style={styles.scanButtons}>
+              <Button
+                title="Take a photo"
+                variant="secondary"
+                onPress={() => scan('camera')}
+                style={styles.scanButton}
+              />
+              <Button
+                title="Choose a photo"
+                variant="secondary"
+                onPress={() => scan('library')}
+                style={styles.scanButton}
+              />
+            </View>
+            <Text style={[type.caption, { marginTop: spacing.sm }]}>{scanCaption}</Text>
+            {!isPro && (
+              <Pressable
+                accessibilityRole="link"
+                hitSlop={14}
+                onPress={() => navigation.navigate('Upgrade', { reason: 'scan' })}
+                style={styles.proLink}
+              >
+                <Text style={styles.proLinkText}>Get Pro</Text>
+              </Pressable>
+            )}
+            <ErrorText message={scanError} />
+          </View>
+        )}
+
         <Field
           label="What was it?"
           value={title}
@@ -318,6 +411,17 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: c.paper },
     content: { padding: spacing.lg },
+    scanButtons: { flexDirection: 'row', gap: spacing.sm },
+    scanButton: { flex: 1 },
+    proLink: { alignSelf: 'flex-start', marginTop: spacing.xs },
+    proLinkText: { ...t.caption, fontFamily: fonts.bodySemiBold, color: c.ink },
+    scanning: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+      marginBottom: spacing.md,
+    },
     sectionHeader: { ...t.sectionLabel, marginBottom: spacing.sm },
     label: { ...t.caption, fontFamily: fonts.bodyMedium },
     input: {

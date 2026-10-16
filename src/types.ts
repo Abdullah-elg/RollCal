@@ -9,6 +9,8 @@ export type Profile = {
   // The email's local part (before the @); unique, used to identify people.
   username: string | null;
   avatar_url?: string | null;
+  // Set by hand in the dashboard until in-app purchases are live.
+  is_pro: boolean;
   created_at: string;
 };
 

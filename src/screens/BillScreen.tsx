@@ -6,7 +6,6 @@ import {
   InputAccessoryView,
   Keyboard,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -28,7 +27,6 @@ import { itemCoverage, ItemPick, MAX_SPLIT, Quote, quotePicks } from '../lib/bil
 import { setStringAsync } from '../lib/clipboard';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
-import { paymentLink } from '../lib/paymentLinks';
 import { copyableHandle, formatHandle, PaymentMethod, PAYMENT_TYPES } from '../lib/paymentMethods';
 import {
   countGoing,
@@ -97,7 +95,6 @@ export default function BillScreen({ navigation, route }: Props) {
   // What this person had. Kept on this phone only until they send a payment.
   const [picks, setPicks] = useState<Record<string, ItemPick>>({});
   const [error, setError] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   // Which typed chip is being edited ("itemId:1/" or "itemId:$"), so the
   // other chips on that item stop looking selected meanwhile.
   const [editingChip, setEditingChip] = useState<string | null>(null);
@@ -108,10 +105,6 @@ export default function BillScreen({ navigation, route }: Props) {
   // tap can't fire twice. The ref blocks at once; the state redraws buttons.
   const [busy, setBusy] = useState<string[]>([]);
   const busyRef = useRef(new Set<string>());
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (copiedTimer.current) clearTimeout(copiedTimer.current);
-  }, []);
 
   // Fetches names for anyone we haven't seen yet.
   const askedFor = useRef(new Set<string>());
@@ -200,8 +193,6 @@ export default function BillScreen({ navigation, route }: Props) {
     received.flatMap((p) => p.items)
   );
   const nameOf = (id: string) => (id === myId ? 'You' : (people[id]?.name ?? 'Someone'));
-  // The amount about to be sent: what they already said they sent, else their total.
-  const payAmount = mySent.length > 0 ? mySent[mySent.length - 1].amount_cents : quote.totalCents;
   const now = Date.now();
   const recentlyReminded =
     !!bill.last_reminded_at && now - Date.parse(bill.last_reminded_at) < REMIND_GAP_MS;
@@ -220,39 +211,6 @@ export default function BillScreen({ navigation, route }: Props) {
   const toggle = (itemId: string, someonePaid: boolean) => {
     if (picks[itemId]) pickItem(itemId, null);
     else pickItem(itemId, someonePaid ? EVEN_PICK : ALL_PICK);
-  };
-
-  // Opens the payment app with the amount filled in. Interac has no link, so
-  // that (and any link that fails to open) copies the handle to paste instead.
-  const pay = async (m: PaymentMethod) => {
-    setError(null);
-    const url =
-      payAmount > 0 ? paymentLink(m.type, m.handle, payAmount, bill.currency, bill.title ?? '') : null;
-    if (url) {
-      try {
-        await Linking.openURL(url);
-        hapticLight();
-        return;
-      } catch {
-        // Fall through to copying.
-      }
-    }
-    const ok = await setStringAsync(copyableHandle(m.type, m.handle));
-    if (!ok) {
-      setError('Could not copy that. Try holding the handle to copy it.');
-      return;
-    }
-    hapticLight();
-    setCopiedId(m.id);
-    if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => setCopiedId(null), 4000);
-  };
-
-  const copiedMessage = (m: PaymentMethod) => {
-    if (payAmount <= 0) return 'Copied.';
-    return m.type === 'interac'
-      ? `Copied. Send ${fmt(payAmount)} from your bank app.`
-      : `Copied. Open ${PAYMENT_TYPES[m.type].label} and send ${fmt(payAmount)}.`;
   };
 
   // Runs one write, then reloads payments. Keyed so the same row can't run
@@ -581,27 +539,6 @@ export default function BillScreen({ navigation, route }: Props) {
           </>
         )}
 
-        {/* The person who paid doesn't pay themselves. */}
-        {open && !isCreator && paymentMethods.length > 0 && (
-          <>
-            <View style={styles.divider} />
-            <Text style={styles.sectionHeader}>Pay {creatorName} with</Text>
-            {paymentMethods.map((m, i) => (
-              <View key={m.id}>
-                {i > 0 && <View style={styles.rowDivider} />}
-                <View style={styles.methodRow}>
-                  <View style={styles.rowText}>
-                    <Text style={type.body}>{PAYMENT_TYPES[m.type].label}</Text>
-                    <Text style={type.caption}>{formatHandle(m.type, m.handle)}</Text>
-                  </View>
-                  <Button title="Pay" variant="secondary" onPress={() => pay(m)} style={styles.payButton} />
-                </View>
-                {copiedId === m.id && <Text style={styles.copied}>{copiedMessage(m)}</Text>}
-              </View>
-            ))}
-          </>
-        )}
-
         {isCreator && waiting.length > 0 && (
           <>
             <View style={styles.divider} />
@@ -673,8 +610,11 @@ export default function BillScreen({ navigation, route }: Props) {
         helper={
           isCreator
             ? 'This counts toward the bill straight away.'
-            : `${creatorName} will see it and mark it received once it arrives.`
+            : `Send it with one of these, then tap Send. ${creatorName} marks it received once it arrives.`
         }
+        // The person who paid doesn't pay themselves.
+        methods={isCreator ? [] : paymentMethods}
+        payee={creatorName}
         confirmLabel={isCreator ? 'Add' : 'Send'}
         initial={quote.totalCents > 0 ? centsToInput(Math.min(quote.totalCents, left)) : ''}
         left={left}
@@ -750,6 +690,8 @@ function SendDialog({
   left,
   fmt,
   working,
+  methods,
+  payee,
   onSubmit,
   onCancel,
   styles,
@@ -762,6 +704,9 @@ function SendDialog({
   left: number;
   fmt: (cents: number) => string;
   working: boolean;
+  // Where the money can go, each with a Pay button that copies the handle.
+  methods: PaymentMethod[];
+  payee: string;
   onSubmit: (cents: number) => Promise<string | null>;
   onCancel: () => void;
   styles: Styles;
@@ -769,14 +714,35 @@ function SendDialog({
   const { type } = useTheme();
   const [text, setText] = useState(initial);
   const [problem, setProblem] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Start fresh each time it opens.
   useEffect(() => {
     if (visible) {
       setText(initial);
       setProblem(null);
+      setCopiedId(null);
     }
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Copies the handle to paste into the payment app or bank app.
+  const copy = async (m: PaymentMethod) => {
+    Keyboard.dismiss();
+    if (!(await setStringAsync(copyableHandle(m.type, m.handle)))) {
+      setProblem('Could not copy that. Try holding the handle to copy it.');
+      return;
+    }
+    hapticLight();
+    setProblem(null);
+    setCopiedId(m.id);
+  };
+
+  const typed = parseCents(text);
+  const send = typed && typed > 0 ? `send ${fmt(typed)}` : 'send it';
+  const copiedMessage = (m: PaymentMethod) =>
+    m.type === 'interac'
+      ? `Copied. Open your bank app and ${send} by e-Transfer.`
+      : `Copied. Open ${PAYMENT_TYPES[m.type].label} and ${send}.`;
 
   const submit = async () => {
     const cents = parseCents(text);
@@ -802,11 +768,35 @@ function SendDialog({
             keyboardType="decimal-pad"
             placeholder="0.00"
             placeholderTextColor={styles.splitPlaceholder.color}
-            autoFocus
             style={styles.dialogInput}
             accessibilityLabel="Amount"
           />
           {problem ? <ErrorText message={problem} /> : null}
+          {methods.length > 0 && (
+            <View style={styles.dialogMethods}>
+              <Text style={styles.sectionHeader}>Pay {payee} with</Text>
+              {methods.map((m, i) => (
+                <View key={m.id}>
+                  {i > 0 && <View style={styles.rowDivider} />}
+                  <View style={styles.methodRow}>
+                    <View style={styles.rowText}>
+                      <Text style={type.body}>{PAYMENT_TYPES[m.type].label}</Text>
+                      <Text style={type.caption} selectable>
+                        {formatHandle(m.type, m.handle)}
+                      </Text>
+                    </View>
+                    <Button
+                      title="Pay"
+                      variant="secondary"
+                      onPress={() => copy(m)}
+                      style={styles.payButton}
+                    />
+                  </View>
+                  {copiedId === m.id && <Text style={styles.copied}>{copiedMessage(m)}</Text>}
+                </View>
+              ))}
+            </View>
+          )}
           <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>{helper}</Text>
           <View style={styles.dialogButtons}>
             <Pressable
@@ -1026,6 +1016,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     chipText: { fontFamily: fonts.body, fontSize: 15, color: c.ink },
     chipTextSelected: { color: c.paper },
     splitChip: { flexDirection: 'row' },
+    dialogMethods: { marginTop: spacing.md },
     methodRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
     payButton: { minWidth: 72 },
     copied: { ...t.caption, marginTop: spacing.xs },

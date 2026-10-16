@@ -3,7 +3,9 @@
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LegalDoc } from '../legal/documents';
 import { BillDraft } from '../lib/bills';
+import { UpgradeReason } from '../lib/pro';
 
 export type AuthStackParamList = {
   SignIn: undefined;
@@ -30,6 +32,9 @@ export type AppStackParamList = {
   JoinEvent: { code?: string; openScanner?: boolean } | undefined;
   EditProfile: undefined;
   PaymentMethods: undefined;
+  // SociaLink Pro; reason is where the person came from.
+  Upgrade: { reason?: UpgradeReason } | undefined;
+  Legal: { doc: LegalDoc };
   // Bill splitting. BillReview is where a bill is typed in or a scanned one
   // is checked; BillShare picks payment methods and shares it; Bill shows a
   // shared bill.

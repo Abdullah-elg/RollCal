@@ -21,9 +21,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { animateNext } from '../lib/animate';
-import { uploadPhotoAsset } from '../lib/photos';
+import { photoQuality, uploadPhotoAsset } from '../lib/photos';
 import { rollState } from '../lib/roll';
 import { hapticLight, hapticShutter } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
@@ -213,6 +214,7 @@ export default function EventAlbum({
   coverPhotoId,
   onSetCoverPhoto,
 }: Props) {
+  const { profile } = useAuth();
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const { width: screenWidth } = useWindowDimensions();
@@ -385,7 +387,7 @@ export default function EventAlbum({
       mediaTypes: 'images',
       allowsMultipleSelection: true,
       selectionLimit: 10,
-      quality: 0.7,
+      quality: photoQuality(!!profile?.is_pro),
       base64: true,
     });
     if (result.canceled || result.assets.length === 0) return;

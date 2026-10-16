@@ -69,7 +69,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow SociaLink to access your camera to scan event QR codes.",
+          "cameraPermission": "Allow SociaLink to use your camera to scan event QR codes and receipts.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }

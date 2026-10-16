@@ -9,10 +9,12 @@ import {
   View,
 } from 'react-native';
 import { CheckIcon, CloseIcon } from '../components/icons';
+import LegalText from '../components/LegalText';
 import SocialSignIn from '../components/SocialSignIn';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { LEGAL, LegalDoc } from '../legal/documents';
 import { AuthStackParamList } from '../navigation/types';
 import { fonts, Palette, spacing, TypeTokens } from '../theme';
 
@@ -27,7 +29,7 @@ export default function SignUpScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -60,7 +62,7 @@ export default function SignUpScreen({ navigation }: Props) {
       >
         <Text style={[type.title, { marginBottom: spacing.xl }]}>Create account</Text>
 
-        <SocialSignIn onShowTerms={() => setShowTermsModal(true)} />
+        <SocialSignIn onShowTerms={() => setLegalDoc('terms')} />
 
         <View style={styles.nameRow}>
           <View style={{ flex: 1 }}>
@@ -120,9 +122,16 @@ export default function SignUpScreen({ navigation }: Props) {
               I agree to the{' '}
               <Text
                 style={[styles.termsLink, { color: colors.ink }]}
-                onPress={() => setShowTermsModal(true)}
+                onPress={() => setLegalDoc('terms')}
               >
-                Terms and Conditions
+                Terms of Service
+              </Text>{' '}
+              and{' '}
+              <Text
+                style={[styles.termsLink, { color: colors.ink }]}
+                onPress={() => setLegalDoc('privacy')}
+              >
+                Privacy Policy
               </Text>
             </Text>
           </View>
@@ -151,23 +160,23 @@ export default function SignUpScreen({ navigation }: Props) {
       </ScrollView>
 
       <Modal
-        visible={showTermsModal}
+        visible={legalDoc !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowTermsModal(false)}
+        onRequestClose={() => setLegalDoc(null)}
       >
         <View style={styles.modalOverlay}>
           <Pressable
             style={StyleSheet.absoluteFill}
-            onPress={() => setShowTermsModal(false)}
-            accessibilityLabel="Close terms dialog"
+            onPress={() => setLegalDoc(null)}
+            accessibilityLabel="Close"
           />
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={type.h2}>Terms and Conditions</Text>
+              <Text style={type.h2}>{legalDoc ? LEGAL[legalDoc].title : ''}</Text>
               <Pressable
                 hitSlop={12}
-                onPress={() => setShowTermsModal(false)}
+                onPress={() => setLegalDoc(null)}
                 style={styles.closeBtn}
               >
                 <CloseIcon size={18} color={colors.ink} />
@@ -181,44 +190,14 @@ export default function SignUpScreen({ navigation }: Props) {
               nestedScrollEnabled
               bounces
             >
-              <Text style={styles.termsSectionTitle}>1. Welcome to SociaLink</Text>
-              <Text style={type.body}>
-                SociaLink helps you organize private gatherings, coordinate with friends,
-                and contribute to shared group photo albums. By creating an account, you agree
-                to treat others respectfully and follow these basic terms.
-              </Text>
-
-              <Text style={styles.termsSectionTitle}>2. Account and Security</Text>
-              <Text style={type.body}>
-                You are responsible for keeping your login credentials secure. Please use
-                your real name and provide accurate details so your friends can recognize you.
-              </Text>
-
-              <Text style={styles.termsSectionTitle}>3. User Content and Photos</Text>
-              <Text style={type.body}>
-                You own the photos, messages, and content you post. By adding photos to a
-                shared event roll, you give fellow attendees permission to view and download
-                those photos. Do not upload content that violates copyright, privacy, or any laws.
-              </Text>
-
-              <Text style={styles.termsSectionTitle}>4. Community Standards</Text>
-              <Text style={type.body}>
-                Harassment, hate speech, spam, and abusive behavior will result in account
-                suspension or removal. Event hosts may remove or ban participants who disrupt events.
-              </Text>
-
-              <Text style={styles.termsSectionTitle}>5. Privacy and Location</Text>
-              <Text style={type.body}>
-                We respect your personal privacy. Location services are only used when you explicitly
-                choose to attach a location or pin to an event. We do not sell your personal data.
-              </Text>
+              {legalDoc && <LegalText doc={legalDoc} />}
             </ScrollView>
 
             <Button
               title="I understand and agree"
               onPress={() => {
                 setTermsAccepted(true);
-                setShowTermsModal(false);
+                setLegalDoc(null);
               }}
             />
           </View>
@@ -304,12 +283,6 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flex: 1,
     },
     termsScrollContent: {
-      gap: spacing.sm,
       paddingBottom: spacing.md,
-    },
-    termsSectionTitle: {
-      ...t.h3,
-      fontFamily: fonts.headingMedium,
-      marginTop: spacing.xs,
     },
   });

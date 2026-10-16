@@ -6,7 +6,7 @@
 -- paid the person who paid. Amounts are integer cents.
 --
 -- How a bill works:
---   * The person who paid (a Pro user) shares the bill with the event.
+--   * The person who paid shares the bill with the event.
 --   * Each person picks what they had on their own phone. Picks are private
 --     and never stored until they send a payment: "I'm paying $X for these".
 --   * A sent payment is visible to the sender and the bill's creator. Once
@@ -16,7 +16,9 @@
 --     straight away. When received payments cover the total, the bill settles.
 --
 -- Who can do what (enforced here, not just in the app):
---   * Only Pro users create bills. Members of the event see shared bills.
+--   * Anyone in an event can create a bill for it; members see shared ones.
+--   * Scanning a receipt is Pro, apart from a few free scans a month,
+--     counted in receipt_scans (see RECEIPT SCANS below).
 --   * Only the creator edits a bill, marks payments received and reminds.
 --   * Payments are sent through send_payment(), never inserted directly, and
 --     can't be edited afterwards. The sender can take one back until it's
@@ -28,7 +30,7 @@
 
 -- ----------------------------------------------------------------------------
 -- PRO FLAG
--- There's no subscription system yet. profiles.is_pro is flipped by hand in
+-- In-app purchases aren't live yet, so profiles.is_pro is flipped by hand in
 -- the dashboard (Table editor or SQL). Users can update their own profile
 -- row, so a trigger stops them changing this column from the app.
 -- ----------------------------------------------------------------------------
@@ -164,11 +166,6 @@ create index if not exists bill_payment_methods_method_idx
 -- otherwise recurse. Signed-in users only.
 -- ----------------------------------------------------------------------------
 
-create or replace function public.is_pro(uid uuid)
-returns boolean language sql stable security definer set search_path = public as $$
-  select coalesce((select is_pro from profiles where id = uid), false);
-$$;
-
 -- The creator always; event members once it's no longer a draft.
 create or replace function public.can_see_bill(bid uuid, uid uuid)
 returns boolean language sql stable security definer set search_path = public as $$
@@ -215,7 +212,6 @@ do $$
 declare f text;
 begin
   foreach f in array array[
-    'public.is_pro(uuid)',
     'public.can_see_bill(uuid, uuid)',
     'public.is_bill_creator(uuid, uuid)',
     'public.can_see_payment(uuid, uuid)',
@@ -321,8 +317,8 @@ create policy "payment_methods_delete_own" on public.payment_methods
 -- Read: the creator always; event members once it's shared (drafts stay
 --       private). The direct created_by check also lets the creator read
 --       back a row they just inserted (see the RETURNING note in policies.sql).
--- Create: Pro users only, as themselves, in an event they belong to, and it
---         starts as a draft.
+-- Create: anyone, as themselves, in an event they belong to, and it starts
+--         as a draft.
 -- Edit / delete: the creator only.
 drop policy if exists "bills_select" on public.bills;
 create policy "bills_select" on public.bills
@@ -333,12 +329,13 @@ create policy "bills_select" on public.bills
   );
 
 drop policy if exists "bills_insert_pro" on public.bills;
-create policy "bills_insert_pro" on public.bills
+drop function if exists public.is_pro(uuid);
+drop policy if exists "bills_insert_member" on public.bills;
+create policy "bills_insert_member" on public.bills
   for insert to authenticated
   with check (
     created_by = (select auth.uid())
     and status = 'draft'
-    and public.is_pro((select auth.uid()))
     and public.is_member(event_id, (select auth.uid()))
   );
 
@@ -527,6 +524,42 @@ revoke execute on function public.protect_is_pro() from public, anon, authentica
 revoke execute on function public.bill_payments_guard() from public, anon, authenticated;
 revoke execute on function public.bill_settle_check() from public, anon, authenticated;
 revoke execute on function public.bills_remind_guard() from public, anon, authenticated;
+
+
+-- ----------------------------------------------------------------------------
+-- RECEIPT SCANS
+-- One row per successful scan, written by the scan-receipt edge function with
+-- the service role. People can read their own rows (to see what's left) but
+-- never add or remove any, so the free allowance can't be reset from the app.
+-- ----------------------------------------------------------------------------
+create table if not exists public.receipt_scans (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  scanned_at timestamptz not null default now()
+);
+create index if not exists receipt_scans_user_id_idx on public.receipt_scans (user_id, scanned_at);
+
+alter table public.receipt_scans enable row level security;
+drop policy if exists "receipt_scans_select_own" on public.receipt_scans;
+create policy "receipt_scans_select_own" on public.receipt_scans
+  for select to authenticated using (user_id = (select auth.uid()));
+
+-- Free scans left this calendar month (UTC) for the signed-in user, or null
+-- for Pro (no limit). The one place the allowance is set: the app shows it
+-- and the edge function enforces it.
+create or replace function public.receipt_scans_left()
+returns integer language sql stable security invoker set search_path = public as $$
+  select case
+    when coalesce((select is_pro from profiles where id = auth.uid()), false) then null
+    else greatest(0, 3 - (
+      select count(*)::integer from receipt_scans
+      where user_id = auth.uid() and scanned_at >= date_trunc('month', now())
+    ))
+  end;
+$$;
+
+revoke execute on function public.receipt_scans_left() from public, anon;
+grant execute on function public.receipt_scans_left() to authenticated;
 
 
 -- ----------------------------------------------------------------------------

@@ -32,6 +32,9 @@ import EventDetailScreen from '../screens/EventDetailScreen';
 import FindPeopleScreen from '../screens/FindPeopleScreen';
 import FriendRequestsScreen from '../screens/FriendRequestsScreen';
 import FriendsScreen from '../screens/FriendsScreen';
+import LegalScreen from '../screens/LegalScreen';
+import UpgradeScreen from '../screens/UpgradeScreen';
+import { LEGAL } from '../legal/documents';
 import PaymentMethodsScreen from '../screens/PaymentMethodsScreen';
 import SentRequestsScreen from '../screens/SentRequestsScreen';
 import EventInvitationsScreen from '../screens/EventInvitationsScreen';
@@ -381,6 +384,16 @@ export default function RootNavigator() {
             name="PaymentMethods"
             component={PaymentMethodsScreen}
             options={{ title: 'Payment methods' }}
+          />
+          <AppStack.Screen
+            name="Upgrade"
+            component={UpgradeScreen}
+            options={{ title: 'SociaLink Pro' }}
+          />
+          <AppStack.Screen
+            name="Legal"
+            component={LegalScreen}
+            options={({ route }) => ({ title: LEGAL[route.params.doc].title })}
           />
           <AppStack.Screen
             name="BillReview"

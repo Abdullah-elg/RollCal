@@ -158,12 +158,12 @@ export async function createAndShareBill(
     .select('id')
     .single();
   if (billError || !bill) {
-    // 42501 = row-level security said no; for bills that means not Pro.
+    // 42501 = row-level security said no: they're no longer in the event.
     return {
       billId: null,
       error:
         billError?.code === '42501'
-          ? 'Splitting a bill needs SociaLink Pro.'
+          ? 'Only people in this event can add a bill to it.'
           : 'Could not save the bill. Please try again.',
     };
   }
