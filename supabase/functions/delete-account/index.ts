@@ -1,4 +1,4 @@
-// SociaLink "Delete account" (App Store guideline 5.1.1(v)).
+// RollCal "Delete account" (App Store guideline 5.1.1(v)).
 //
 // Called from Settings with the signed-in user's JWT:
 //   supabase.functions.invoke('delete-account', { method: 'POST' })

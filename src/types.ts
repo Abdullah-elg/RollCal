@@ -19,6 +19,11 @@ export type Photo = {
   event_id: string;
   uploader_id: string;
   storage_path: string;
+  // Filled in by the database from the stored file (see media.sql).
+  kind: 'photo' | 'video';
+  size_bytes: number | null;
+  // Videos only; from the phone's picker, for the "0:42" on the tile.
+  duration_ms: number | null;
   created_at: string;
 };
 

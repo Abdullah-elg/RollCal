@@ -75,6 +75,11 @@ const ALBUM_ROWS: ToggleRow[] = [
   { key: 'albumDayLeft', label: '1 day till it closes' },
   { key: 'albumHourLeft', label: '1 hour till it closes' },
   { key: 'albumClosed', label: 'When it closes' },
+  {
+    key: 'photosExpiring',
+    label: 'Before photos are deleted',
+    caption: 'A week and a day before a free event’s photos are deleted',
+  },
 ];
 
 const FRIEND_ROWS: ToggleRow[] = [
@@ -448,7 +453,7 @@ export default function SettingsScreen({ navigation }: Props) {
           onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
         >
           <View style={styles.rowText}>
-            <Text style={type.body}>SociaLink Pro</Text>
+            <Text style={type.body}>RollCal Pro</Text>
             <Text style={type.caption}>
               {profile?.is_pro
                 ? 'You’re on Pro'

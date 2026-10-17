@@ -34,7 +34,7 @@ export async function scanReceipt(
   if (source === 'camera') {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      return { error: 'SociaLink needs the camera to scan receipts. You can allow it in Settings.' };
+      return { error: 'RollCal needs the camera to scan receipts. You can allow it in Settings.' };
     }
   }
   // Half quality keeps the upload small; receipt text stays sharp.

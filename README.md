@@ -1,4 +1,4 @@
-# SociaLink
+# RollCal
 
 Plan an event with friends, chat while it's coming up, and share one photo roll once it's over.
 
@@ -39,18 +39,18 @@ npm install
 cp .env.example .env   # then fill in your Supabase URL and anon key
 ```
 
-In the Supabase SQL editor, run `supabase/schema-updates.sql`, then `supabase/policies.sql`. Both are safe to re-run. Deploy `supabase/functions/join` with JWT verification turned off so invite links work for people who aren't signed in.
+In the Supabase SQL editor, run these in order: `supabase/schema-updates.sql`, `supabase/policies.sql`, `supabase/bills.sql`, `supabase/media.sql`, then `supabase/security.sql`. All are safe to re-run. Deploy `supabase/functions/join` with JWT verification turned off so invite links work for people who aren't signed in.
 
 ### Sign-in providers
 
 All of this is in the Supabase dashboard under **Authentication**.
 
-**Redirect URL.** Under URL Configuration, add `socialink://**` to the redirect allow list. Google sign-in returns to the app through it.
+**Redirect URL.** Under URL Configuration, add `rollcal://**` to the redirect allow list. Google sign-in returns to the app through it.
 
 **Email verification.** Under Sign In / Providers → Email, turn on **Confirm email**. Then, under Emails → **Confirm signup**, make the template show the code rather than a link, for example:
 
 ```html
-<h2>Your SociaLink code</h2>
+<h2>Your RollCal code</h2>
 <p>Enter this code in the app: <strong>{{ .Token }}</strong></p>
 ```
 
@@ -66,8 +66,8 @@ The app asks for that code right after sign-up, and again if someone tries to lo
 No iOS or Android client IDs are needed, because sign-in runs in a browser sheet.
 
 **Apple (iOS).** Leave the Secret Key, Team ID and Key ID fields empty. They're only for web sign-in, and the app uses the native iOS flow.
-1. In your Apple Developer account, enable *Sign in with Apple* for the App ID `com.abdullah.elg.SociaLink`. EAS does this for you on the first build if you let it manage credentials.
-2. In Supabase → Providers → Apple, turn it on and add `com.abdullah.elg.SociaLink` under Client IDs.
+1. In your Apple Developer account, enable *Sign in with Apple* for the App ID `app.rollcal`. EAS does this for you on the first build if you let it manage credentials.
+2. In Supabase → Providers → Apple, turn it on and add `app.rollcal` under Client IDs.
 
 The native flow needs nothing else. Apple sign-in isn't shown on Android, which only offers Google and email.
 

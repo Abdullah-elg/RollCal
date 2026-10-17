@@ -1,6 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { File, Paths } from 'expo-file-system';
-import * as ImagePicker from 'expo-image-picker';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -23,15 +26,25 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useProPrompt } from '../context/ProPromptContext';
 import { animateNext } from '../lib/animate';
-import { photoQuality, uploadPhotoAsset } from '../lib/photos';
+import { daysLeft, loadPhotoExpiry, PhotoExpiry, WARN_DAYS } from '../lib/expiry';
+import { pickRollMedia, uploadBlocker, uploadRollMedia } from '../lib/photos';
 import { rollState } from '../lib/roll';
-import { hapticLight, hapticShutter } from '../lib/haptics';
+import { hapticLight } from '../lib/haptics';
 import { supabase } from '../lib/supabase';
+import {
+  formatBytes,
+  loadUploadAllowance,
+  nearAllowance,
+  overAllowance,
+  UploadAllowance,
+} from '../lib/uploads';
+import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Event, Photo } from '../types';
 import ConfirmDialog from './ConfirmDialog';
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon } from './icons';
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, PlayIcon } from './icons';
 import { Button, EmptyNote } from './ui';
 
 const BUCKET = 'event-photos';
@@ -115,16 +128,56 @@ function ExposureCounter({ count }: { count: number }) {
   );
 }
 
+function formatDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+// Stands in for a thumbnail: videos aren't signed until they're opened.
+function VideoTileFace({ durationMs }: { durationMs: number | null }) {
+  const { colors, mode, type } = useTheme();
+  // Dark in either mode, but lifted off the page in dark mode so the tile
+  // still reads as a tile.
+  const bg = mode === 'dark' ? colors.line : colors.ink;
+  const fg = mode === 'dark' ? colors.ink : colors.paper;
+
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        { backgroundColor: bg, alignItems: 'center', justifyContent: 'center' },
+      ]}
+    >
+      <PlayIcon size={28} color={fg} />
+      {durationMs != null && (
+        <Text
+          style={{
+            ...type.caption,
+            position: 'absolute',
+            right: spacing.xs,
+            bottom: spacing.xs,
+            color: fg,
+            fontVariant: ['tabular-nums'],
+          }}
+        >
+          {formatDuration(durationMs)}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 // Grid tile; new uploads fade in like a print developing.
 function DevelopingPhotoItem({
-  uri,
+  photo,
   style,
   imageStyle,
   isDeveloping,
   onPress,
   children,
 }: {
-  uri?: string | null;
+  photo: LoadedPhoto;
   style: any;
   imageStyle: any;
   isDeveloping?: boolean;
@@ -132,6 +185,9 @@ function DevelopingPhotoItem({
   children?: React.ReactNode;
 }) {
   const { mode } = useTheme();
+  const uri = photo.url;
+  const face =
+    photo.kind === 'video' ? <VideoTileFace durationMs={photo.duration_ms} /> : null;
   const anim = useRef(new Animated.Value(isDeveloping ? 0 : 1)).current;
 
   useEffect(() => {
@@ -149,6 +205,7 @@ function DevelopingPhotoItem({
     return (
       <Pressable onPress={onPress} style={style}>
         {uri ? <Image source={{ uri }} style={imageStyle} /> : null}
+        {face}
         {children}
       </Pressable>
     );
@@ -175,6 +232,7 @@ function DevelopingPhotoItem({
           style={[imageStyle, { opacity: imageOpacity }]}
         />
       ) : null}
+      {face}
 
       <Animated.View
         pointerEvents="none"
@@ -203,6 +261,40 @@ function DevelopingPhotoItem({
   );
 }
 
+function RollVideoPlayer({ uri }: { uri: string }) {
+  // Released on unmount, so it stops when the page changes or the viewer closes.
+  const player = useVideoPlayer(uri, (p) => {
+    p.play();
+  });
+  return <VideoView player={player} nativeControls contentFit="contain" style={{ width: '100%', height: '100%' }} />;
+}
+
+// Signs the video only once its page is showing.
+function RollVideo({ storagePath }: { storagePath: string }) {
+  const { colors, type } = useTheme();
+  const [uri, setUri] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(storagePath, 3600)
+      .then(({ data }) => {
+        if (cancelled) return;
+        if (data) setUri(data.signedUrl);
+        else setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [storagePath]);
+
+  if (uri) return <RollVideoPlayer uri={uri} />;
+  if (failed) return <Text style={[type.caption, { color: colors.inkMuted }]}>Couldn’t load this video.</Text>;
+  return <ActivityIndicator color={colors.accent} />;
+}
+
 export default function EventAlbum({
   event,
   isLeader,
@@ -215,6 +307,8 @@ export default function EventAlbum({
   onSetCoverPhoto,
 }: Props) {
   const { profile } = useAuth();
+  const { showProPrompt } = useProPrompt();
+  const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const { width: screenWidth } = useWindowDimensions();
@@ -229,6 +323,7 @@ export default function EventAlbum({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [busySaving, setBusySaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [allowance, setAllowance] = useState<UploadAllowance | null>(null);
   const [developingIds, setDevelopingIds] = useState<Set<string>>(new Set());
   const hasLoadedRef = useRef(false);
   const flatListRef = useRef<FlatList<LoadedPhoto>>(null);
@@ -349,10 +444,12 @@ export default function EventAlbum({
     }
 
     let urlByPath = new Map<string, string>();
-    if (rows.length > 0) {
+    // Videos are signed when opened, not for the grid.
+    const stills = rows.filter((r) => r.kind !== 'video');
+    if (stills.length > 0) {
       const { data: signed } = await supabase.storage
         .from(BUCKET)
-        .createSignedUrls(rows.map((r) => r.storage_path), 3600);
+        .createSignedUrls(stills.map((r) => r.storage_path), 3600);
       signed?.forEach((s) => {
         if (s.signedUrl && s.path) urlByPath.set(s.path, s.signedUrl);
       });
@@ -376,49 +473,86 @@ export default function EventAlbum({
     onPhotosChange?.(loadedList);
     setLoaded(true);
     hasLoadedRef.current = true;
+    return loadedList;
   }, [event.id, onPhotosChange]);
+
+  const refreshAllowance = useCallback(async () => {
+    setAllowance(await loadUploadAllowance());
+  }, []);
+
+  useEffect(() => {
+    refreshAllowance();
+  }, [refreshAllowance]);
+
+  // When the photos are deleted (free hosts' events), or null if kept.
+  const [expiry, setExpiry] = useState<PhotoExpiry | null>(null);
+  useEffect(() => {
+    let live = true;
+    loadPhotoExpiry([event.id]).then((map) => {
+      if (live) setExpiry(map[event.id] ?? null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [event.id, refreshSeq]);
+
+  // In the last week, remind the host once a day that Pro would keep them.
+  useEffect(() => {
+    const at = expiry?.expiresAt;
+    if (!isLeader || !at || expiry?.expiredAt || daysLeft(at) > WARN_DAYS) return;
+    const key = `socialink.expiryPrompt.${event.id}`;
+    const today = new Date().toDateString();
+    AsyncStorage.getItem(key)
+      .then((shown) => {
+        if (shown === today) return;
+        AsyncStorage.setItem(key, today);
+        showProPrompt('expiry');
+      })
+      .catch(() => {});
+  }, [expiry, isLeader, event.id, showProPrompt]);
 
   useEffect(() => {
     load();
   }, [load, refreshSeq]);
 
   const addPhotos = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'images',
-      allowsMultipleSelection: true,
-      selectionLimit: 10,
-      quality: photoQuality(!!profile?.is_pro),
-      base64: true,
-    });
-    if (result.canceled || result.assets.length === 0) return;
-
-    let done = 0;
-    const newUploadedIds: string[] = [];
-    setUploading(`0/${result.assets.length}`);
-    for (const asset of result.assets) {
-      try {
-        newUploadedIds.push(await uploadPhotoAsset(event.id, userId, asset));
-        done += 1;
-        setUploading(`${done}/${result.assets.length}`);
-      } catch (err) {
-        Alert.alert(
-          'Upload failed',
-          err instanceof Error ? err.message : 'Something went wrong.'
-        );
-        break;
-      }
+    const isPro = !!profile?.is_pro;
+    const blocked = await uploadBlocker(isPro);
+    if (blocked === 'storage') {
+      showProPrompt('storage');
+      return;
     }
+    if (blocked) {
+      setNotice(blocked);
+      return;
+    }
+    const assets = await pickRollMedia(isPro);
+    if (assets.length === 0) return;
+
+    setUploading(`0/${assets.length}`);
+    const { uploaded, needsPro, problems } = await uploadRollMedia(
+      event.id,
+      userId,
+      isPro,
+      assets,
+      (done, total) => setUploading(`${done}/${total}`)
+    );
     setUploading(null);
-    if (newUploadedIds.length > 0) {
-      hapticShutter();
-      setDevelopingIds(new Set(newUploadedIds));
+
+    // uploadRollMedia plays the shutter haptic when something went up.
+    if (uploaded === 0) hapticLight();
+    const knownIds = new Set(photos.map((p) => p.id));
+    const fresh = await load();
+    if (uploaded > 0 && fresh) {
+      setDevelopingIds(new Set(fresh.filter((p) => !knownIds.has(p.id)).map((p) => p.id)));
       setTimeout(() => {
         setDevelopingIds(new Set());
       }, 1500);
-    } else {
-      hapticLight();
     }
-    load();
+    refreshAllowance();
+
+    if (problems.length > 0) setNotice(problems[0]);
+    if (needsPro) showProPrompt(needsPro);
   };
 
   const saveToDevice = async (photo: LoadedPhoto): Promise<boolean> => {
@@ -432,14 +566,15 @@ export default function EventAlbum({
     }
     const { status } = await MediaLibrary.requestPermissionsAsync(true);
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow photo access to save pictures.');
+      Alert.alert('Permission needed', 'Allow photo access to save to your camera roll.');
       return false;
     }
     const { data } = await supabase.storage
       .from(BUCKET)
       .createSignedUrl(photo.storage_path, 300);
     if (!data) return false;
-    const filename = photo.storage_path.split('/').pop() ?? 'photo.jpg';
+    // The extension (.jpg, .mp4, .mov) tells the library what it's saving.
+    const filename = photo.storage_path.split('/').pop() ?? (photo.kind === 'video' ? 'video.mp4' : 'photo.jpg');
     const target = new File(Paths.cache, filename);
     if (target.exists) target.delete();
     const downloaded = await File.downloadFileAsync(data.signedUrl, target);
@@ -456,7 +591,7 @@ export default function EventAlbum({
         setNotice('Saved to your camera roll.');
       }
     } catch {
-      Alert.alert('Save failed', 'Could not save this photo.');
+      Alert.alert('Save failed', 'Could not save this one.');
     } finally {
       setBusySaving(false);
     }
@@ -476,12 +611,12 @@ export default function EventAlbum({
         hapticLight();
         setNotice(
           done === 1
-            ? 'Photo saved to your camera roll.'
-            : `All ${done} photos saved to your camera roll.`
+            ? 'Saved to your camera roll.'
+            : `All ${done} saved to your camera roll.`
         );
       }
     } catch {
-      Alert.alert('Save failed', `Saved ${done} of ${photos.length} photos.`);
+      Alert.alert('Save failed', `Saved ${done} of ${photos.length}.`);
     } finally {
       setSavingAll(null);
     }
@@ -543,6 +678,22 @@ export default function EventAlbum({
     }
   }
 
+  // Free events: how long the photos are kept, or that they've gone.
+  const photosExpired = !!expiry?.expiredAt;
+  const expiresAt = expiry?.expiresAt ?? null;
+  const expiringSoon = !photosExpired && !!expiresAt && daysLeft(expiresAt) <= WARN_DAYS;
+  let expiryLine: string | null = null;
+  if (photosExpired) {
+    statusLine = 'Roll closed.';
+    mutedSummaryLine = null;
+    expiryLine = 'This event’s photos were deleted 30 days after it ended.';
+  } else if (expiresAt && !beforeEnd) {
+    const days = daysLeft(expiresAt);
+    expiryLine = expiringSoon
+      ? `Photos are deleted ${days <= 1 ? 'tomorrow' : `in ${days} days`}. Save the ones you want.`
+      : `Photos are kept until ${new Date(expiresAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}.`;
+  }
+
   const hasCover = useMemo(() => {
     return !!coverPhotoId && photos.some((p) => p.id === coverPhotoId);
   }, [coverPhotoId, photos]);
@@ -562,8 +713,16 @@ export default function EventAlbum({
 
   const viewerList = displayPhotos;
   const viewerPhoto = viewerIndex !== null ? viewerList[viewerIndex] : null;
+  const viewerIsVideo = viewerPhoto?.kind === 'video';
   const canDeleteViewer =
     viewerPhoto != null && (isLeader || viewerPhoto.uploader_id === userId);
+
+  let allowanceNote: string | null = null;
+  if (allowance && overAllowance(allowance)) {
+    allowanceNote = `You’ve used this month’s ${formatBytes(allowance.monthLimit)}. Uploads open again on the 1st.`;
+  } else if (allowance && nearAllowance(allowance)) {
+    allowanceNote = `You’ve uploaded ${formatBytes(allowance.monthUsed)} of your ${formatBytes(allowance.monthLimit)} this month.`;
+  }
 
   const colWidth = Math.floor((screenWidth - GRID_GAP * 2) / 3);
   const featureSize = colWidth * 2 + GRID_GAP;
@@ -616,11 +775,27 @@ export default function EventAlbum({
           {mutedSummaryLine && (
             <Text style={styles.mutedSummaryLine}>{mutedSummaryLine}</Text>
           )}
+          {expiryLine && (
+            <View style={styles.allowanceRow}>
+              <Text style={[styles.mutedSummaryLine, expiringSoon && styles.urgentStatusLine]}>
+                {expiryLine}
+              </Text>
+              {expiringSoon && isLeader && (
+                <Pressable
+                  accessibilityRole="link"
+                  onPress={() => showProPrompt('expiry')}
+                  style={({ pressed }) => [styles.allowanceLink, pressed && { opacity: 0.6 }]}
+                >
+                  <Text style={styles.allowanceLinkText}>Keep them with Pro</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
         </View>
       )}
 
       {/* Before the roll opens, the host sets the cover from the event info sheet. */}
-      {(uploadOpen || (isLeader && !beforeEnd)) && (
+      {(uploadOpen || (isLeader && !beforeEnd && !photosExpired)) && (
         <View style={styles.actionRow}>
           {uploadOpen && (
             <Button
@@ -630,7 +805,7 @@ export default function EventAlbum({
               style={styles.actionButton}
             />
           )}
-          {isLeader && !beforeEnd && !uploadOpen && onReopenRoll && (
+          {isLeader && !beforeEnd && !uploadOpen && !photosExpired && onReopenRoll && (
             <Button
               title="Reopen for 24 hours"
               onPress={onReopenRoll}
@@ -644,6 +819,21 @@ export default function EventAlbum({
               onPress={openCoverPicker}
               style={styles.actionButton}
             />
+          )}
+        </View>
+      )}
+
+      {uploadOpen && allowanceNote && (
+        <View style={styles.allowanceRow}>
+          <Text style={styles.allowanceText}>{allowanceNote}</Text>
+          {!allowance?.isPro && (
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => navigation.navigate('Upgrade', { reason: 'storage' })}
+              style={({ pressed }) => [styles.allowanceLink, pressed && { opacity: 0.6 }]}
+            >
+              <Text style={styles.allowanceLinkText}>Get Pro</Text>
+            </Pressable>
           )}
         </View>
       )}
@@ -665,7 +855,7 @@ export default function EventAlbum({
                 return (
                   <DevelopingPhotoItem
                     key={photo.id}
-                    uri={photo.url}
+                    photo={photo}
                     imageStyle={styles.gridImage}
                     isDeveloping={developingIds.has(photo.id)}
                     onPress={() => setViewerIndex(index)}
@@ -682,7 +872,7 @@ export default function EventAlbum({
           ) : displayPhotos.length === 1 ? (
             /* Single cover photo */
             <DevelopingPhotoItem
-              uri={displayPhotos[0].url}
+              photo={displayPhotos[0]}
               imageStyle={styles.gridImage}
               isDeveloping={developingIds.has(displayPhotos[0].id)}
               onPress={() => setViewerIndex(0)}
@@ -696,7 +886,7 @@ export default function EventAlbum({
             /* 2 photos with cover featured */
             <View style={[styles.featureRow, { height: featureSize }]}>
               <DevelopingPhotoItem
-                uri={displayPhotos[0].url}
+                photo={displayPhotos[0]}
                 imageStyle={styles.gridImage}
                 isDeveloping={developingIds.has(displayPhotos[0].id)}
                 onPress={() => setViewerIndex(0)}
@@ -711,7 +901,7 @@ export default function EventAlbum({
                 </View>
               </DevelopingPhotoItem>
               <DevelopingPhotoItem
-                uri={displayPhotos[1].url}
+                photo={displayPhotos[1]}
                 imageStyle={styles.gridImage}
                 isDeveloping={developingIds.has(displayPhotos[1].id)}
                 onPress={() => setViewerIndex(1)}
@@ -726,7 +916,7 @@ export default function EventAlbum({
             <>
               <View style={[styles.featureRow, { height: featureSize }]}>
                 <DevelopingPhotoItem
-                  uri={displayPhotos[0].url}
+                  photo={displayPhotos[0]}
                   imageStyle={styles.gridImage}
                   isDeveloping={developingIds.has(displayPhotos[0].id)}
                   onPress={() => setViewerIndex(0)}
@@ -749,14 +939,14 @@ export default function EventAlbum({
                   }}
                 >
                   <DevelopingPhotoItem
-                    uri={displayPhotos[1].url}
+                    photo={displayPhotos[1]}
                     imageStyle={styles.gridImage}
                     isDeveloping={developingIds.has(displayPhotos[1].id)}
                     onPress={() => setViewerIndex(1)}
                     style={{ width: sideRemainingWidth, height: colWidth }}
                   />
                   <DevelopingPhotoItem
-                    uri={displayPhotos[2].url}
+                    photo={displayPhotos[2]}
                     imageStyle={styles.gridImage}
                     isDeveloping={developingIds.has(displayPhotos[2].id)}
                     onPress={() => setViewerIndex(2)}
@@ -774,7 +964,7 @@ export default function EventAlbum({
                     return (
                       <DevelopingPhotoItem
                         key={photo.id}
-                        uri={photo.url}
+                        photo={photo}
                         imageStyle={styles.gridImage}
                         isDeveloping={developingIds.has(photo.id)}
                         onPress={() => setViewerIndex(realIndex)}
@@ -881,6 +1071,7 @@ export default function EventAlbum({
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
                 keyExtractor={(p) => p.id}
+                extraData={viewerIndex}
                 initialScrollIndex={viewerIndex ?? 0}
                 getItemLayout={(_, i) => ({
                   length: screenWidth,
@@ -904,8 +1095,21 @@ export default function EventAlbum({
                   )
                 }
                 style={{ flex: 1 }}
-                renderItem={({ item }) =>
-                  Platform.OS === 'ios' ? (
+                renderItem={({ item, index }) =>
+                  item.kind === 'video' ? (
+                    <View
+                      style={[
+                        styles.viewerScrollContent,
+                        { width: screenWidth, height: '100%' },
+                      ]}
+                      onTouchStart={handleTouchStart}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchCancel={handleTouchCancel}
+                    >
+                      {index === viewerIndex && <RollVideo storagePath={item.storage_path} />}
+                    </View>
+                  ) : Platform.OS === 'ios' ? (
                     <ScrollView
                       maximumZoomScale={3}
                       minimumZoomScale={1}
@@ -993,9 +1197,9 @@ export default function EventAlbum({
 
             {notice && <Text style={styles.viewerNotice}>{notice}</Text>}
 
-            {(isLeader || canDeleteViewer) && (
+            {((isLeader && !viewerIsVideo) || canDeleteViewer) && (
               <View style={styles.viewerBottom}>
-                {isLeader && (
+                {isLeader && !viewerIsVideo && (
                   <Pressable
                     onPress={() => toggleCoverPhoto(viewerPhoto.id)}
                     hitSlop={8}
@@ -1025,7 +1229,9 @@ export default function EventAlbum({
                     hitSlop={8}
                     style={({ pressed }) => [pressed && { opacity: 0.7 }]}
                   >
-                    <Text style={styles.viewerDelete}>Delete photo</Text>
+                    <Text style={styles.viewerDelete}>
+                      {viewerIsVideo ? 'Delete video' : 'Delete photo'}
+                    </Text>
                   </Pressable>
                 )}
               </View>
@@ -1075,7 +1281,7 @@ export default function EventAlbum({
               showsVerticalScrollIndicator={false}
             >
               <View style={[styles.uniformGrid, { width: screenWidth }]}>
-                {photos.map((photo, index) => {
+                {photos.filter((p) => p.kind !== 'video').map((photo, index) => {
                   const colIndex = index % 3;
                   const isLastInRow = colIndex === 2;
                   const isSelected = selectedCoverId === photo.id;
@@ -1154,7 +1360,11 @@ export default function EventAlbum({
 
       <ConfirmDialog
         visible={confirmDeleteId !== null}
-        title="Delete this photo?"
+        title={
+          photos.find((p) => p.id === confirmDeleteId)?.kind === 'video'
+            ? 'Delete this video?'
+            : 'Delete this photo?'
+        }
         message="It comes out of the roll for everyone."
         confirmLabel="Delete"
         destructive
@@ -1297,6 +1507,26 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flex: 1,
       height: 44,
       paddingHorizontal: spacing.xs,
+    },
+    allowanceRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      columnGap: spacing.xs,
+      marginBottom: spacing.sm,
+    },
+    allowanceText: {
+      ...t.caption,
+      color: c.inkMuted,
+    },
+    allowanceLink: {
+      minHeight: 44,
+      justifyContent: 'center',
+    },
+    allowanceLinkText: {
+      ...t.caption,
+      fontFamily: fonts.bodySemiBold,
+      color: c.ink,
     },
     notice: {
       ...t.caption,

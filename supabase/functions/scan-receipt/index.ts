@@ -1,4 +1,4 @@
-// SociaLink "Scan a receipt": a photo in, a bill draft out.
+// RollCal "Scan a receipt": a photo in, a bill draft out.
 //
 // Called from the bill review screen with the signed-in user's JWT:
 //   supabase.functions.invoke('scan-receipt', { body: { image, mimeType } })
@@ -6,7 +6,7 @@
 // Gemini, the answer is checked and turned into whole cents, and the draft
 // comes back for the person to check before they share it.
 //
-// Pro users scan as much as they like; everyone else gets a few free scans a
+// Pro users scan as much as they like; everyone else gets one free scan a
 // month (receipt_scans_left() in bills.sql sets the number). A scan that
 // fails or finds no receipt isn't counted.
 //
@@ -118,7 +118,7 @@ Deno.serve(async (req: Request) => {
   if (allowanceError) return json(401, { error: 'Not signed in' });
   if (scansLeft === 0) {
     return json(403, {
-      error: 'You’ve used your free scans this month. Get Pro to scan as many as you like.',
+      error: 'You’ve used your free scan this month. Get Pro to scan as many as you like.',
       code: 'scan_limit',
     });
   }

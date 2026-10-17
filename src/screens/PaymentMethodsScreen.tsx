@@ -142,7 +142,7 @@ export default function PaymentMethodsScreen(_props: Props) {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[type.bodyMuted, { marginBottom: spacing.md }]}>
           Where friends send money when you pay for the group. Nothing moves
-          through SociaLink.
+          through RollCal.
         </Text>
         {loaded && methods.length === 0 ? (
           <EmptyNote>No payment methods yet.</EmptyNote>

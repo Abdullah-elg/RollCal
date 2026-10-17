@@ -1,5 +1,4 @@
 import * as Clipboard from '../lib/clipboard';
-import * as ExpoLinking from 'expo-linking';
 import { useMemo, useState } from 'react';
 import {
   Pressable,
@@ -12,6 +11,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useTheme } from '../context/ThemeContext';
 import { formatSpan } from '../lib/dates';
 import { hapticLight } from '../lib/haptics';
+import { joinUrl } from '../lib/links';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { CheckIcon, CopyIcon } from './icons';
 import { Button } from './ui';
@@ -32,11 +32,9 @@ export default function EventQrPanel({ event }: Props) {
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const [copied, setCopied] = useState(false);
 
-  // Deep link URL encoded into the QR code
-  const appUrl = ExpoLinking.createURL(`join/${event.invite_code}`);
-  const webUrl =
-    `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/join` +
-    `?code=${event.invite_code}&to=${encodeURIComponent(appUrl)}`;
+  // One link for the QR code and for sharing: it opens the app when it's
+  // installed and the join page on rollcal.app when it isn't.
+  const webUrl = joinUrl(event.invite_code);
 
   const copyCode = async () => {
     try {
@@ -52,7 +50,7 @@ export default function EventQrPanel({ event }: Props) {
   const shareLink = () => {
     Share.share({
       message:
-        `Join "${event.title}" on SociaLink!\n` +
+        `Join "${event.title}" on RollCal!\n` +
         `${formatSpan(event.starts_at, event.ends_at)}` +
         (event.location ? `\n${event.location}` : '') +
         `\n\nTap to join: ${webUrl}` +
@@ -109,7 +107,7 @@ export default function EventQrPanel({ event }: Props) {
       </View>
 
       <Text style={styles.hint}>
-        Scan with any phone camera app or SociaLink to open and join this event.
+        Scan with any phone camera app or RollCal to open and join this event.
       </Text>
 
       <Button

@@ -1,0 +1,2 @@
+# Cloudflare Pages: every invite link is served by the one join page.
+/join/*  /join/index.html  200

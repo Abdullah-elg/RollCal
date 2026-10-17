@@ -42,7 +42,7 @@ export async function signInWithApple(
 }
 
 // Google goes through Supabase's hosted OAuth page in an in-app browser,
-// which then redirects back to socialink://auth-callback with the tokens.
+// which then redirects back to rollcal://auth-callback with the tokens.
 export async function signInWithGoogle(): Promise<{ error: string | null }> {
   const redirectTo = Linking.createURL('auth-callback');
   const { data, error } = await supabase.auth.signInWithOAuth({

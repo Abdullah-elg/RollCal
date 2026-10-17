@@ -1,5 +1,5 @@
 -- ============================================================================
--- SociaLink - Row Level Security policies + Storage setup
+-- RollCal - Row Level Security policies + Storage setup
 -- Run this ONCE in the Supabase SQL editor (Dashboard -> SQL Editor -> New query).
 -- It is idempotent: safe to re-run (drops and recreates its own objects).
 --
@@ -340,7 +340,8 @@ create policy "event_bans_delete_leader" on public.event_bans
 -- and the policies parse the event id out of the first path segment.
 --
 -- Read: event members - forever.
--- Upload: event members, into their events only. (48h window = app logic.)
+-- Upload: event members, into their events only, within their upload
+--         allowance (see media.sql). (48h window = app logic.)
 -- Delete: the file's uploader (owner) or the event leader.
 -- ----------------------------------------------------------------------------
 insert into storage.buckets (id, name, public)
@@ -355,13 +356,8 @@ create policy "event_photos_read_member" on storage.objects
     and public.is_member(((storage.foldername(name))[1])::uuid, auth.uid())
   );
 
-drop policy if exists "event_photos_upload_member" on storage.objects;
-create policy "event_photos_upload_member" on storage.objects
-  for insert to authenticated
-  with check (
-    bucket_id = 'event-photos'
-    and public.is_member(((storage.foldername(name))[1])::uuid, auth.uid())
-  );
+-- Upload: the policy lives in media.sql, which adds the monthly upload
+-- allowance. Run media.sql after this file.
 
 -- (The invite landing page is served by the "join" Edge Function, not
 -- Storage - Supabase deliberately refuses to render HTML from the storage

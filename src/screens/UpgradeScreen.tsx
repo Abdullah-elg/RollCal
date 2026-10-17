@@ -60,20 +60,29 @@ export default function UpgradeScreen({ navigation, route }: Props) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={content}>
         <Text style={type.display}>You’re on Pro.</Text>
-        <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>Thanks for supporting SociaLink.</Text>
+        <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>Thanks for supporting RollCal.</Text>
         {perks}
       </ScrollView>
     );
   }
+
+  const headline =
+    reason === 'scan'
+      ? 'You’ve used this month’s free scan.'
+      : reason === 'video'
+        ? 'Share videos with Pro.'
+        : reason === 'storage'
+          ? 'You’ve used this month’s uploads.'
+          : reason === 'expiry'
+            ? 'Keep your event’s photos.'
+            : 'Get more out of RollCal.';
 
   const price = plan === 'yearly' ? PRO_PRICES.yearly : PRO_PRICES.monthly;
   const store = Platform.OS === 'ios' ? 'Apple ID' : 'Google Play account';
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={content}>
-      <Text style={type.display}>
-        {reason === 'scan' ? 'You’ve used this month’s free scans.' : 'Get more out of SociaLink.'}
-      </Text>
+      <Text style={type.display}>{headline}</Text>
       <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>
         Pro is {PRO_PRICES.trialDays} days free, then {PRO_PRICES.monthly} a month or{' '}
         {PRO_PRICES.yearly} a year.

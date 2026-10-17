@@ -43,3 +43,6 @@ platform-tools/
 # generated native folders
 /ios
 /android
+
+# Local simulator builds (xcodebuild -derivedDataPath build)
+/build

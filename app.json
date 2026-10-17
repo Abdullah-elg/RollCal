@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "SociaLink",
-    "slug": "SociaLink",
-    "scheme": "socialink",
+    "name": "RollCal",
+    "slug": "rollcal",
+    "scheme": "rollcal",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,12 +10,15 @@
     "backgroundColor": "#F6F4EE",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.abdullah.elg.SociaLink",
+      "bundleIdentifier": "app.rollcal",
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "associatedDomains": [
+        "applinks:rollcal.app"
+      ]
     },
     "android": {
       "versionCode": 1,
@@ -27,7 +30,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize",
-      "package": "com.abdullah.elg.SociaLink",
+      "package": "app.rollcal",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyAUQLgVNsIcqyKtK786U_cj7dGDaX-2-W0"
@@ -36,6 +39,28 @@
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_MEDIA_AUDIO"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "rollcal.app",
+              "pathPrefix": "/join"
+            },
+            {
+              "scheme": "https",
+              "host": "rollcal.app",
+              "pathPrefix": "/event"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ]
     },
     "web": {
@@ -60,7 +85,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow SociaLink to access your location to set event locations.",
+          "locationWhenInUsePermission": "Allow RollCal to access your location to set event locations.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
           "motionUsagePermission": false
@@ -69,7 +94,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow SociaLink to use your camera to scan event QR codes and receipts.",
+          "cameraPermission": "Allow RollCal to use your camera to scan event QR codes and receipts.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -77,19 +102,20 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow SociaLink to access your photos to upload event photos and profile pictures."
+          "photosPermission": "Allow RollCal to access your photos to upload event photos and profile pictures."
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow SociaLink to access your photos to upload event photos and profile pictures.",
-          "savePhotosPermission": "Allow SociaLink to save event photos to your library.",
+          "photosPermission": "Allow RollCal to access your photos to upload event photos and profile pictures.",
+          "savePhotosPermission": "Allow RollCal to save event photos to your library.",
           "isAccessMediaLocationEnabled": false
         }
       ],
       "expo-web-browser",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-video"
     ]
   }
 }

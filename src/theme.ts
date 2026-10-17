@@ -1,4 +1,4 @@
-// Design foundation for SociaLink.
+// Design foundation for RollCal.
 // Film-camera feel: paper, ink and a deep film green. Components get the active palette via
 // useTheme() from src/context/ThemeContext - never import a palette directly
 // into a component, or dark mode won't reach it.

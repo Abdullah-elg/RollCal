@@ -1,4 +1,4 @@
-// Small shared UI kit in the SociaLink design language. Every screen builds
+// Small shared UI kit in the RollCal design language. Every screen builds
 // from these instead of restyling raw primitives, so the look stays coherent.
 //
 // Where the accent goes, app-wide - keep new screens to these rules:

@@ -15,6 +15,7 @@ import { CloseIcon, PlusIcon } from '../components/icons';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useProPrompt } from '../context/ProPromptContext';
 import { BillDraft, DraftItem, itemsTotal } from '../lib/bills';
 import { percentOf, subtotalMismatch } from '../lib/billSplit';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
@@ -45,6 +46,7 @@ export default function BillReviewScreen({ navigation, route }: Props) {
   const { eventId, draft } = route.params;
   const { profile } = useAuth();
   const { colors, type } = useTheme();
+  const { showProPrompt } = useProPrompt();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const insets = useSafeAreaInsets();
   // A scanned receipt can name its currency; typed bills are in dollars.
@@ -158,7 +160,7 @@ export default function BillReviewScreen({ navigation, route }: Props) {
   const scan = async (source: ScanSource) => {
     setScanError(null);
     if (!isPro && scansLeft === 0) {
-      navigation.navigate('Upgrade', { reason: 'scan' });
+      showProPrompt('scan');
       return;
     }
     const result = await scanReceipt(eventId, source, () => setScanning(true));
@@ -166,7 +168,7 @@ export default function BillReviewScreen({ navigation, route }: Props) {
     if ('error' in result) setScanError(result.error);
     if ('limitReached' in result) {
       setScansLeft(0);
-      navigation.navigate('Upgrade', { reason: 'scan' });
+      showProPrompt('scan');
     }
     if ('draft' in result) {
       hapticSuccess();
@@ -178,7 +180,7 @@ export default function BillReviewScreen({ navigation, route }: Props) {
       ? 'Scan the receipt and the lines fill in, or type them below.'
       : scansLeft > 0
         ? `${scansLeft} free ${scansLeft === 1 ? 'scan' : 'scans'} left this month. Or type the lines below.`
-        : 'You’ve used this month’s free scans. Type the lines below, or get Pro to keep scanning.';
+        : 'You’ve used this month’s free scan. Type the lines below, or get Pro to keep scanning.';
 
   const lineError = (l: Line, i: number): string | null => {
     if (!submitted) return null;

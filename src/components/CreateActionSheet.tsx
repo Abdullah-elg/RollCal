@@ -12,9 +12,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useProPrompt } from '../context/ProPromptContext';
+import { ProPromptReason } from '../lib/pro';
 import { ArrowIcon, CalendarIcon, CameraIcon, CloseIcon, TicketIcon } from './icons';
 import { hapticLight } from '../lib/haptics';
-import { getOpenUploadEvents, pickAndUploadPhotos } from '../lib/photos';
+import { getOpenUploadEvents, pickRollMedia, uploadBlocker, uploadRollMedia } from '../lib/photos';
 import { fonts, Palette, spacing, TypeTokens } from '../theme';
 import { Event } from '../types';
 
@@ -36,6 +38,7 @@ export default function CreateActionSheet({
   const { session, profile } = useAuth();
   const userId = session?.user.id;
   const { colors, type } = useTheme();
+  const { showProPrompt } = useProPrompt();
   const insets = useSafeAreaInsets();
   const styles = React.useMemo(() => makeStyles(colors, type), [colors, type]);
 
@@ -79,20 +82,41 @@ export default function CreateActionSheet({
 
   const handleStartPhotoUpload = async (event: Event) => {
     if (!userId) return;
+    const blocked = await uploadBlocker(!!profile?.is_pro);
+    if (blocked === 'storage') {
+      promptAfterClosing('storage');
+      return;
+    }
+    if (blocked) {
+      Alert.alert('Upload limit reached', blocked);
+      return;
+    }
+    const assets = await pickRollMedia(!!profile?.is_pro);
+    if (assets.length === 0) return;
     setUploading(true);
-    const { count, error } = await pickAndUploadPhotos(event.id, userId, !!profile?.is_pro);
+    const { uploaded, needsPro, problems } = await uploadRollMedia(
+      event.id,
+      userId,
+      !!profile?.is_pro,
+      assets
+    );
     setUploading(false);
-    // pickAndUploadPhotos already plays the shutter haptic on success.
-    if (count > 0) {
+    // uploadRollMedia already plays the shutter haptic on success.
+    if (uploaded > 0) {
       onClose();
-      onPhotosUploaded?.(event.id, count);
+      onPhotosUploaded?.(event.id, uploaded);
     }
-    if (error) {
-      Alert.alert(
-        count > 0 ? `Uploaded ${count}, then one failed` : 'Upload failed',
-        error
-      );
+    if (problems.length > 0) {
+      Alert.alert(uploaded > 0 ? 'Some files were skipped' : 'Upload failed', problems[0]);
     }
+    if (needsPro) promptAfterClosing(needsPro);
+  };
+
+  // The sheet is a modal too; let it finish closing before the Pro pop-up
+  // opens, or iOS drops the second one.
+  const promptAfterClosing = (reason: ProPromptReason) => {
+    onClose();
+    setTimeout(() => showProPrompt(reason), 350);
   };
 
   // Always pick the event first, even with only one open roll, so it's clear

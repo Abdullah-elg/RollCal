@@ -79,7 +79,7 @@ export default function QRScannerModal({
       onScanned(parsed);
     } else {
       scannedRef.current = true;
-      setErrorNotice('Not a valid SociaLink QR code');
+      setErrorNotice('Not a valid RollCal QR code');
       setTimeout(() => {
         setErrorNotice(null);
         scannedRef.current = false;
@@ -119,7 +119,7 @@ export default function QRScannerModal({
             <Text style={styles.fallbackText}>
               {mountError
                 ? "The camera isn't available right now. You can enter the invite code instead."
-                : 'SociaLink needs camera access to scan event QR codes.'}
+                : 'RollCal needs camera access to scan event QR codes.'}
             </Text>
             {!mountError && (
               <Button
@@ -173,7 +173,7 @@ export default function QRScannerModal({
 
             <View style={styles.maskBottom}>
               <Text style={styles.instruction}>
-                Point camera at a SociaLink event QR code
+                Point camera at a RollCal event QR code
               </Text>
               {errorNotice ? (
                 <Text style={styles.errorBanner}>{errorNotice}</Text>

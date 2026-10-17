@@ -1,4 +1,4 @@
-# Generates SociaLink's app icon, Android adaptive layers, splash mark and favicon.
+# Generates RollCal's app icon, Android adaptive layers, splash mark and favicon.
 # Run from the repo root: python3 scripts/generate-icons.py (needs Pillow).
 #
 # The mark is a calendar with one day circled, sitting on a frame of film:

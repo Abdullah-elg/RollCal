@@ -1,5 +1,5 @@
 -- ============================================================================
--- SociaLink - Bill splitting: tables, RLS, triggers and the receipts bucket
+-- RollCal - Bill splitting: tables, RLS and triggers
 -- Run in the Supabase SQL editor after policies.sql. Safe to re-run.
 --
 -- No money moves through the app. A bill records what was bought and who has
@@ -17,7 +17,7 @@
 --
 -- Who can do what (enforced here, not just in the app):
 --   * Anyone in an event can create a bill for it; members see shared ones.
---   * Scanning a receipt is Pro, apart from a few free scans a month,
+--   * Scanning a receipt is Pro, apart from one free scan a month,
 --     counted in receipt_scans (see RECEIPT SCANS below).
 --   * Only the creator edits a bill, marks payments received and reminds.
 --   * Payments are sent through send_payment(), never inserted directly, and
@@ -551,7 +551,7 @@ create or replace function public.receipt_scans_left()
 returns integer language sql stable security invoker set search_path = public as $$
   select case
     when coalesce((select is_pro from profiles where id = auth.uid()), false) then null
-    else greatest(0, 3 - (
+    else greatest(0, 1 - (
       select count(*)::integer from receipt_scans
       where user_id = auth.uid() and scanned_at >= date_trunc('month', now())
     ))
@@ -577,47 +577,3 @@ begin
   end if;
 end $$;
 
-
--- ----------------------------------------------------------------------------
--- STORAGE: the receipts bucket
--- Private. Files live at {event_id}/{bill_id}.jpg and the policies read the
--- event id from the first folder.
--- Read: event members (and the uploader, so uploads can read their row back).
--- Upload / replace / delete: the uploader, inside an event they belong to.
--- ----------------------------------------------------------------------------
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('receipts', 'receipts', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
-on conflict (id) do update
-  set public = false,
-      file_size_limit = excluded.file_size_limit,
-      allowed_mime_types = excluded.allowed_mime_types;
-
-drop policy if exists "receipts_read_member" on storage.objects;
-create policy "receipts_read_member" on storage.objects
-  for select to authenticated
-  using (
-    bucket_id = 'receipts'
-    and (
-      owner = (select auth.uid())
-      or public.is_member(((storage.foldername(name))[1])::uuid, (select auth.uid()))
-    )
-  );
-
-drop policy if exists "receipts_upload_member" on storage.objects;
-create policy "receipts_upload_member" on storage.objects
-  for insert to authenticated
-  with check (
-    bucket_id = 'receipts'
-    and public.is_member(((storage.foldername(name))[1])::uuid, (select auth.uid()))
-  );
-
-drop policy if exists "receipts_update_owner" on storage.objects;
-create policy "receipts_update_owner" on storage.objects
-  for update to authenticated
-  using (bucket_id = 'receipts' and owner = (select auth.uid()))
-  with check (bucket_id = 'receipts' and owner = (select auth.uid()));
-
-drop policy if exists "receipts_delete_owner" on storage.objects;
-create policy "receipts_delete_owner" on storage.objects
-  for delete to authenticated
-  using (bucket_id = 'receipts' and owner = (select auth.uid()));

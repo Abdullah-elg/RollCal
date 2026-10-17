@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Platform } from 'react-native';
 import { formatCents } from './money';
+import { loadPhotoExpiry } from './expiry';
 import { rollClosesAt } from './roll';
 import { supabase } from './supabase';
 
@@ -53,6 +54,8 @@ export type ReminderPrefs = {
   albumDayLeft: boolean;
   albumHourLeft: boolean;
   albumClosed: boolean;
+  // A week and a day before a free event's photos are deleted.
+  photosExpiring: boolean;
   // Friend activity. Unlike the two groups above, these can't be scheduled
   // ahead of time - they're things other people do - so they're delivered
   // when the app next loads your friend data. See notifyFriendActivity.
@@ -77,6 +80,7 @@ const DEFAULT_PREFS: ReminderPrefs = {
   albumDayLeft: false,
   albumHourLeft: false,
   albumClosed: false,
+  photosExpiring: true,
   friendRequest: true,
   friendAccepted: true,
   eventInvite: true,
@@ -97,6 +101,7 @@ export const ALBUM_PREF_KEYS = [
   'albumDayLeft',
   'albumHourLeft',
   'albumClosed',
+  'photosExpiring',
 ] as const;
 
 export const FRIEND_PREF_KEYS = [
@@ -162,6 +167,12 @@ export async function syncEventReminders(): Promise<void> {
     const { data: events } = await supabase.from('events').select('*');
     if (!events) return;
 
+    // Photos on free events are deleted after 30 days; warn a week and a
+    // day ahead. The host's notice also mentions Pro, which would keep them.
+    const expiry = prefs.photosExpiring ? await loadPhotoExpiry(events.map((e) => e.id)) : {};
+    const { data: auth } = await supabase.auth.getSession();
+    const me = auth.session?.user.id;
+
     const now = Date.now();
     const planned: { at: number; title: string; body: string }[] = [];
     const plan = (at: number, title: string, body: string) => {
@@ -193,7 +204,15 @@ export async function syncEventReminders(): Promise<void> {
         plan(closes - HOUR, e.title, 'Last hour to add photos to the roll.');
       }
       if (prefs.albumClosed) {
-        plan(closes, e.title, 'The roll is closed. The photos are yours to keep.');
+        plan(closes, e.title, 'The roll is closed. Save the photos you want to keep.');
+      }
+
+      const expiresAt = expiry[e.id]?.expiresAt;
+      if (expiresAt && !expiry[e.id]?.expiredAt) {
+        const at = new Date(expiresAt).getTime();
+        const proNote = e.creator_id === me ? ' Get Pro to keep them for good.' : '';
+        plan(at - 7 * DAY, e.title, `The photos will be deleted in a week. Save the ones you want.${proNote}`);
+        plan(at - DAY, e.title, `The photos will be deleted tomorrow. Save the ones you want.${proNote}`);
       }
     }
 

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Join an event on RollCal</title>
+  <meta name="description" content="You're invited to an event on RollCal.">
+  <link rel="icon" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <a class="brand" href="/"><img src="/icon.png" alt="">RollCal</a>
+    <!-- People with the app installed never see this page: the link opens
+         the app directly. Everyone else lands here. -->
+    <h1>You’re invited.</h1>
+    <p class="muted">Open RollCal to join, or enter this code in the app with “Join with code”.</p>
+    <div class="code" id="code">--------</div>
+    <p><a class="button" id="open" href="rollcal://">Open in RollCal</a></p>
+    <p class="muted" style="margin-top:28px">Don’t have RollCal yet?</p>
+    <div class="stores">
+      <a class="secondary" href="#" data-store="ios">Download on the App Store</a>
+      <a class="secondary" href="#" data-store="android">Get it on Google Play</a>
+    </div>
+    <footer>
+      <a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="mailto:support@rollcal.app">Help</a>
+    </footer>
+  </main>
+  <script>
+    // The code is the last part of the address (/join/ABCD1234); ?code= works too.
+    var part = location.pathname.split('/').filter(Boolean)[1] || '';
+    if (part === 'index.html') part = '';
+    var code = (part || new URLSearchParams(location.search).get('code') || '')
+      .toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+    if (code) {
+      document.getElementById('code').textContent = code;
+      document.getElementById('open').href = 'rollcal://join/' + code;
+    } else {
+      document.getElementById('code').style.display = 'none';
+    }
+  </script>
+</body>
+</html>

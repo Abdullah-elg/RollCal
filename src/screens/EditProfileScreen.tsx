@@ -172,6 +172,7 @@ export default function EditProfileScreen({ navigation }: Props) {
               value={firstName}
               onChangeText={setFirstName}
               autoComplete="given-name"
+              maxLength={40}
             />
           </View>
           <View style={{ flex: 1 }}>
@@ -180,6 +181,7 @@ export default function EditProfileScreen({ navigation }: Props) {
               value={lastName}
               onChangeText={setLastName}
               autoComplete="family-name"
+              maxLength={40}
             />
           </View>
         </View>
@@ -189,6 +191,7 @@ export default function EditProfileScreen({ navigation }: Props) {
           onChangeText={(v) => setUsername(v.toLowerCase())}
           autoCapitalize="none"
           autoCorrect={false}
+          maxLength={40}
         />
         <Text style={[type.caption, { marginTop: -spacing.sm, marginBottom: spacing.md }]}>
           Unique to you. It's how friends find you. Lowercase letters,

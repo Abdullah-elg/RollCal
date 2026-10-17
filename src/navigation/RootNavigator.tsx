@@ -11,10 +11,18 @@ import * as ExpoLinking from 'expo-linking';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { PixelRatio, Platform, Pressable, StyleSheet, View } from 'react-native';
+import {
+  PixelRatio,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { WEB_ORIGIN } from '../lib/links';
+import { ProPromptProvider } from '../context/ProPromptContext';
 import { useUnread } from '../context/UnreadContext';
 import { ArrowIcon } from '../components/icons';
 import { CalendarBlank, Gear, Ticket, Users } from 'phosphor-react-native';
@@ -163,7 +171,9 @@ function TabsNavigator() {
             title: 'New',
             tabBarLabel: () => null,
             tabBarAccessibilityLabel: 'New',
-            tabBarIcon: () => <NewTabIcon tile={colors.accent} mark={colors.onAccent} />,
+            tabBarIcon: () => (
+              <NewTabIcon tile={colors.accent} mark={colors.onAccent} />
+            ),
             // With no label, centre the tile in the row instead of the icon slot.
             tabBarIconStyle: { flex: 1, justifyContent: 'center' },
           }}
@@ -205,17 +215,20 @@ function TabsNavigator() {
         onClose={() => setCreateSheetOpen(false)}
         onNavigateNewEvent={() => navigation.navigate('CreateEvent')}
         onNavigateJoinEvent={() => navigation.navigate('JoinEvent')}
-        onPhotosUploaded={(eventId) => navigation.navigate('EventDetail', { eventId })}
+        onPhotosUploaded={(eventId) =>
+          navigation.navigate('EventDetail', { eventId })
+        }
       />
     </>
   );
 }
 
-// Deep links: exp://.../--/join/CODE in Expo Go, socialink://join/CODE in a
-// real build. Opening one lands on the Join screen with the code prefilled.
+// Deep links: https://rollcal.app/join/CODE (the shared link; opens the app
+// when installed), rollcal://join/CODE, and exp://.../--/join/CODE in Expo Go.
+// Opening one lands on the Join screen with the code prefilled.
 // Only matches while signed in (the signed-out stack has no such route).
 const linking = {
-  prefixes: [ExpoLinking.createURL('/'), 'socialink://'],
+  prefixes: [ExpoLinking.createURL('/'), 'rollcal://', WEB_ORIGIN],
   config: {
     screens: {
       JoinEvent: 'join/:code',
@@ -233,7 +246,11 @@ const PLUS_ARM = PixelRatio.roundToNearestPixel(6.5);
 const PLUS_SIZE = PLUS_ARM * 2 + PLUS_THICKNESS;
 
 function NewTabIcon({ tile, mark }: { tile: string; mark: string }) {
-  const bar = { position: 'absolute' as const, backgroundColor: mark, borderRadius: 1 };
+  const bar = {
+    position: 'absolute' as const,
+    backgroundColor: mark,
+    borderRadius: 1,
+  };
   return (
     <View
       style={{
@@ -246,8 +263,28 @@ function NewTabIcon({ tile, mark }: { tile: string; mark: string }) {
       }}
     >
       <View style={{ width: PLUS_SIZE, height: PLUS_SIZE }}>
-        <View style={[bar, { left: PLUS_ARM, top: 0, width: PLUS_THICKNESS, height: PLUS_SIZE }]} />
-        <View style={[bar, { left: 0, top: PLUS_ARM, width: PLUS_SIZE, height: PLUS_THICKNESS }]} />
+        <View
+          style={[
+            bar,
+            {
+              left: PLUS_ARM,
+              top: 0,
+              width: PLUS_THICKNESS,
+              height: PLUS_SIZE,
+            },
+          ]}
+        />
+        <View
+          style={[
+            bar,
+            {
+              left: 0,
+              top: PLUS_ARM,
+              width: PLUS_SIZE,
+              height: PLUS_THICKNESS,
+            },
+          ]}
+        />
       </View>
     </View>
   );
@@ -326,113 +363,119 @@ export default function RootNavigator() {
     >
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
       {session ? (
-        <AppStack.Navigator
-          screenOptions={({ navigation }) => ({
-            ...headerOptions,
-            headerBackButtonDisplayMode: 'minimal',
-            headerLeft: ({ canGoBack }) =>
-              canGoBack ? (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  hitSlop={12}
-                  style={{
-                    marginLeft: Platform.OS === 'ios' ? 8 : 0,
-                    paddingVertical: 6,
-                    paddingRight: 12,
-                    justifyContent: 'center',
-                  }}
-                >
-                  <ArrowIcon size={20} color={colors.ink} direction="left" />
-                </Pressable>
-              ) : null,
-          })}
+        <ProPromptProvider
+          onSeePro={(reason) => navRef.navigate('Upgrade', { reason })}
         >
-          <AppStack.Screen
-            name="Tabs"
-            component={TabsNavigator}
-            options={{ headerShown: false }}
-          />
-          <AppStack.Screen
-            name="CreateEvent"
-            component={CreateEventScreen}
-            options={({ route }) => ({
-              presentation: 'modal',
-              title: route.params?.editEventId ? 'Edit event' : 'New event',
+          <AppStack.Navigator
+            screenOptions={({ navigation }) => ({
+              ...headerOptions,
+              headerBackButtonDisplayMode: 'minimal',
+              headerLeft: ({ canGoBack }) =>
+                canGoBack ? (
+                  <Pressable
+                    onPress={() => navigation.goBack()}
+                    hitSlop={12}
+                    style={{
+                      marginLeft: Platform.OS === 'ios' ? 8 : 0,
+                      paddingVertical: 6,
+                      paddingRight: 12,
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <ArrowIcon size={20} color={colors.ink} direction="left" />
+                  </Pressable>
+                ) : null,
             })}
-          />
-          <AppStack.Screen
-            name="EventDetail"
-            component={EventDetailScreen}
-            options={{ title: '' }}
-          />
-          <AppStack.Screen
-            name="EventChat"
-            component={EventChatScreen}
-            options={({ route }) => ({ title: route.params.title })}
-          />
-          <AppStack.Screen
-            name="JoinEvent"
-            component={JoinEventScreen}
-            options={{ presentation: 'modal', title: 'Join an event' }}
-          />
-          <AppStack.Screen
-            name="EditProfile"
-            component={EditProfileScreen}
-            options={{ title: 'Edit profile' }}
-          />
-          <AppStack.Screen
-            name="PaymentMethods"
-            component={PaymentMethodsScreen}
-            options={{ title: 'Payment methods' }}
-          />
-          <AppStack.Screen
-            name="Upgrade"
-            component={UpgradeScreen}
-            options={{ title: 'SociaLink Pro' }}
-          />
-          <AppStack.Screen
-            name="Legal"
-            component={LegalScreen}
-            options={({ route }) => ({ title: LEGAL[route.params.doc].title })}
-          />
-          <AppStack.Screen
-            name="BillReview"
-            component={BillReviewScreen}
-            options={({ route }) => ({
-              title: route.params.draft ? 'Check the bill' : 'New bill',
-            })}
-          />
-          <AppStack.Screen
-            name="BillShare"
-            component={BillShareScreen}
-            options={{ title: 'Share bill' }}
-          />
-          <AppStack.Screen
-            name="Bill"
-            component={BillScreen}
-            options={{ title: '' }}
-          />
-          <AppStack.Screen
-            name="FindPeople"
-            component={FindPeopleScreen}
-            options={{ title: 'Search users' }}
-          />
-          <AppStack.Screen
-            name="FriendRequests"
-            component={FriendRequestsScreen}
-            options={{ title: 'Friend requests' }}
-          />
-          <AppStack.Screen
-            name="SentRequests"
-            component={SentRequestsScreen}
-            options={{ title: 'Sent requests' }}
-          />
-          <AppStack.Screen
-            name="EventInvitations"
-            component={EventInvitationsScreen}
-            options={{ title: 'Invitations' }}
-          />
-        </AppStack.Navigator>
+          >
+            <AppStack.Screen
+              name="Tabs"
+              component={TabsNavigator}
+              options={{ headerShown: false }}
+            />
+            <AppStack.Screen
+              name="CreateEvent"
+              component={CreateEventScreen}
+              options={({ route }) => ({
+                presentation: 'modal',
+                title: route.params?.editEventId ? 'Edit event' : 'New event',
+              })}
+            />
+            <AppStack.Screen
+              name="EventDetail"
+              component={EventDetailScreen}
+              options={{ title: '' }}
+            />
+            <AppStack.Screen
+              name="EventChat"
+              component={EventChatScreen}
+              options={({ route }) => ({ title: route.params.title })}
+            />
+            <AppStack.Screen
+              name="JoinEvent"
+              component={JoinEventScreen}
+              options={{ presentation: 'modal', title: 'Join an event' }}
+            />
+            <AppStack.Screen
+              name="EditProfile"
+              component={EditProfileScreen}
+              options={{ title: 'Edit profile' }}
+            />
+            <AppStack.Screen
+              name="PaymentMethods"
+              component={PaymentMethodsScreen}
+              options={{ title: 'Payment methods' }}
+            />
+            <AppStack.Screen
+              name="Upgrade"
+              component={UpgradeScreen}
+              options={{ title: 'RollCal Pro' }}
+            />
+            <AppStack.Screen
+              name="Legal"
+              component={LegalScreen}
+              options={({ route }) => ({
+                title: LEGAL[route.params.doc].title,
+              })}
+            />
+            <AppStack.Screen
+              name="BillReview"
+              component={BillReviewScreen}
+              options={({ route }) => ({
+                title: route.params.draft ? 'Check the bill' : 'New bill',
+              })}
+            />
+            <AppStack.Screen
+              name="BillShare"
+              component={BillShareScreen}
+              options={{ title: 'Share bill' }}
+            />
+            <AppStack.Screen
+              name="Bill"
+              component={BillScreen}
+              options={{ title: '' }}
+            />
+            <AppStack.Screen
+              name="FindPeople"
+              component={FindPeopleScreen}
+              options={{ title: 'Search users' }}
+            />
+            <AppStack.Screen
+              name="FriendRequests"
+              component={FriendRequestsScreen}
+              options={{ title: 'Friend requests' }}
+            />
+            <AppStack.Screen
+              name="SentRequests"
+              component={SentRequestsScreen}
+              options={{ title: 'Sent requests' }}
+            />
+            <AppStack.Screen
+              name="EventInvitations"
+              component={EventInvitationsScreen}
+              options={{ title: 'Invitations' }}
+            />
+          </AppStack.Navigator>
+        </ProPromptProvider>
       ) : (
         <AuthStack.Navigator screenOptions={{ headerShown: false }}>
           <AuthStack.Screen name="SignIn" component={SignInScreen} />

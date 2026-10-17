@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID.app.rollcal"],
+        "components": [{ "/": "/join/*" }, { "/": "/event/*" }]
+      }
+    ]
+  }
+}

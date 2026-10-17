@@ -197,7 +197,7 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
       const res = await Promise.race([
         fetch(
           `https://nominatim.openstreetmap.org/reverse?lat=${pin.lat}&lon=${pin.lng}&format=json`,
-          { headers: { 'User-Agent': 'SociaLink-App/1.0' } }
+          { headers: { 'User-Agent': 'RollCal-App/1.0' } }
         ),
         new Promise<Response>((_, reject) =>
           setTimeout(() => reject(new Error('Geocode timeout')), 3000)

@@ -188,6 +188,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
           value={title}
           onChangeText={setTitle}
           placeholder="Rooftop dinner"
+          maxLength={120}
         />
         <View style={styles.locationRow}>
           <View style={{ flex: 1 }}>
@@ -202,6 +203,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
               placeholder="Where is it?"
               singleLineEllipsis
               returnKeyType="done"
+              maxLength={300}
             />
           </View>
           <Button
@@ -231,6 +233,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
           multiline
           numberOfLines={3}
           style={styles.multiline}
+          maxLength={2000}
         />
         <ErrorText message={error} />
         <Button

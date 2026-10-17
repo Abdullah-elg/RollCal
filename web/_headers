@@ -1,0 +1,5 @@
+# Apple and Google read these to let rollcal.app links open the app.
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+/.well-known/assetlinks.json
+  Content-Type: application/json

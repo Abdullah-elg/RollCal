@@ -32,7 +32,7 @@ export type AppStackParamList = {
   JoinEvent: { code?: string; openScanner?: boolean } | undefined;
   EditProfile: undefined;
   PaymentMethods: undefined;
-  // SociaLink Pro; reason is where the person came from.
+  // RollCal Pro; reason is where the person came from.
   Upgrade: { reason?: UpgradeReason } | undefined;
   Legal: { doc: LegalDoc };
   // Bill splitting. BillReview is where a bill is typed in or a scanned one

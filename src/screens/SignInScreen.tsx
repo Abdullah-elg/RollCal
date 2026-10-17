@@ -42,7 +42,7 @@ export default function SignInScreen({ navigation }: Props) {
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
       >
-        <Text style={styles.wordmark}>SociaLink</Text>
+        <Text style={styles.wordmark}>RollCal</Text>
         <Text style={[type.bodyMuted, { marginBottom: spacing.xl }]}>
           Every event ends in one shared roll.
         </Text>

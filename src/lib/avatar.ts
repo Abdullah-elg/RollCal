@@ -1,4 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
+import { cleanPhoto } from './cleanPhoto';
 import { supabase } from './supabase';
 
 function base64ToArrayBuffer(b64: string): ArrayBuffer {
@@ -24,26 +25,21 @@ export async function pickAndUploadAvatar(
       mediaTypes: 'images',
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.85,
-      base64: true,
+      quality: 1,
     });
 
     if (result.canceled || !result.assets || result.assets.length === 0) {
       return { url: null, error: null, canceled: true };
     }
 
-    const asset = result.assets[0];
-    if (!asset.base64) {
-      return { url: null, error: 'Could not read selected image.' };
-    }
-
-    const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-    const path = `${userId}/${Date.now()}.${ext}`;
+    // Profile photos are public, so strip location and other hidden details.
+    const photo = await cleanPhoto(result.assets[0].uri, 0.85);
+    const path = `${userId}/${Date.now()}.${photo.ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from('avatars')
-      .upload(path, base64ToArrayBuffer(asset.base64), {
-        contentType: asset.mimeType ?? 'image/jpeg',
+      .upload(path, base64ToArrayBuffer(photo.base64), {
+        contentType: photo.mimeType,
         upsert: true,
       });
 

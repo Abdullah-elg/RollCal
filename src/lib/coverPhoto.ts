@@ -26,13 +26,12 @@ export async function pickAndUploadCover(
     mediaTypes: 'images',
     allowsEditing: true,
     aspect: [4, 3],
-    quality: 0.8,
-    base64: true,
+    quality: 1,
   });
   if (result.canceled || result.assets.length === 0) return { photoId: null, error: null };
 
   try {
-    const photoId = await uploadPhotoAsset(eventId, userId, result.assets[0]);
+    const photoId = await uploadPhotoAsset(eventId, userId, result.assets[0], 0.8);
     const { error } = await setCoverPhoto(eventId, photoId);
     return { photoId, error };
   } catch (err) {
