@@ -27,7 +27,6 @@ const SYMBOLS: Record<string, string> = {
   GBP: '£',
   INR: '₹',
   PHP: '₱',
-  ILS: '₪',
   TRY: '₺',
   NGN: '₦',
   MXN: 'MX$',

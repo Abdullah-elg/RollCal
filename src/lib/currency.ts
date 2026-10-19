@@ -34,7 +34,6 @@ export const CURRENCIES: CurrencyInfo[] = [
   { code: 'QAR', name: 'Qatari riyal' },
   { code: 'EGP', name: 'Egyptian pound' },
   { code: 'MAD', name: 'Moroccan dirham' },
-  { code: 'ILS', name: 'Israeli shekel' },
   { code: 'ZAR', name: 'South African rand' },
   { code: 'NGN', name: 'Nigerian naira' },
   { code: 'KES', name: 'Kenyan shilling' },

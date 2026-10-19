@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AESEncryptionKey, AESSealedData, aesDecryptAsync, aesEncryptAsync } from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
-import { utf8Decode, utf8Encode } from './utf8';
+import { base64ToBytes, bytesToBase64, utf8Decode, utf8Encode } from './utf8';
 
 // Where Supabase keeps the signed-in session. The session is too big for
 // the Keychain / Keystore (about 2 KB per item), so it's encrypted with
@@ -52,7 +52,8 @@ export const secureSessionStorage = {
       return raw;
     }
     try {
-      const sealed = AESSealedData.fromCombined(raw.slice(PREFIX.length));
+      // Bytes, not a base64 string: Android's expo-crypto rejects strings here.
+      const sealed = AESSealedData.fromCombined(base64ToBytes(raw.slice(PREFIX.length)));
       const bytes = (await aesDecryptAsync(sealed, await sessionKey(), {
         output: 'bytes',
       })) as Uint8Array;
@@ -69,7 +70,7 @@ export const secureSessionStorage = {
     let stored: string;
     try {
       const sealed = await aesEncryptAsync(utf8Encode(value), await sessionKey());
-      stored = PREFIX + ((await sealed.combined('base64')) as string);
+      stored = PREFIX + bytesToBase64((await sealed.combined('bytes')) as Uint8Array);
     } catch (err) {
       // No usable Keychain / Keystore. Real installs always have one; unsigned
       // simulator builds don't. Keep the session as before rather than sign

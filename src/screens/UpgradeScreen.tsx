@@ -138,8 +138,8 @@ export default function UpgradeScreen({ navigation, route }: Props) {
       {prices.converted && (
         <Text style={[type.caption, styles.note]}>
           Pro is priced in US dollars ({prices.usd.monthly} a month or {prices.usd.yearly} a year).
-          Prices here are converted to {currencyName(currency)} at today’s exchange rate, as a
-          guide. You’re charged in your {store}’s currency, at the price shown before you confirm.
+          Prices here are converted to {currency} ({currencyName(currency)}) at today’s exchange
+          rate, as a guide. You’re charged in your {store}’s currency, at the price shown before you confirm.
         </Text>
       )}
       <Text style={[type.caption, styles.note]}>
