@@ -8,6 +8,7 @@ import { fonts, Palette, spacing, TypeTokens } from '../theme';
 import { Profile } from '../types';
 
 import Avatar from './Avatar';
+import { MoreIcon } from './icons';
 
 // List of people separated by thin hairline dividers inset from the left edge.
 export function PersonList({ children }: { children: ReactNode[] }) {
@@ -89,6 +90,33 @@ export function RowAction({
       >
         {label}
       </Text>
+    </Pressable>
+  );
+}
+
+// Opens the actions sheet for this person (Report, Block, and Remove for
+// event hosts). A filled circle so it reads as a button, not punctuation.
+export function MoreAction({ name, onPress }: { name: string; onPress: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`More options for ${name}`}
+      style={({ pressed }) => [
+        {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.line,
+        },
+        pressed && { opacity: 0.6 },
+      ]}
+    >
+      <MoreIcon size={18} color={colors.ink} />
     </Pressable>
   );
 }

@@ -29,6 +29,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { ChevronRightIcon } from './icons';
 import {
   fonts,
   Palette,
@@ -221,6 +222,43 @@ export function Field({ label, style, singleLineEllipsis, ...inputProps }: Field
 // nothing and animates perfectly.
 // Android: that prop doesn't exist, and an edge-to-edge window doesn't shrink
 // for the keyboard, so the form needs padding added under it.
+// Looks like a Field, but opens a chooser (a sheet or list) when tapped.
+export function SelectField({
+  label,
+  value,
+  onPress,
+  accessibilityHint,
+}: {
+  label: string;
+  value: string;
+  onPress: () => void;
+  accessibilityHint?: string;
+}) {
+  const { colors, type } = useTheme();
+  const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
+  return (
+    <View style={styles.fieldWrap}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${value}`}
+        accessibilityHint={accessibilityHint}
+        style={({ pressed }) => [
+          styles.input,
+          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        <Text style={type.body} numberOfLines={1}>
+          {value}
+        </Text>
+        <ChevronRightIcon size={16} color={colors.inkMuted} />
+      </Pressable>
+    </View>
+  );
+}
+
 export function FormScreen({
   style,
   children,

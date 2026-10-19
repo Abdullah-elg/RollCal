@@ -33,6 +33,9 @@ import {
 } from '../components/icons';
 import InviteFriendsPanel from '../components/InviteFriendsPanel';
 import NavAppSheet from '../components/NavAppSheet';
+import PersonActionsSheet, { ActionsPerson } from '../components/PersonActionsSheet';
+import { MoreAction } from '../components/PersonRow';
+import ReportSheet from '../components/ReportSheet';
 import RsvpSelector from '../components/RsvpSelector';
 import { Button, ThemedSwitch } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
@@ -170,6 +173,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   const [confirmAction, setConfirmAction] = useState<'leave' | 'cancel' | null>(null);
   const [showNavApps, setShowNavApps] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<Attendee | null>(null);
+  const [actingOn, setActingOn] = useState<ActionsPerson | null>(null);
+  const [reportingEvent, setReportingEvent] = useState(false);
   const [bills, setBills] = useState<BillSummary[]>([]);
   const [invitations, setInvitations] = useState<EventInvitation[]>([]);
   const [albumPhotos, setAlbumPhotos] = useState<LoadedPhoto[]>([]);
@@ -361,6 +366,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
   const isLeader = event.creator_id === session?.user.id;
   const hostName = attendees.find((a) => a.status === 'host')?.name;
+  // The host can remove anyone but themselves, from the person's ··· menu.
+  const removableActingOn = isLeader
+    ? attendees.find((a) => a.userId === actingOn?.id && a.status !== 'host') ?? null
+    : null;
   const goingAttendees = attendees.filter(
     (a) => a.status === 'going' || a.status === 'host'
   );
@@ -966,14 +975,13 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                                 >
                                   {STATUS_LABEL.host}
                                 </Text>
-                              ) : isLeader ? (
-                                <Pressable
-                                  onPress={() => setMemberToRemove(a)}
-                                  hitSlop={8}
-                                >
-                                  <Text style={styles.removeText}>Remove</Text>
-                                </Pressable>
                               ) : null}
+                              {a.userId !== session?.user.id && (
+                                <MoreAction
+                                  name={a.name}
+                                  onPress={() => setActingOn({ id: a.userId, name: a.name })}
+                                />
+                              )}
                             </View>
                           ))}
                         </View>
@@ -1049,6 +1057,17 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     </>
                   )}
 
+                  {!isLeader && (
+                    <Pressable
+                      onPress={() => setReportingEvent(true)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                    >
+                      <Text style={styles.reportEventText}>Report event</Text>
+                    </Pressable>
+                  )}
+
                   {isLeader && (
                     <>
                       <View style={styles.divider} />
@@ -1102,7 +1121,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     <Text
                       style={[styles.removeOptionTitle, { color: colors.danger }]}
                     >
-                      Remove and block
+                      Remove and block from event
                     </Text>
                     <Text style={type.caption}>
                       They can't rejoin, even with the invite link.
@@ -1117,6 +1136,29 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 </Pressable>
               </Pressable>
             </Modal>
+
+            <PersonActionsSheet
+              person={actingOn}
+              extra={
+                removableActingOn
+                  ? {
+                      label: 'Remove from event',
+                      onPress: () => setMemberToRemove(removableActingOn),
+                    }
+                  : undefined
+              }
+              onClose={() => setActingOn(null)}
+              onBlocked={load}
+            />
+
+            <ReportSheet
+              visible={reportingEvent}
+              target="event"
+              targetId={event.id}
+              targetUserId={event.creator_id}
+              subject="this event"
+              onClose={() => setReportingEvent(false)}
+            />
 
             <ConfirmDialog
               visible={confirmAction === 'cancel'}
@@ -1467,6 +1509,12 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     removeCancelText: {
       ...t.button,
       color: c.ink,
+    },
+    reportEventText: {
+      ...t.body,
+      color: c.inkMuted,
+      textAlign: 'center',
+      paddingVertical: spacing.md,
     },
     leaveText: {
       ...t.body,

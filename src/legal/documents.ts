@@ -1,14 +1,14 @@
 // The Terms of Service, Pro Terms and Privacy Policy, shown in the app (sign
 // up, Settings, the upgrade screen). Plain language on purpose.
 //
-// Before launch: fill in the two placeholders below, have a lawyer review
-// all three documents, and publish the same text at public web addresses
-// (the App Store and Google Play both ask for a privacy policy URL).
+// Before launch: have a lawyer review all three documents, and publish the
+// same text at public web addresses (npm run build:legal writes them to
+// web/; the App Store and Google Play both ask for a privacy policy URL).
 
-const OPERATOR = '[Your full legal name or company name]';
+const OPERATOR = 'RollCal';
 const CONTACT = 'support@rollcal.app';
-const PROVINCE = '[Province]';
-const UPDATED = 'October 15, 2026';
+const PROVINCE = 'Ontario';
+const UPDATED = 'October 19, 2026';
 
 export type LegalDoc = 'terms' | 'pro' | 'privacy';
 
@@ -45,7 +45,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         heading: 'Things you must not do',
         paragraphs: [
           'Don’t use RollCal to break the law, harass, threaten or bully anyone, share hateful content, share sexual content involving anyone under 18, share intimate images of anyone without their consent, impersonate others, spam, or upload anything harmful such as malware. Don’t try to access accounts or data that aren’t yours, or copy the app’s data by automated means.',
-          'We may remove content or suspend or close accounts that break these rules, and we may report illegal content to the authorities.',
+          'You can block anyone and report people, messages, photos and events in the app. We review reports within 24 hours, and we may remove content or suspend or close accounts that break these rules. We may report illegal content to the authorities.',
         ],
       },
       {
@@ -60,6 +60,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         paragraphs: [
           'RollCal helps a group keep track of who owes what. It never processes, holds or sends money. Payments happen outside the app, through banks or services such as Interac e-Transfer, Venmo, PayPal or Cash App, under their own terms.',
           'We are not part of any payment between users. We are not responsible for whether someone pays, how much, payment mistakes, or disagreements about a bill. Amounts the app works out, including from scanned receipts, can be wrong; check them before you pay or ask for money. Nothing in the app is financial or tax advice.',
+          'Bills are shown in the currency they were shared in. A receipt in another currency is converted to your chosen currency at a recent exchange rate when you share it, and the bill shows the rate used. Exchange rates are a guide only: your bank, card or payment app may use a different rate or add fees.',
         ],
       },
       {
@@ -145,7 +146,8 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Price and payment',
         paragraphs: [
-          'Pro costs 6.99 US dollars a month or 49.99 US dollars a year, or the local price shown in the App Store or Google Play before you confirm. Taxes may be added where they apply.',
+          'Pro is priced at 6.99 US dollars a month or 49.99 US dollars a year. The app also shows these prices converted into your chosen currency at a recent exchange rate, as a guide only.',
+          'Apple or Google charge you in the currency of your App Store or Google Play account, at the local price shown before you confirm. That price is set through the store and can differ from the converted guide. Taxes may be added where they apply.',
           'Payment is taken by Apple or Google from the account you use in their store when you confirm the purchase.',
         ],
       },
@@ -200,7 +202,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'What we collect',
         paragraphs: [
-          'Account details: your name, email address, username, profile photo, and, if you sign in with Apple or Google, the details they share with us.',
+          'Account details: your name, email address, username, profile photo, preferred currency, and, if you sign in with Apple or Google, the details they share with us.',
           'What you add: events, RSVPs, invitations, friend connections, chat messages, photos and videos, bills and their items, and the payment handles you choose to add (such as an email or phone number for Interac e-Transfer, or a Venmo, PayPal or Cash App username).',
           'Locations you choose: an event’s address or map pin. If you use “current location” when picking a place, your device’s location is used once for that and is not stored separately.',
           'We do not use advertising or analytics tracking, and we do not sell your information.',
@@ -215,7 +217,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Who can see it',
         paragraphs: [
-          'People in an event can see that event’s details, members, chat, photos and bills. Payment handles you attach to a bill are visible to the people in that event. Friends and people you share events with can see your name, username and profile photo.',
+          'People in an event can see that event’s details, members, chat, photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Friends and people you share events with can see your name, username and profile photo.',
         ],
       },
       {
@@ -224,6 +226,8 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
           'Supabase hosts our database, file storage and sign-in. Your information is stored on servers in the United States, so it may be accessed by authorities there under US law.',
           'When you scan a receipt, the photo is sent to Google’s Gemini service to read it, under Google’s terms for that service. We do not keep the photo after it has been read.',
           'Apple and Google handle sign-in when you use them, and will handle payment for Pro; we never see your card details.',
+          'Notifications: if you allow them, we keep a token for your phone and send each notification’s text (for example a friend’s name or a preview of a chat message) through Expo’s push service and Apple’s or Google’s notification service, which deliver it to your phone. You can turn notifications off in the app or in your phone’s settings.',
+          'Exchange rates come from ExchangeRate-API’s public feed. Our servers fetch the day’s rates; nothing about you is sent.',
         ],
       },
       {

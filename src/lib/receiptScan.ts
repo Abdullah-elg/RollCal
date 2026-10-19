@@ -23,13 +23,13 @@ type ScannedDraft = Omit<BillDraft, 'eventId' | 'currency' | 'paymentMethodIds'>
   items: DraftItem[];
 };
 
-const DEFAULT_CURRENCY = 'CAD';
-
 // onReading fires once a photo is chosen, while the receipt is being read.
+// fallbackCurrency is used when the receipt gives no clue to its currency.
 export async function scanReceipt(
   eventId: string,
   source: ScanSource,
-  onReading: () => void
+  onReading: () => void,
+  fallbackCurrency: string
 ): Promise<ScanResult> {
   if (source === 'camera') {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -73,7 +73,7 @@ export async function scanReceipt(
     draft: {
       ...scanned,
       eventId,
-      currency: scanned.currency ?? DEFAULT_CURRENCY,
+      currency: scanned.currency ?? fallbackCurrency,
       paymentMethodIds: [],
     },
   };

@@ -115,7 +115,9 @@
       ],
       "expo-web-browser",
       "expo-apple-authentication",
-      "expo-video"
+      "expo-video",
+      "expo-secure-store",
+      "expo-localization"
     ]
   }
 }

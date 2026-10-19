@@ -6,11 +6,15 @@ export type Profile = {
   display_name: string;
   first_name: string | null;
   last_name: string | null;
-  // The email's local part (before the @); unique, used to identify people.
+  // Chosen at sign-up; unique, how people find each other.
   username: string | null;
   avatar_url?: string | null;
   // Set by hand in the dashboard until in-app purchases are live.
   is_pro: boolean;
+  // Pro: friend requests to them are kept but hidden.
+  quiet_mode: boolean;
+  // Preferred currency for bills and prices; null until they choose one.
+  currency: string | null;
   created_at: string;
 };
 

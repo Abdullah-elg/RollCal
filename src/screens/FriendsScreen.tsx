@@ -12,7 +12,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { InboxIcon, SearchIcon, SendIcon } from '../components/icons';
-import { PersonList, PersonRow, RowAction } from '../components/PersonRow';
+import PersonActionsSheet from '../components/PersonActionsSheet';
+import { MoreAction, PersonList, PersonRow, RowAction } from '../components/PersonRow';
 import { SectionLabel } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -40,6 +41,7 @@ export default function FriendsScreen({ navigation }: Props) {
       ? insets.bottom + tabBarHeight
       : 0;
   const [unfriend, setUnfriend] = useState<FriendLink | null>(null);
+  const [acting, setActing] = useState<FriendLink | null>(null);
 
   const drop = async (link: FriendLink) => {
     await removeFriendship(link.friendshipId);
@@ -144,6 +146,10 @@ export default function FriendsScreen({ navigation }: Props) {
                   tone="danger"
                   onPress={() => setUnfriend(link)}
                 />
+                <MoreAction
+                  name={link.profile.display_name}
+                  onPress={() => setActing(link)}
+                />
               </PersonRow>
             ))}
           </PersonList>
@@ -162,6 +168,13 @@ export default function FriendsScreen({ navigation }: Props) {
           if (link) drop(link);
         }}
         onCancel={() => setUnfriend(null)}
+      />
+
+      <PersonActionsSheet
+        person={acting && { id: acting.profile.id, name: acting.profile.display_name }}
+        onClose={() => setActing(null)}
+        // Blocking ends the friendship in the database.
+        onBlocked={reload}
       />
     </SafeAreaView>
   );

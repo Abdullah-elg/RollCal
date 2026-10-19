@@ -7,6 +7,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
+  PixelRatio,
   Platform,
   Pressable,
   ScrollView,
@@ -22,8 +23,17 @@ import { CheckIcon } from '../components/icons';
 import { Button, ErrorText } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { Bill, BillDetail, BillItem, billTotal, loadBill } from '../lib/bills';
+import {
+  Bill,
+  BillDetail,
+  BillItem,
+  billTotal,
+  deleteBill,
+  draftFromBill,
+  loadBill,
+} from '../lib/bills';
 import { itemCoverage, ItemPick, MAX_SPLIT, Quote, quotePicks } from '../lib/billSplit';
+import { describeRate } from '../lib/currency';
 import { setStringAsync } from '../lib/clipboard';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
@@ -101,6 +111,8 @@ export default function BillScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [takeBack, setTakeBack] = useState<Payment | null>(null);
   const [turnDown, setTurnDown] = useState<Payment | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   // Who or what is mid-request ("send", "remind", or a payment id), so a double
   // tap can't fire twice. The ref blocks at once; the state redraws buttons.
   const [busy, setBusy] = useState<string[]>([]);
@@ -154,6 +166,36 @@ export default function BillScreen({ navigation, route }: Props) {
     () => subscribeToPayments(billId, (id) => paymentIds.current.has(id), refreshPayments),
     [billId, refreshPayments]
   );
+
+  // The person who paid can fix the bill from the header.
+  useEffect(() => {
+    if (!detail || detail.bill.created_by !== myId) {
+      navigation.setOptions({ headerRight: undefined });
+      return;
+    }
+    const receivedCents = payments
+      .filter((p) => p.status === 'received')
+      .reduce((sum, p) => sum + p.amount_cents, 0);
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() =>
+            navigation.navigate('BillReview', {
+              eventId: detail.bill.event_id,
+              draft: draftFromBill(detail),
+              editBillId: detail.bill.id,
+              receivedCents,
+            })
+          }
+          hitSlop={12}
+          accessibilityRole="button"
+          style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+        >
+          <Text style={styles.headerAction}>Edit</Text>
+        </Pressable>
+      ),
+    });
+  }, [detail, payments, myId, navigation, styles]);
 
   if (!loaded) {
     return (
@@ -267,6 +309,20 @@ export default function BillScreen({ navigation, route }: Props) {
       }
     );
 
+  const removeBill = async () => {
+    setConfirmDelete(false);
+    setDeleting(true);
+    setError(null);
+    const failure = await deleteBill(bill.id);
+    setDeleting(false);
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    hapticLight();
+    navigation.goBack();
+  };
+
   const confirmRemoval = () => {
     const p = takeBack ?? turnDown;
     setTakeBack(null);
@@ -300,6 +356,12 @@ export default function BillScreen({ navigation, route }: Props) {
         <Text style={type.title}>{bill.title || 'Bill'}</Text>
         <Text style={[type.bodyMuted, { marginTop: spacing.xs }]}>Paid by {creatorName}</Text>
         {eventTitle ? <Text style={type.caption}>{eventTitle}</Text> : null}
+        {bill.scanned_currency && bill.scanned_rate ? (
+          <Text style={type.caption}>
+            Receipt in {bill.scanned_currency}, converted at{' '}
+            {describeRate(bill.scanned_currency, bill.currency, Number(bill.scanned_rate))}
+          </Text>
+        ) : null}
         <Text style={styles.total}>{fmt(left)}</Text>
         {paidUp ? (
           <Text style={type.bodyMuted}>Everyone's paid up.</Text>
@@ -488,21 +550,30 @@ export default function BillScreen({ navigation, route }: Props) {
           <Text style={type.bodyMuted}>Total</Text>
           <Text style={type.bodyMuted}>{fmt(total)}</Text>
         </View>
+        {received.length > 0 && <Text style={styles.paidHeader}>Paid</Text>}
         {received.map((p) => (
           <View key={p.id} style={styles.summaryRow}>
-            <Text style={[type.bodyMuted, styles.rowText]}>
-              {nameOf(p.user_id)} paid {fmt(p.amount_cents)}
-            </Text>
-            {isCreator && (
-              <Pressable
-                onPress={() => (p.user_id === myId ? run(p.id, () => removePayment(p.id)) : receive(p, false))}
-                disabled={busy.includes(p.id)}
-                hitSlop={HIT}
-                accessibilityRole="button"
-              >
-                <Text style={type.bodyMuted}>{p.user_id === myId ? 'Remove' : 'Undo'}</Text>
-              </Pressable>
-            )}
+            <View style={[styles.rowText, styles.paidName]}>
+              <Text style={type.bodyMuted} numberOfLines={1}>
+                {nameOf(p.user_id)}
+              </Text>
+              {isCreator && (
+                <Pressable
+                  onPress={() =>
+                    p.user_id === myId ? run(p.id, () => removePayment(p.id)) : receive(p, false)
+                  }
+                  disabled={busy.includes(p.id)}
+                  hitSlop={HIT}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${p.user_id === myId ? 'Remove' : 'Undo'} ${nameOf(p.user_id)}'s payment`}
+                >
+                  <View style={styles.paidActionWrap}>
+                    <Text style={styles.paidAction}>{p.user_id === myId ? 'Remove' : 'Undo'}</Text>
+                  </View>
+                </Pressable>
+              )}
+            </View>
+            <Text style={type.bodyMuted}>−{fmt(p.amount_cents)}</Text>
           </View>
         ))}
         {open || received.length > 0 ? (
@@ -584,8 +655,41 @@ export default function BillScreen({ navigation, route }: Props) {
             })}
           </>
         )}
+
+        {isCreator && (
+          <>
+            <View style={styles.divider} />
+            {!open && <ErrorText message={error} />}
+            <Pressable
+              onPress={() => setConfirmDelete(true)}
+              disabled={deleting}
+              hitSlop={HIT}
+              accessibilityRole="button"
+              style={[styles.plainAction, { alignSelf: 'center' }]}
+            >
+              <Text style={[type.body, { color: colors.danger }]}>
+                {deleting ? 'Deleting…' : 'Delete bill'}
+              </Text>
+            </Pressable>
+          </>
+        )}
       </ScrollView>
 
+      <ConfirmDialog
+        visible={confirmDelete}
+        title="Delete this bill?"
+        message={
+          payments.length > 0
+            ? `It disappears for everyone, along with the ${payments.length} ${
+                payments.length === 1 ? 'payment' : 'payments'
+              } recorded on it. Money already sent isn't affected; sort that out between you.`
+            : 'It disappears for everyone in the event.'
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={removeBill}
+        onCancel={() => setConfirmDelete(false)}
+      />
       <ConfirmDialog
         visible={!!takeBack}
         title="Take back this payment?"
@@ -1064,6 +1168,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     smallButton: { minWidth: 72 },
     plainAction: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
+    headerAction: { ...t.body, fontFamily: fonts.bodySemiBold, color: c.ink },
     overlay: {
       flex: 1,
       backgroundColor: c.scrim,
@@ -1113,4 +1218,18 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     dialogConfirmText: { ...t.button, color: c.onAccent },
     sectionHeader: { ...t.sectionLabel, marginBottom: spacing.sm },
+    paidHeader: {
+      ...t.caption,
+      color: c.ink,
+      marginTop: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    paidName: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm },
+    // A drawn line rather than a text underline, which iOS renders lighter
+    // or heavier depending on where the row lands on the pixel grid.
+    paidActionWrap: {
+      borderBottomWidth: PixelRatio.roundToNearestPixel(0.75),
+      borderBottomColor: c.ink,
+    },
+    paidAction: { ...t.caption, color: c.ink },
   });

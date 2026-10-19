@@ -16,11 +16,14 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
 import ConfirmDialog from '../components/ConfirmDialog';
+import CurrencyPicker from '../components/CurrencyPicker';
 import { CameraIcon, ChevronRightIcon } from '../components/icons';
-import { Button, ThemedSwitch } from '../components/ui';
+import { Button, ErrorText, ThemedSwitch } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
+import { useProPrompt } from '../context/ProPromptContext';
 import { useTheme } from '../context/ThemeContext';
 import { pickAndUploadAvatar, removeAvatar } from '../lib/avatar';
+import { currencyLabel } from '../lib/currency';
 import { supabase } from '../lib/supabase';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import {
@@ -35,6 +38,7 @@ import {
   setReminderPrefs,
   syncEventReminders,
 } from '../lib/notifications';
+import { setQuietMode } from '../lib/safety';
 import { listPaymentMethods } from '../lib/paymentMethods';
 import { TabScreenProps } from '../navigation/types';
 import {
@@ -109,6 +113,9 @@ const CHAT_ROWS: ToggleRow[] = [
   },
 ];
 
+const QUIET_CAPTION =
+  'Friend requests to you are hidden. You can still add anyone, and adding someone who already asked you makes you friends.';
+
 // Defined out here on purpose. Declared inside the screen, it would be a
 // brand-new component type on every render, so toggling one switch would
 // unmount and remount every other row - replaying their switch animations.
@@ -140,6 +147,7 @@ const rowStyles = StyleSheet.create({
 
 export default function SettingsScreen({ navigation }: Props) {
   const { session, profile, signOut, refreshProfile } = useAuth();
+  const { showProPrompt } = useProPrompt();
   const { mode, preference, setPreference, colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const [prefs, setPrefsState] = useState<ReminderPrefs | null>(null);
@@ -149,9 +157,35 @@ export default function SettingsScreen({ navigation }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [paymentCount, setPaymentCount] = useState(0);
+  const [quietError, setQuietError] = useState<string | null>(null);
+  const [pickingCurrency, setPickingCurrency] = useState(false);
+  const [currencyError, setCurrencyError] = useState<string | null>(null);
+
+  // New bills use it; bills already shared keep their own currency.
+  const chooseCurrency = async (code: string) => {
+    setPickingCurrency(false);
+    if (!profile || code === profile.currency) return;
+    setCurrencyError(null);
+    const { error } = await supabase.from('profiles').update({ currency: code }).eq('id', profile.id);
+    if (error) setCurrencyError('Could not change your currency. Please try again.');
+    else await refreshProfile();
+  };
   const [openSheet, setOpenSheet] = useState<
     'event' | 'album' | 'friend' | 'chat' | null
   >(null);
+
+  const toggleQuiet = async (next: boolean) => {
+    if (!profile) return;
+    // Quiet mode is Pro; a free account sees the pop-up and the switch stays put.
+    if (!profile.is_pro) {
+      showProPrompt('quiet');
+      return;
+    }
+    setQuietError(null);
+    const err = await setQuietMode(profile.id, next);
+    if (err) setQuietError(err);
+    else await refreshProfile();
+  };
 
   // Server side lives in supabase/functions/delete-account: it removes the
   // user's files, then the auth user, which cascades to every row of theirs.
@@ -401,6 +435,67 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
           <ChevronRightIcon size={16} color={colors.inkMuted} />
         </Pressable>
+        <View style={styles.rowDivider} />
+        <Pressable
+          style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+          onPress={() => setPickingCurrency(true)}
+          accessibilityRole="button"
+        >
+          <View style={styles.rowText}>
+            <Text style={type.body}>Currency</Text>
+            <Text style={type.caption}>
+              {profile?.currency ? currencyLabel(profile.currency) : 'Not chosen yet'}
+            </Text>
+          </View>
+          <ChevronRightIcon size={16} color={colors.inkMuted} />
+        </Pressable>
+        <ErrorText message={currencyError} />
+      </View>
+
+      <Text style={styles.sectionLabel}>Privacy</Text>
+      <View style={styles.card}>
+        {profile?.is_pro ? (
+          <SettingRow
+            label="Quiet mode"
+            caption={QUIET_CAPTION}
+            value={!!profile.quiet_mode}
+            onToggle={toggleQuiet}
+          />
+        ) : (
+          // Free accounts see it greyed out with a Pro label; tapping it
+          // anywhere shows what Pro adds.
+          <Pressable
+            onPress={() => showProPrompt('quiet')}
+            accessibilityRole="button"
+            accessibilityLabel="Quiet mode, a Pro feature"
+            style={({ pressed }) => [rowStyles.row, pressed && { opacity: 0.7 }]}
+          >
+            <View style={[rowStyles.text, styles.locked]}>
+              <Text style={styles.proTag}>Pro feature</Text>
+              <Text style={type.body}>Quiet mode</Text>
+              <Text style={type.caption}>{QUIET_CAPTION}</Text>
+            </View>
+            <View style={styles.locked} pointerEvents="none">
+              <ThemedSwitch value={false} onValueChange={() => {}} />
+            </View>
+          </Pressable>
+        )}
+        {quietError && (
+          <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm }]}>
+            {quietError}
+          </Text>
+        )}
+        <View style={styles.rowDivider} />
+        <Pressable
+          style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+          onPress={() => navigation.navigate('BlockedPeople')}
+          accessibilityRole="button"
+        >
+          <View style={styles.rowText}>
+            <Text style={type.body}>Blocked people</Text>
+          </View>
+          <ChevronRightIcon size={16} color={colors.inkMuted} />
+        </Pressable>
       </View>
 
       <Text style={styles.sectionLabel}>Account</Text>
@@ -448,20 +543,30 @@ export default function SettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.rowDivider} />
-        <Pressable
-          style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
-          onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
-        >
-          <View style={styles.rowText}>
-            <Text style={type.body}>RollCal Pro</Text>
+        {profile?.is_pro ? (
+          <Pressable
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+            onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
+          >
+            <View style={styles.rowText}>
+              <Text style={type.body}>RollCal Pro</Text>
+              <Text style={type.caption}>You’re on Pro</Text>
+            </View>
+            <ChevronRightIcon size={16} color={colors.inkMuted} />
+          </Pressable>
+        ) : (
+          <View style={styles.planRow}>
+            <Text style={type.body}>You’re on the free plan.</Text>
             <Text style={type.caption}>
-              {profile?.is_pro
-                ? 'You’re on Pro'
-                : 'Unlimited receipt scans, photos kept for good, and more'}
+              Pro adds unlimited receipt scans, videos, photos kept for good and more.
             </Text>
+            <Button
+              title="See Pro features"
+              onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
+              style={styles.planButton}
+            />
           </View>
-          <ChevronRightIcon size={16} color={colors.inkMuted} />
-        </Pressable>
+        )}
 
         <View style={styles.accountActions}>
           <Button
@@ -521,6 +626,14 @@ export default function SettingsScreen({ navigation }: Props) {
       </View>
 
       {/* Reminder toggles live in their own slide-up sheet, one per group. */}
+      <CurrencyPicker
+        visible={pickingCurrency}
+        selected={profile?.currency ?? null}
+        intro="New bills you split and Pro prices are shown in it. Bills already shared stay in their own currency."
+        onSelect={chooseCurrency}
+        onClose={() => setPickingCurrency(false)}
+      />
+
       <Modal
         visible={openSheet !== null}
         animationType="slide"
@@ -561,7 +674,7 @@ export default function SettingsScreen({ navigation }: Props) {
               {openSheet === 'album'
                 ? 'Nudges around the 48 hours the roll stays open for uploads.'
                 : openSheet === 'friend'
-                  ? 'Friend activity happens on other people’s phones, so these arrive when you next open the app.'
+                  ? 'When people add you, accept your request or invite you to something.'
                   : openSheet === 'chat'
                     ? 'A single event can be muted on its own. Open its chat and tap the bell.'
                     : 'Nudges in the run-up to an event you’re part of.'}
@@ -688,6 +801,16 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       gap: spacing.md,
       paddingVertical: 4,
     },
+    // A Pro feature on a free account: readable, but clearly not available.
+    locked: { opacity: 0.45 },
+    proTag: {
+      ...t.caption,
+      fontFamily: fonts.bodySemiBold,
+      color: c.accentText,
+      marginBottom: 2,
+    },
+    planRow: { gap: 2, paddingVertical: 4 },
+    planButton: { marginTop: spacing.md },
     profileHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',

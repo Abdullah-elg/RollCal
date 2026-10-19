@@ -1,19 +1,51 @@
+import { convertCents, Rates } from './currency';
+import { formatCents } from './money';
 import { supabase } from './supabase';
 
 // RollCal Pro: what it costs, what it adds, and the one Pro limit that's
 // live so far (receipt scans). In-app purchases aren't set up yet, so the
 // upgrade screen shows Pro as coming soon and profiles.is_pro is set by hand.
 
+// Pro is priced in US dollars and shown in each person's currency at the
+// day's exchange rate (see proPriceText). The stores charge their own local
+// price; once purchases are live, show the store's price instead.
 export const PRO_PRICES = {
-  monthly: '$6.99',
-  yearly: '$49.99',
+  monthlyUsdCents: 699,
+  yearlyUsdCents: 4999,
   // Yearly against twelve months of monthly.
   yearlySaving: '40%',
   trialDays: 7,
 };
 
+export type ProPriceText = {
+  monthly: string;
+  yearly: string;
+  // Shown converted from US dollars, so approximate.
+  converted: boolean;
+  // The US dollar prices, for the note under a converted price.
+  usd: { monthly: string; yearly: string };
+};
+
+export function proPriceText(currency: string, rates: Rates | null): ProPriceText {
+  const usd = {
+    monthly: formatCents(PRO_PRICES.monthlyUsdCents, 'USD', { explicit: true }),
+    yearly: formatCents(PRO_PRICES.yearlyUsdCents, 'USD', { explicit: true }),
+  };
+  const monthly = rates ? convertCents(PRO_PRICES.monthlyUsdCents, 'USD', currency, rates) : null;
+  const yearly = rates ? convertCents(PRO_PRICES.yearlyUsdCents, 'USD', currency, rates) : null;
+  if (currency === 'USD' || monthly === null || yearly === null) {
+    return { monthly: usd.monthly, yearly: usd.yearly, converted: false, usd };
+  }
+  return {
+    monthly: formatCents(monthly, currency, { explicit: true }),
+    yearly: formatCents(yearly, currency, { explicit: true }),
+    converted: true,
+    usd,
+  };
+}
+
 // Why someone landed on the upgrade screen, so it can open on that perk.
-export type UpgradeReason = 'scan' | 'video' | 'storage' | 'expiry' | 'settings';
+export type UpgradeReason = 'scan' | 'video' | 'storage' | 'expiry' | 'quiet' | 'settings';
 
 // What the small Pro pop-up says when a free account reaches for a Pro
 // feature: what they can't do, then what Pro would give them.
@@ -31,6 +63,10 @@ export const PRO_PROMPTS: Record<ProPromptReason, { title: string; body: string 
   expiry: {
     title: 'This event’s photos will be deleted soon.',
     body: 'Free events keep photos for 30 days. Get Pro and every event you host keeps them for good.',
+  },
+  quiet: {
+    title: 'Quiet mode is part of Pro.',
+    body: 'Stop friend requests from people you don’t know. You can still add anyone yourself.',
   },
   scan: {
     title: 'You’ve used this month’s free scan.',

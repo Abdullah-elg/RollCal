@@ -6,8 +6,13 @@ import { loadPhotoExpiry } from './expiry';
 import { rollClosesAt } from './roll';
 import { supabase } from './supabase';
 
-// Local scheduled notifications only - no push server involved. Reminders
-// fire on this device for events visible to the signed-in user.
+// Two kinds of notification live here:
+//   * Local ones scheduled on this phone: event reminders, roll reminders,
+//     photo expiry warnings.
+//   * Server push (supabase/push.sql): friend requests, chat messages and
+//     the roll opening, sent the moment they happen even if the app is
+//     closed. Once this phone has registered for push, the "check when the
+//     app opens" fallbacks below stay quiet for those kinds.
 //
 // The catch: importing expo-notifications registers a device-push-token
 // listener at load time, and Expo Go on Android has had push support
@@ -25,18 +30,29 @@ type NotificationsModule = typeof import('expo-notifications');
 
 let cached: NotificationsModule | null = null;
 
+// The event whose chat is on screen, so its messages don't also pop up.
+let activeChatEventId: string | null = null;
+export function setActiveChat(eventId: string | null) {
+  activeChatEventId = eventId;
+}
+
 function getNotifications(): NotificationsModule | null {
   if (!notificationsAvailable) return null;
   if (!cached) {
     cached = require('expo-notifications') as NotificationsModule;
-    // Show banners even while the app is foregrounded.
+    // Show banners even while the app is foregrounded, except for the chat
+    // already open.
     cached.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
+      handleNotification: async (notification) => {
+        const data = notification.request.content.data as { type?: unknown; eventId?: unknown };
+        const hide = data?.type === 'chat' && data.eventId === activeChatEventId;
+        return {
+          shouldShowBanner: !hide,
+          shouldShowList: !hide,
+          shouldPlaySound: !hide,
+          shouldSetBadge: false,
+        };
+      },
     });
   }
   return cached;
@@ -127,6 +143,8 @@ export async function getReminderPrefs(): Promise<ReminderPrefs> {
 
 export async function setReminderPrefs(prefs: ReminderPrefs): Promise<void> {
   await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  // The server needs to know which kinds this phone wants pushed.
+  syncPushSettings();
 }
 
 export async function ensureNotificationPermission(): Promise<boolean> {
@@ -144,7 +162,7 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 async function ensureAndroidChannel(Notifications: NotificationsModule) {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
-      name: 'Event reminders',
+      name: 'Notifications',
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   }
@@ -173,6 +191,9 @@ export async function syncEventReminders(): Promise<void> {
     const { data: auth } = await supabase.auth.getSession();
     const me = auth.session?.user.id;
 
+    // With push, the server announces the roll opening instead.
+    const pushed = me ? await serverPushActive(me) : false;
+
     const now = Date.now();
     const planned: { at: number; title: string; body: string }[] = [];
     const plan = (at: number, title: string, body: string) => {
@@ -194,7 +215,7 @@ export async function syncEventReminders(): Promise<void> {
       if (prefs.fiveMin) plan(starts - 5 * MIN, e.title, 'Starts in 5 minutes.');
       if (prefs.atStart) plan(starts, e.title, 'Starting now.');
 
-      if (prefs.albumOpen) {
+      if (prefs.albumOpen && !pushed) {
         plan(ends, e.title, 'The roll is open - add your photos.');
       }
       if (prefs.albumDayLeft) {
@@ -326,6 +347,8 @@ export async function notifyFriendActivity(
     }
 
     await AsyncStorage.setItem(key, JSON.stringify(nextState));
+    // Already pushed by the server when it happened.
+    if (await serverPushActive(userId)) return;
 
     const perm = await Notifications.getPermissionsAsync();
     if (!perm.granted || messages.length === 0) return;
@@ -427,6 +450,7 @@ export async function setChatMuted(
     ? [...new Set([...current, eventId])]
     : current.filter((id) => id !== eventId);
   await AsyncStorage.setItem(mutedChatsKey(userId), JSON.stringify(next));
+  syncPushSettings();
 }
 
 // Messages already read on screen shouldn't come back as notifications, so
@@ -458,6 +482,12 @@ export async function notifyChatMessages(
 
     // First run: start the clock, announce nothing from before.
     if (!since) {
+      await AsyncStorage.setItem(key, now);
+      return;
+    }
+
+    // Already pushed by the server when each message was sent.
+    if (await serverPushActive(userId)) {
       await AsyncStorage.setItem(key, now);
       return;
     }
@@ -715,18 +745,138 @@ export async function notifyBillPayments(
   }
 }
 
-// Calls back with the bill id when someone taps a bill notification,
-// including the one that launched the app. Returns an unsubscribe.
-export function onNotificationTap(open: (target: { billId: string }) => void): () => void {
+// Where a tapped notification should take you.
+export type NotificationTarget =
+  | { kind: 'bill'; billId: string }
+  | { kind: 'chat'; eventId: string; title: string }
+  | { kind: 'event'; eventId: string }
+  | { kind: 'friends' };
+
+export function targetOf(data: unknown): NotificationTarget | null {
+  const d = (data ?? {}) as Record<string, unknown>;
+  if (typeof d.billId === 'string') return { kind: 'bill', billId: d.billId };
+  if (d.type === 'chat' && typeof d.eventId === 'string') {
+    return { kind: 'chat', eventId: d.eventId, title: typeof d.title === 'string' ? d.title : '' };
+  }
+  if (d.type === 'event' && typeof d.eventId === 'string') return { kind: 'event', eventId: d.eventId };
+  if (d.type === 'friends') return { kind: 'friends' };
+  return null;
+}
+
+// Calls back when someone taps a notification, including the one that
+// launched the app. Returns an unsubscribe.
+export function onNotificationTap(open: (target: NotificationTarget) => void): () => void {
   const Notifications = getNotifications();
   if (!Notifications) return () => {};
   const handle = (response: { notification: { request: { content: { data?: unknown } } } }) => {
-    const data = response.notification.request.content.data as { billId?: unknown } | undefined;
-    if (typeof data?.billId === 'string') open({ billId: data.billId });
+    const target = targetOf(response.notification.request.content.data);
+    if (target) open(target);
   };
   Notifications.getLastNotificationResponseAsync()
     .then((last) => last && handle(last))
     .catch(() => {});
   const sub = Notifications.addNotificationResponseReceivedListener(handle);
   return () => sub.remove();
+}
+
+// ---------------------------------------------------------------------------
+// Server push
+//
+// The phone gets an Expo push token and hands it to the server with its
+// notification settings and muted chats (register_push_token). That needs
+// the EAS project id from `eas init`; until there is one this does nothing
+// and the "check when the app opens" fallbacks above carry on as before.
+// ---------------------------------------------------------------------------
+
+// The kinds the server sends; each phone can turn them off in Settings.
+const PUSH_KINDS = ['friendRequest', 'friendAccepted', 'chatMessage', 'albumOpen'] as const;
+const PUSH_TOKEN_KEY = 'rollcal.pushToken';
+const PUSH_ASKED_KEY = 'rollcal.pushAsked';
+
+type StoredPush = { userId: string; token: string };
+
+async function storedPush(): Promise<StoredPush | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
+    return raw ? (JSON.parse(raw) as StoredPush) : null;
+  } catch {
+    return null;
+  }
+}
+
+function easProjectId(): string | null {
+  const fromConfig = (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)
+    ?.eas?.projectId;
+  return fromConfig ?? Constants.easConfig?.projectId ?? null;
+}
+
+// Whether the server is pushing to this phone for this person.
+export async function serverPushActive(userId: string): Promise<boolean> {
+  return (await storedPush())?.userId === userId;
+}
+
+async function sendPushSettings(userId: string, token: string): Promise<void> {
+  const prefs = await getReminderPrefs();
+  const muted = await getMutedChats(userId);
+  const { error } = await supabase.rpc('register_push_token', {
+    p_token: token,
+    p_platform: Platform.OS === 'ios' ? 'ios' : 'android',
+    p_prefs: Object.fromEntries(PUSH_KINDS.map((k) => [k, prefs[k]])),
+    p_muted: muted,
+  });
+  if (error) {
+    console.warn('Push registration failed:', error.message);
+    return;
+  }
+  await AsyncStorage.setItem(PUSH_TOKEN_KEY, JSON.stringify({ userId, token } satisfies StoredPush));
+}
+
+// Gets this phone's push token and registers it for the signed-in person.
+// Asks for permission the first time only; after that, Settings does.
+export async function registerForPush(userId: string): Promise<void> {
+  const Notifications = getNotifications();
+  const projectId = easProjectId();
+  if (!Notifications || !projectId) return;
+  try {
+    let perm = await Notifications.getPermissionsAsync();
+    if (!perm.granted && perm.canAskAgain && !(await AsyncStorage.getItem(PUSH_ASKED_KEY))) {
+      await AsyncStorage.setItem(PUSH_ASKED_KEY, '1');
+      perm = await Notifications.requestPermissionsAsync();
+    }
+    if (!perm.granted) return;
+    // Android needs the channel before a token can be issued.
+    await ensureAndroidChannel(Notifications);
+    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
+    await sendPushSettings(userId, token);
+  } catch (err) {
+    // Simulators and phones without Google Play services can't get a token.
+    console.warn('Push token unavailable:', err);
+  }
+}
+
+// Re-sends this phone's settings after they change.
+export async function syncPushSettings(): Promise<void> {
+  const stored = await storedPush();
+  if (stored) await sendPushSettings(stored.userId, stored.token).catch(() => {});
+}
+
+// Re-registers if the system hands the app a new token. Returns an unsubscribe.
+export function onPushTokenChange(userId: string): () => void {
+  const Notifications = getNotifications();
+  if (!Notifications || !easProjectId()) return () => {};
+  const sub = Notifications.addPushTokenListener(() => {
+    registerForPush(userId);
+  });
+  return () => sub.remove();
+}
+
+// Before signing out, so this phone stops getting the person's messages.
+export async function unregisterPush(): Promise<void> {
+  const stored = await storedPush();
+  if (!stored) return;
+  await supabase.rpc('unregister_push_token', { p_token: stored.token }).then(
+    () => {},
+    () => {}
+  );
+  await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
 }

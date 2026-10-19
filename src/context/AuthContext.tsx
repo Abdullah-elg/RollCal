@@ -7,8 +7,11 @@ import {
   useRef,
   useState,
 } from 'react';
+import { unregisterPush } from '../lib/notifications';
 import * as social from '../lib/socialAuth';
 import { supabase } from '../lib/supabase';
+import { isSupportedCurrency } from '../lib/currency';
+import { cleanUsername, usernameFallbacks, usernameFromName, usernameProblem } from '../lib/username';
 import { Profile } from '../types';
 
 type AuthContextValue = {
@@ -20,7 +23,9 @@ type AuthContextValue = {
     email: string,
     password: string,
     firstName: string,
-    lastName: string
+    lastName: string,
+    username: string,
+    currency: string
   ) => Promise<{ error: string | null; needsEmailConfirm: boolean }>;
   // needsEmailConfirm: the account exists but the email code was never entered.
   signIn: (
@@ -30,6 +35,18 @@ type AuthContextValue = {
   // Confirms the code from the sign-up email; success signs the user in.
   verifyEmail: (email: string, code: string) => Promise<{ error: string | null }>;
   resendEmailCode: (email: string) => Promise<{ error: string | null }>;
+  // Emails a code for choosing a new password. Succeeds whether or not the
+  // email has an account, so the screen can't be used to look people up.
+  sendPasswordReset: (email: string) => Promise<{ error: string | null }>;
+  // Checks the code, then sets the new password; success signs the user in.
+  resetPassword: (
+    email: string,
+    code: string,
+    newPassword: string
+  ) => Promise<{ error: string | null }>;
+  // True between a correct reset code and the new password being saved.
+  // The app stays on the sign-in screens meanwhile.
+  recovering: boolean;
   signInWithApple: () => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -43,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recovering, setRecovering] = useState(false);
   // Set just before an Apple sign-in, read when that new user's profile is
   // created. A ref (not state) so the profile effect sees it immediately.
   const pendingName = useRef<social.AppleName | null>(null);
@@ -100,8 +118,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       // Names come from sign-up metadata (email), the provider's profile
       // (Google), or the one-time name Apple hands over. The username is the
-      // email's local part, with digits appended if it's already taken (two
-      // people at different domains can share a local part).
+      // one chosen at sign-up; Apple and Google sign-ins get one made from
+      // their name. Never from the email, which would give the address away.
       const meta = user.user_metadata ?? {};
       const str = (v: unknown) => (typeof v === 'string' && v.trim()) || null;
       const [providerFirst, ...providerRest] = (str(meta.full_name) ?? str(meta.name) ?? '').split(' ');
@@ -114,19 +132,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         str(providerRest.join(' '));
       pendingName.current = null;
       const displayName =
-        str(meta.display_name) ||
-        [firstName, lastName].filter(Boolean).join(' ') ||
-        user.email?.split('@')[0] ||
-        'Someone';
-      const usernameBase =
-        user.email?.split('@')[0]?.toLowerCase().replace(/[^a-z0-9._-]/g, '') ||
-        'user';
+        str(meta.display_name) || [firstName, lastName].filter(Boolean).join(' ') || 'Someone';
+      const chosen = cleanUsername(str(meta.username) ?? '');
+      const usernameBase = usernameProblem(chosen) ? usernameFromName(firstName, lastName) : chosen;
 
       let created = null;
-      for (const username of [
-        usernameBase,
-        `${usernameBase}${Math.floor(100 + Math.random() * 900)}`,
-      ]) {
+      // Digits are added only if someone took the name in the meantime.
+      for (const username of [usernameBase, ...usernameFallbacks(usernameBase)]) {
         const { data, error } = await supabase
           .from('profiles')
           .insert({
@@ -136,6 +148,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             last_name: lastName,
             username,
             avatar_url: str(meta.avatar_url) ?? str(meta.picture),
+            // Chosen at sign-up; Apple and Google sign-ins are asked in the app.
+            currency: isSupportedCurrency(str(meta.currency)) ? str(meta.currency) : null,
           })
           .select()
           .single();
@@ -157,7 +171,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [session?.user?.id]);
 
-  const signUp: AuthContextValue['signUp'] = async (email, password, firstName, lastName) => {
+  const signUp: AuthContextValue['signUp'] = async (
+    email,
+    password,
+    firstName,
+    lastName,
+    username,
+    currency
+  ) => {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
@@ -168,6 +189,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           display_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+          username: cleanUsername(username),
+          currency,
         },
       },
     });
@@ -178,6 +201,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn: AuthContextValue['signIn'] = async (email, password) => {
+    // Any other way in ends an unfinished password reset.
+    setRecovering(false);
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -191,6 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const verifyEmail: AuthContextValue['verifyEmail'] = async (email, code) => {
+    setRecovering(false);
     const { error } = await supabase.auth.verifyOtp({
       email: email.trim(),
       token: code.trim(),
@@ -204,14 +230,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error ? error.message : null };
   };
 
-  const signInWithApple = () =>
-    social.signInWithApple((name) => {
+  const sendPasswordReset: AuthContextValue['sendPasswordReset'] = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+    return { error: error ? error.message : null };
+  };
+
+  const resetPassword: AuthContextValue['resetPassword'] = async (email, code, newPassword) => {
+    setRecovering(true);
+    // A correct code signs the person in. If saving the password then fails
+    // (too weak, same as before), they're still signed in from the code, so
+    // a retry skips straight to saving.
+    const { data: current } = await supabase.auth.getSession();
+    const signedInAs = current.session?.user.email?.toLowerCase();
+    if (signedInAs !== email.trim().toLowerCase()) {
+      const { error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: code.trim(),
+        type: 'recovery',
+      });
+      if (error) {
+        setRecovering(false);
+        return { error: error.message };
+      }
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { error: error.message };
+    setRecovering(false);
+    return { error: null };
+  };
+
+  const signInWithApple = () => {
+    setRecovering(false);
+    return social.signInWithApple((name) => {
       pendingName.current = name;
     });
+  };
 
-  const signInWithGoogle = social.signInWithGoogle;
+  const signInWithGoogle = () => {
+    setRecovering(false);
+    return social.signInWithGoogle();
+  };
 
   const signOut = async () => {
+    setRecovering(false);
+    // While still signed in, so the server lets this phone's token go.
+    await unregisterPush();
     await supabase.auth.signOut();
   };
 
@@ -236,6 +299,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         verifyEmail,
         resendEmailCode,
+        sendPasswordReset,
+        resetPassword,
+        recovering,
         signInWithApple,
         signInWithGoogle,
         signOut,

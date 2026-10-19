@@ -65,6 +65,14 @@ export default function SignInScreen({ navigation }: Props) {
           secureTextEntry
           placeholder="••••••••"
         />
+        <Pressable
+          onPress={() => navigation.navigate('ForgotPassword', { email: email.trim() })}
+          hitSlop={8}
+          style={styles.forgot}
+          accessibilityRole="button"
+        >
+          <Text style={styles.forgotText}>Forgot password?</Text>
+        </Pressable>
         <ErrorText message={error} />
         <Button
           title="Log in"
@@ -99,6 +107,16 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       ...t.title,
       fontSize: 32,
       marginBottom: spacing.xs,
+    },
+    forgot: {
+      alignSelf: 'flex-end',
+      marginTop: -spacing.xs,
+      marginBottom: spacing.md,
+    },
+    forgotText: {
+      ...t.caption,
+      fontFamily: fonts.bodySemiBold,
+      color: c.ink,
     },
     switchRow: {
       flexDirection: 'row',

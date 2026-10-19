@@ -72,7 +72,7 @@ export default function SocialSignIn({ onShowTerms }: { onShowTerms?: () => void
 
       {onShowTerms && (
         <Text style={styles.terms}>
-          By continuing with Apple or Google you agree to the{' '}
+          By continuing with one of these sign-in options, you agree to the{' '}
           <Text style={styles.termsLink} onPress={onShowTerms}>
             Terms and Conditions
           </Text>

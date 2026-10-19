@@ -14,7 +14,7 @@ export function parseCents(text: string): number | null {
   return Number.isSafeInteger(total) ? total : null;
 }
 
-// Cents -> "$23.40" in the bill's currency, with the phone's digit grouping.
+// Cents -> "$23.40" in the given currency, with the phone's digit grouping.
 // The symbol is added here rather than by Intl: Android's Intl ignores
 // currencyDisplay: 'narrowSymbol' and prints "CA$" on phones set to another
 // region. Dividing by 100 is display only; nothing is calculated from it.
@@ -25,15 +25,37 @@ const SYMBOLS: Record<string, string> = {
   NZD: '$',
   EUR: '€',
   GBP: '£',
+  INR: '₹',
+  PHP: '₱',
+  ILS: '₪',
+  TRY: '₺',
+  NGN: '₦',
+  MXN: 'MX$',
+  BRL: 'R$',
+  HKD: 'HK$',
+  SGD: 'S$',
 };
 
-export function formatCents(cents: number, currency = 'CAD'): string {
+// Where two currencies appear side by side ("US$52.30 ≈ CA$73.91"), a bare
+// "$" is ambiguous, so the dollar currencies say whose dollar they are.
+const EXPLICIT_SYMBOLS: Record<string, string> = {
+  CAD: 'CA$',
+  USD: 'US$',
+  AUD: 'A$',
+  NZD: 'NZ$',
+};
+
+export function formatCents(
+  cents: number,
+  currency = 'CAD',
+  options: { explicit?: boolean } = {}
+): string {
   const amount = new Intl.NumberFormat(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Math.abs(cents) / 100);
   const sign = cents < 0 ? '-' : '';
-  const symbol = SYMBOLS[currency];
+  const symbol = (options.explicit && EXPLICIT_SYMBOLS[currency]) || SYMBOLS[currency];
   return symbol ? `${sign}${symbol}${amount}` : `${sign}${amount} ${currency}`;
 }
 

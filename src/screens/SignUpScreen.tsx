@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -11,10 +11,15 @@ import {
 import { CheckIcon, CloseIcon } from '../components/icons';
 import LegalText from '../components/LegalText';
 import SocialSignIn from '../components/SocialSignIn';
-import { Button, ErrorText, Field, FormScreen } from '../components/ui';
+import CurrencyPicker from '../components/CurrencyPicker';
+import { Button, ErrorText, Field, FormScreen, SelectField } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { LEGAL, LegalDoc } from '../legal/documents';
+import { currencyLabel } from '../lib/currency';
+import { deviceCurrency } from '../lib/fx';
+import { cleanUsername, USERNAME_MAX, usernameProblem } from '../lib/username';
+import { isUsernameAvailable } from '../lib/usernameCheck';
 import { AuthStackParamList } from '../navigation/types';
 import { fonts, Palette, spacing, TypeTokens } from '../theme';
 
@@ -26,12 +31,51 @@ export default function SignUpScreen({ navigation }: Props) {
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [username, setUsername] = useState('');
+  // The last answer from the server, and which name it was for.
+  const [availability, setAvailability] = useState<{ name: string; free: boolean | null } | null>(
+    null
+  );
+  // Starts on the phone's region; bills and Pro prices are shown in it.
+  const [currency, setCurrency] = useState(deviceCurrency);
+  const [pickingCurrency, setPickingCurrency] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const chosen = cleanUsername(username);
+  const problem = chosen ? usernameProblem(chosen) : null;
+  // undefined while the check for this exact name is still on its way.
+  const free = availability?.name === chosen ? availability.free : undefined;
+
+  // Ask whether the name is free once typing pauses.
+  useEffect(() => {
+    if (!chosen || problem) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const result = await isUsernameAvailable(chosen);
+      if (!cancelled) setAvailability({ name: chosen, free: result });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [chosen, problem]);
+
+  const usernameStatus: { text: string; tone: 'muted' | 'good' | 'bad' } = !chosen
+    ? { text: 'How friends find you on RollCal.', tone: 'muted' }
+    : problem
+      ? { text: problem, tone: 'bad' }
+      : free === undefined
+        ? { text: 'Checking…', tone: 'muted' }
+        : free === false
+          ? { text: 'That username is taken.', tone: 'bad' }
+          : free
+            ? { text: `@${chosen} is yours if you want it.`, tone: 'good' }
+            : { text: 'How friends find you on RollCal.', tone: 'muted' };
 
   const submit = async () => {
     setError(null);
@@ -40,7 +84,9 @@ export default function SignUpScreen({ navigation }: Props) {
       email,
       password,
       firstName,
-      lastName
+      lastName,
+      chosen,
+      currency
     );
     setBusy(false);
     if (error) {
@@ -84,6 +130,31 @@ export default function SignUpScreen({ navigation }: Props) {
             />
           </View>
         </View>
+        <Field
+          label="Username"
+          value={username}
+          onChangeText={(v) => setUsername(v.toLowerCase())}
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="off"
+          maxLength={USERNAME_MAX + 1}
+          placeholder="samrivera"
+        />
+        <Text
+          style={[
+            styles.usernameStatus,
+            usernameStatus.tone === 'good' && { color: colors.accentText },
+            usernameStatus.tone === 'bad' && { color: colors.danger },
+          ]}
+        >
+          {usernameStatus.text}
+        </Text>
+        <SelectField
+          label="Currency"
+          value={currencyLabel(currency)}
+          onPress={() => setPickingCurrency(true)}
+          accessibilityHint="Bills you split and Pro prices are shown in it"
+        />
         <Field
           label="Email"
           value={email}
@@ -145,6 +216,10 @@ export default function SignUpScreen({ navigation }: Props) {
           disabled={
             !firstName.trim() ||
             !lastName.trim() ||
+            !chosen ||
+            !!problem ||
+            free === undefined ||
+            free === false ||
             !email ||
             password.length < 6 ||
             !termsAccepted
@@ -158,6 +233,17 @@ export default function SignUpScreen({ navigation }: Props) {
           </Pressable>
         </View>
       </ScrollView>
+
+      <CurrencyPicker
+        visible={pickingCurrency}
+        selected={currency}
+        intro="Bills you split and Pro prices are shown in it. You can change it later in Settings."
+        onSelect={(code) => {
+          setCurrency(code);
+          setPickingCurrency(false);
+        }}
+        onClose={() => setPickingCurrency(false)}
+      />
 
       <Modal
         visible={legalDoc !== null}
@@ -221,6 +307,11 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     nameRow: {
       flexDirection: 'row',
       gap: spacing.sm,
+    },
+    usernameStatus: {
+      ...t.caption,
+      marginTop: -spacing.sm,
+      marginBottom: spacing.md,
     },
     termsRow: {
       flexDirection: 'row',

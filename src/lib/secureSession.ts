@@ -1,0 +1,86 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AESEncryptionKey, AESSealedData, aesDecryptAsync, aesEncryptAsync } from 'expo-crypto';
+import * as SecureStore from 'expo-secure-store';
+import { utf8Decode, utf8Encode } from './utf8';
+
+// Where Supabase keeps the signed-in session. The session is too big for
+// the Keychain / Keystore (about 2 KB per item), so it's encrypted with
+// AES-256-GCM and the ciphertext goes in AsyncStorage, while the key itself
+// lives in the Keychain (iOS) or Keystore (Android). Someone copying the
+// app's files gets ciphertext without the key.
+
+const KEY_NAME = 'rollcal.sessionKey';
+// Marks values written by this adapter, so plain sessions saved by older
+// versions of the app can still be read once and then rewritten encrypted.
+const PREFIX = 'enc1:';
+
+let keyPromise: Promise<AESEncryptionKey> | null = null;
+
+function sessionKey(): Promise<AESEncryptionKey> {
+  keyPromise ??= (async () => {
+    const stored = await SecureStore.getItemAsync(KEY_NAME);
+    if (stored) return AESEncryptionKey.import(stored, 'hex');
+    const key = await AESEncryptionKey.generate();
+    await SecureStore.setItemAsync(KEY_NAME, await key.encoded('hex'), {
+      // Readable after the first unlock, so token refresh works in the
+      // background; never synced to other devices or iCloud backups.
+      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+    });
+    return key;
+  })().catch((err) => {
+    keyPromise = null;
+    throw err;
+  });
+  return keyPromise;
+}
+
+let warned = false;
+function warnOnce(err: unknown) {
+  if (warned) return;
+  warned = true;
+  console.warn('Session saved unencrypted: secure storage unavailable.', err);
+}
+
+export const secureSessionStorage = {
+  async getItem(name: string): Promise<string | null> {
+    const raw = await AsyncStorage.getItem(name);
+    if (raw === null) return null;
+    if (!raw.startsWith(PREFIX)) {
+      // Saved by an older version in plain text: hand it over once and
+      // store it encrypted from now on.
+      await this.setItem(name, raw).catch(() => {});
+      return raw;
+    }
+    try {
+      const sealed = AESSealedData.fromCombined(raw.slice(PREFIX.length));
+      const bytes = (await aesDecryptAsync(sealed, await sessionKey(), {
+        output: 'bytes',
+      })) as Uint8Array;
+      return utf8Decode(bytes);
+    } catch {
+      // The key is gone (say, a restored backup on a new phone) or the data
+      // was tampered with: treat it as signed out.
+      await AsyncStorage.removeItem(name);
+      return null;
+    }
+  },
+
+  async setItem(name: string, value: string): Promise<void> {
+    let stored: string;
+    try {
+      const sealed = await aesEncryptAsync(utf8Encode(value), await sessionKey());
+      stored = PREFIX + ((await sealed.combined('base64')) as string);
+    } catch (err) {
+      // No usable Keychain / Keystore. Real installs always have one; unsigned
+      // simulator builds don't. Keep the session as before rather than sign
+      // the person out, and try encrypting again next time.
+      warnOnce(err);
+      stored = value;
+    }
+    await AsyncStorage.setItem(name, stored);
+  },
+
+  async removeItem(name: string): Promise<void> {
+    await AsyncStorage.removeItem(name);
+  },
+};

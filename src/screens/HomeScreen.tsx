@@ -75,147 +75,157 @@ export default function HomeScreen({ navigation }: Props) {
   const [metaMap, setMetaMap] = useState<Record<string, EventMeta>>({});
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // The last load couldn't reach the server. Events from an earlier load
+  // stay on screen with a note; with none, the list offers to try again.
+  const [loadError, setLoadError] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const hasLoadedRef = useRef(false);
 
   const load = useCallback(async () => {
-    const [{ data, error }, pending] = await Promise.all([
-      supabase.from('events').select('*').order('starts_at', { ascending: true }),
-      loadPendingInvitations(userId),
-    ]);
+    try {
+      const [{ data, error }, pending] = await Promise.all([
+        supabase.from('events').select('*').order('starts_at', { ascending: true }),
+        loadPendingInvitations(userId),
+      ]);
 
-    setInvites(pending);
-    notifyEventInvitations(userId, pending);
+      setInvites(pending);
+      notifyEventInvitations(userId, pending);
 
-    if (!error && data) {
-      setEvents(data);
-      syncEventReminders();
-      const eventList = data.map((e) => ({ id: e.id, title: e.title }));
-      notifyChatMessages(userId, eventList);
-      notifyBillsShared(userId, eventList);
-      notifyBillPayments(userId, eventList);
+      setLoadError(!!error || !data);
+      if (!error && data) {
+        setEvents(data);
+        syncEventReminders();
+        const eventList = data.map((e) => ({ id: e.id, title: e.title }));
+        notifyChatMessages(userId, eventList);
+        notifyBillsShared(userId, eventList);
+        notifyBillPayments(userId, eventList);
 
-      const eventIds = data.map((e) => e.id);
-      if (eventIds.length > 0) {
-        const [{ data: photosData }, { data: rsvpsData }] = await Promise.all([
-          supabase
-            .from('photos')
-            .select('id, event_id, storage_path, created_at')
-            .in('event_id', eventIds)
-            .order('created_at', { ascending: true }),
-          supabase
-            .from('rsvps')
-            .select('event_id, status, user_id')
-            .in('event_id', eventIds)
-            .eq('status', 'going'),
-        ]);
+        const eventIds = data.map((e) => e.id);
+        if (eventIds.length > 0) {
+          const [{ data: photosData }, { data: rsvpsData }] = await Promise.all([
+            supabase
+              .from('photos')
+              .select('id, event_id, storage_path, created_at')
+              .in('event_id', eventIds)
+              .order('created_at', { ascending: true }),
+            supabase
+              .from('rsvps')
+              .select('event_id, status, user_id')
+              .in('event_id', eventIds)
+              .eq('status', 'going'),
+          ]);
 
-        const photoCountByEvent: Record<string, number> = {};
-        photosData?.forEach((p) => {
-          photoCountByEvent[p.event_id] = (photoCountByEvent[p.event_id] ?? 0) + 1;
-        });
-
-
-        const userIdsToFetch = Array.from(
-          new Set([
-            ...data.map((e) => e.creator_id),
-            ...(rsvpsData?.map((r) => r.user_id) ?? []),
-          ])
-        ).filter(Boolean);
-
-        const profileInfoMap = new Map<string, { name: string; avatarUrl?: string | null }>();
-        if (userIdsToFetch.length > 0) {
-          const { data: profilesData } = await supabase
-            .from('profiles')
-            .select('id, display_name, avatar_url')
-            .in('id', userIdsToFetch);
-          profilesData?.forEach((p) => {
-            if (p.id) {
-              profileInfoMap.set(p.id, {
-                name: p.display_name || 'Someone',
-                avatarUrl: p.avatar_url,
-              });
-            }
+          const photoCountByEvent: Record<string, number> = {};
+          photosData?.forEach((p) => {
+            photoCountByEvent[p.event_id] = (photoCountByEvent[p.event_id] ?? 0) + 1;
           });
-        }
 
-        // Storage paths of the covers hosts have chosen
-        const chosenCoverPaths: string[] = [];
-        data.forEach((e) => {
-          const chosenId = e.cover_photo_id;
-          if (chosenId) {
-            const photo = photosData?.find(
-              (p) => p.id === chosenId && p.event_id === e.id
-            );
-            if (photo) {
-              chosenCoverPaths.push(photo.storage_path);
-            }
-          }
-        });
 
-        let signedUrlMap = new Map<string, string>();
-        if (chosenCoverPaths.length > 0) {
-          const { data: signed } = await supabase.storage
-            .from('event-photos')
-            .createSignedUrls(chosenCoverPaths, 3600);
-          signed?.forEach((s) => {
-            if (s.signedUrl && s.path) signedUrlMap.set(s.path, s.signedUrl);
-          });
-        }
+          const userIdsToFetch = Array.from(
+            new Set([
+              ...data.map((e) => e.creator_id),
+              ...(rsvpsData?.map((r) => r.user_id) ?? []),
+            ])
+          ).filter(Boolean);
 
-        const newMeta: Record<string, EventMeta> = {};
-        data.forEach((e) => {
-          const count = photoCountByEvent[e.id] ?? 0;
-          const chosenId = e.cover_photo_id;
-          let url: string | undefined = undefined;
-          if (chosenId) {
-            const photo = photosData?.find(
-              (p) => p.id === chosenId && p.event_id === e.id
-            );
-            if (photo) {
-              url = signedUrlMap.get(photo.storage_path);
-            }
-          }
-
-          const eventRsvps = rsvpsData?.filter((r) => r.event_id === e.id) ?? [];
-          const attendeeList: Array<{
-            userId: string;
-            name: string;
-            avatarUrl?: string | null;
-          }> = [];
-          if (e.creator_id) {
-            const hostInfo = profileInfoMap.get(e.creator_id);
-            attendeeList.push({
-              userId: e.creator_id,
-              name: hostInfo?.name || 'Host',
-              avatarUrl: hostInfo?.avatarUrl,
+          const profileInfoMap = new Map<string, { name: string; avatarUrl?: string | null }>();
+          if (userIdsToFetch.length > 0) {
+            const { data: profilesData } = await supabase
+              .from('profiles')
+              .select('id, display_name, avatar_url')
+              .in('id', userIdsToFetch);
+            profilesData?.forEach((p) => {
+              if (p.id) {
+                profileInfoMap.set(p.id, {
+                  name: p.display_name || 'Someone',
+                  avatarUrl: p.avatar_url,
+                });
+              }
             });
           }
-          eventRsvps.forEach((r) => {
-            if (r.user_id && r.user_id !== e.creator_id) {
-              if (!attendeeList.some((a) => a.userId === r.user_id)) {
-                const guestInfo = profileInfoMap.get(r.user_id);
-                attendeeList.push({
-                  userId: r.user_id,
-                  name: guestInfo?.name || 'Guest',
-                  avatarUrl: guestInfo?.avatarUrl,
-                });
+
+          // Storage paths of the covers hosts have chosen
+          const chosenCoverPaths: string[] = [];
+          data.forEach((e) => {
+            const chosenId = e.cover_photo_id;
+            if (chosenId) {
+              const photo = photosData?.find(
+                (p) => p.id === chosenId && p.event_id === e.id
+              );
+              if (photo) {
+                chosenCoverPaths.push(photo.storage_path);
               }
             }
           });
 
-          const going = Math.max(1, attendeeList.length);
+          let signedUrlMap = new Map<string, string>();
+          if (chosenCoverPaths.length > 0) {
+            const { data: signed } = await supabase.storage
+              .from('event-photos')
+              .createSignedUrls(chosenCoverPaths, 3600);
+            signed?.forEach((s) => {
+              if (s.signedUrl && s.path) signedUrlMap.set(s.path, s.signedUrl);
+            });
+          }
 
-          newMeta[e.id] = {
-            photoCount: count,
-            coverUrl: url, // undefined unless explicitly chosen by the host!
-            goingCount: going,
-            attendees: attendeeList,
-          };
-        });
+          const newMeta: Record<string, EventMeta> = {};
+          data.forEach((e) => {
+            const count = photoCountByEvent[e.id] ?? 0;
+            const chosenId = e.cover_photo_id;
+            let url: string | undefined = undefined;
+            if (chosenId) {
+              const photo = photosData?.find(
+                (p) => p.id === chosenId && p.event_id === e.id
+              );
+              if (photo) {
+                url = signedUrlMap.get(photo.storage_path);
+              }
+            }
 
-        setMetaMap(newMeta);
+            const eventRsvps = rsvpsData?.filter((r) => r.event_id === e.id) ?? [];
+            const attendeeList: Array<{
+              userId: string;
+              name: string;
+              avatarUrl?: string | null;
+            }> = [];
+            if (e.creator_id) {
+              const hostInfo = profileInfoMap.get(e.creator_id);
+              attendeeList.push({
+                userId: e.creator_id,
+                name: hostInfo?.name || 'Host',
+                avatarUrl: hostInfo?.avatarUrl,
+              });
+            }
+            eventRsvps.forEach((r) => {
+              if (r.user_id && r.user_id !== e.creator_id) {
+                if (!attendeeList.some((a) => a.userId === r.user_id)) {
+                  const guestInfo = profileInfoMap.get(r.user_id);
+                  attendeeList.push({
+                    userId: r.user_id,
+                    name: guestInfo?.name || 'Guest',
+                    avatarUrl: guestInfo?.avatarUrl,
+                  });
+                }
+              }
+            });
+
+            const going = Math.max(1, attendeeList.length);
+
+            newMeta[e.id] = {
+              photoCount: count,
+              coverUrl: url, // undefined unless explicitly chosen by the host!
+              goingCount: going,
+              attendees: attendeeList,
+            };
+          });
+
+          setMetaMap(newMeta);
+        }
       }
+    } catch {
+      // Offline, or the request died partway.
+      setLoadError(true);
     }
 
     animateNext(hasLoadedRef.current);
@@ -229,6 +239,13 @@ export default function HomeScreen({ navigation }: Props) {
       load();
     }, [load])
   );
+
+  const retry = async () => {
+    hapticLight();
+    setRetrying(true);
+    await load();
+    setRetrying(false);
+  };
 
   const onRefresh = async () => {
     hapticLight();
@@ -448,23 +465,38 @@ export default function HomeScreen({ navigation }: Props) {
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           ListHeaderComponent={
-            heroEvent ? (
-              <View
-                style={[
-                  styles.heroWrapper,
-                  sections.length > 0 && styles.heroWrapperWithSections,
-                ]}
-              >
-                <NextUpHero
-                  event={heroEvent}
-                  meta={metaMap[heroEvent.id]}
-                  hasUnread={unreadSet.has(heroEvent.id)}
-                  onPress={() =>
-                    navigation.navigate('EventDetail', { eventId: heroEvent.id })
-                  }
-                />
-              </View>
-            ) : null
+            <>
+              {loadError && (events.length > 0 || invites.length > 0) && (
+                <View style={styles.staleNote}>
+                  <Text style={styles.staleText}>Couldn’t refresh. You may be offline.</Text>
+                  <Pressable
+                    onPress={retry}
+                    disabled={retrying}
+                    hitSlop={12}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.staleAction}>{retrying ? 'Trying…' : 'Try again'}</Text>
+                  </Pressable>
+                </View>
+              )}
+              {heroEvent ? (
+                <View
+                  style={[
+                    styles.heroWrapper,
+                    sections.length > 0 && styles.heroWrapperWithSections,
+                  ]}
+                >
+                  <NextUpHero
+                    event={heroEvent}
+                    meta={metaMap[heroEvent.id]}
+                    hasUnread={unreadSet.has(heroEvent.id)}
+                    onPress={() =>
+                      navigation.navigate('EventDetail', { eventId: heroEvent.id })
+                    }
+                  />
+                </View>
+              ) : null}
+            </>
           }
           renderSectionHeader={({ section: { title } }) => (
             <View style={styles.sectionHeaderWrap}>
@@ -494,7 +526,18 @@ export default function HomeScreen({ navigation }: Props) {
             />
           }
           ListEmptyComponent={
-            !heroEvent ? (
+            !heroEvent && loadError ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyTitle}>Can’t reach RollCal</Text>
+                <Text style={styles.emptyText}>Check your connection and try again.</Text>
+                <Button
+                  title="Try again"
+                  onPress={retry}
+                  loading={retrying}
+                  style={styles.emptyButton}
+                />
+              </View>
+            ) : !heroEvent ? (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>No events yet.</Text>
                 <Button
@@ -1016,6 +1059,28 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       ...t.body,
       color: c.inkMuted,
       textAlign: 'center',
+    },
+    emptyTitle: {
+      ...t.h3,
+      textAlign: 'center',
+      marginBottom: -spacing.sm,
+    },
+    staleNote: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+      paddingVertical: spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    staleText: {
+      ...t.caption,
+      flex: 1,
+    },
+    staleAction: {
+      ...t.caption,
+      fontFamily: fonts.bodySemiBold,
+      color: c.ink,
     },
     emptyButton: {
       minWidth: 160,

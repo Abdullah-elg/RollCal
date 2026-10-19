@@ -14,7 +14,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useHeaderHeight } from '@react-navigation/elements';
+import { useFocusEffect } from '@react-navigation/native';
 import Avatar from '../components/Avatar';
+import PersonActionsSheet, { ActionsPerson } from '../components/PersonActionsSheet';
 import { AlertCircleIcon, BellIcon, BellOffIcon, SendIcon } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -31,7 +33,8 @@ import {
 } from '../lib/chat';
 import { formatMessageTime } from '../lib/dates';
 import { hapticLight } from '../lib/haptics';
-import { getMutedChats, markChatSeen, setChatMuted } from '../lib/notifications';
+import { loadBlockedIds } from '../lib/safety';
+import { getMutedChats, markChatSeen, setActiveChat, setChatMuted } from '../lib/notifications';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Message } from '../types';
@@ -67,8 +70,28 @@ export default function EventChatScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  // The message being acted on (long-press), with its sender.
+  const [acting, setActing] = useState<{ message: Message; person: ActionsPerson } | null>(null);
   // Read inside the realtime handler, which is created once.
   const rosterRef = useRef<ChatRoster>({});
+
+  const refreshBlocked = useCallback(async () => {
+    setBlockedIds(await loadBlockedIds());
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      refreshBlocked();
+    }, [refreshBlocked])
+  );
+
+  // While this chat is on screen, its new messages don't also pop up.
+  useFocusEffect(
+    useCallback(() => {
+      setActiveChat(eventId);
+      return () => setActiveChat(null);
+    }, [eventId])
+  );
 
   // Per-event mute, kept on the device.
   useEffect(() => {
@@ -201,7 +224,10 @@ export default function EventChatScreen({ navigation, route }: Props) {
 
   // Newest at the bottom: an inverted list keeps that anchored when the
   // keyboard opens, so the data is reversed.
-  const rows = useMemo(() => [...messages].reverse(), [messages]);
+  const rows = useMemo(
+    () => messages.filter((m) => !blockedIds.has(m.sender_id)).reverse(),
+    [messages, blockedIds]
+  );
 
   const renderItem = ({ item, index }: { item: Message; index: number }) => {
     const mine = item.sender_id === userId;
@@ -257,9 +283,23 @@ export default function EventChatScreen({ navigation, route }: Props) {
             ) : null}
           </View>
           <View style={styles.bubbleTheirsCol}>
-            <View style={styles.bubbleTheirs}>
+            <Pressable
+              style={styles.bubbleTheirs}
+              delayLongPress={350}
+              onLongPress={() => {
+                hapticLight();
+                setActing({
+                  message: item,
+                  person: {
+                    id: item.sender_id,
+                    name: sender?.name.split(' ')[0] ?? 'this person',
+                  },
+                });
+              }}
+              accessibilityHint="Long press to report or block"
+            >
               <Text style={[type.body, styles.bubbleTheirsText]}>{item.body}</Text>
-            </View>
+            </Pressable>
             {endsGroup && (
               <Text style={styles.timeTheirs}>{formatMessageTime(item.created_at)}</Text>
             )}
@@ -363,6 +403,21 @@ export default function EventChatScreen({ navigation, route }: Props) {
           {content}
         </Animated.View>
       )}
+      <PersonActionsSheet
+        person={acting?.person ?? null}
+        report={
+          acting
+            ? {
+                target: 'message',
+                targetId: acting.message.id,
+                subject: 'this message',
+                label: 'Report message',
+              }
+            : undefined
+        }
+        onClose={() => setActing(null)}
+        onBlocked={refreshBlocked}
+      />
     </SafeAreaView>
   );
 }

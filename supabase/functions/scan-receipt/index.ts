@@ -75,7 +75,7 @@ const PROMPT = `Read this receipt photo and return its contents as JSON.
 
 - is_receipt: false if the photo isn't a receipt or bill you can read.
 - merchant: the restaurant or shop name, short, written the way the business writes it in normal text (Pizzeria Libretto, not PIZZERIA LIBRETTO).
-- currency: an ISO 4217 code only if the receipt prints one or uses a symbol other than $ (for example EUR for €). Otherwise null.
+- currency: the ISO 4217 code the amounts are in. Use a printed code or symbol (EUR for €). For a plain $, work it out from the receipt: the store's address or country, tax names (HST, GST, PST or QST mean CAD; a US state sales tax means USD), phone numbers, language and spelling. null only if there is no clue at all.
 - items: one entry per printed line, in printed order, including discount, coupon and comp lines. name is the line as printed, cleaned up to read naturally (normal capitalization, no item codes). quantity is the printed quantity, 1 if none. line_total is the amount printed for the whole line (quantity included), like "14.00". Give discount, coupon and comp lines a minus sign, like "-2.00". Don't list tax, tip, fees, subtotals, totals or payments as items.
 - subtotal: the printed subtotal before tax, if any.
 - tax: all tax lines added together (for example GST plus PST), if any.

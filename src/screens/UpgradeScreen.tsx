@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckIcon } from '../components/icons';
@@ -8,7 +8,9 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { LegalDoc } from '../legal/documents';
 import { hapticLight } from '../lib/haptics';
-import { PRO_PERKS, PRO_PRICES } from '../lib/pro';
+import { currencyName, Rates } from '../lib/currency';
+import { deviceCurrency, loadRates } from '../lib/fx';
+import { PRO_PERKS, PRO_PRICES, proPriceText } from '../lib/pro';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, spacing, TypeTokens } from '../theme';
 
@@ -28,6 +30,15 @@ export default function UpgradeScreen({ navigation, route }: Props) {
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const insets = useSafeAreaInsets();
   const [plan, setPlan] = useState<Plan>('yearly');
+  // Shown in the person's currency at today's rate; US dollars until the
+  // rates load, or if they can't.
+  const currency = profile?.currency ?? deviceCurrency();
+  const [rates, setRates] = useState<Rates | null>(null);
+  useEffect(() => {
+    if (currency !== 'USD') loadRates().then(setRates);
+  }, [currency]);
+  const prices = proPriceText(currency, rates);
+  const about = prices.converted ? 'about ' : '';
 
   const choose = (next: Plan) => {
     if (next === plan) return;
@@ -75,17 +86,19 @@ export default function UpgradeScreen({ navigation, route }: Props) {
           ? 'You’ve used this month’s uploads.'
           : reason === 'expiry'
             ? 'Keep your event’s photos.'
-            : 'Get more out of RollCal.';
+            : reason === 'quiet'
+              ? 'Turn on Quiet mode.'
+              : 'Get more out of RollCal.';
 
-  const price = plan === 'yearly' ? PRO_PRICES.yearly : PRO_PRICES.monthly;
+  const price = plan === 'yearly' ? prices.yearly : prices.monthly;
   const store = Platform.OS === 'ios' ? 'Apple ID' : 'Google Play account';
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={content}>
       <Text style={type.display}>{headline}</Text>
       <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>
-        Pro is {PRO_PRICES.trialDays} days free, then {PRO_PRICES.monthly} a month or{' '}
-        {PRO_PRICES.yearly} a year.
+        Pro is {PRO_PRICES.trialDays} days free, then {about}
+        {prices.monthly} a month or {prices.yearly} a year.
       </Text>
 
       {perks}
@@ -105,8 +118,8 @@ export default function UpgradeScreen({ navigation, route }: Props) {
                 <View style={styles.perkText}>
                   <Text style={type.body}>
                     {p === 'yearly'
-                      ? `Yearly · ${PRO_PRICES.yearly} a year`
-                      : `Monthly · ${PRO_PRICES.monthly} a month`}
+                      ? `Yearly · ${about}${prices.yearly} a year`
+                      : `Monthly · ${about}${prices.monthly} a month`}
                   </Text>
                   {p === 'yearly' && <Text style={type.caption}>Save {PRO_PRICES.yearlySaving}</Text>}
                 </View>
@@ -122,9 +135,16 @@ export default function UpgradeScreen({ navigation, route }: Props) {
       <Text style={[type.caption, styles.note]}>
         Pro isn’t available to buy yet. We’ll let you know in the app when it is.
       </Text>
+      {prices.converted && (
+        <Text style={[type.caption, styles.note]}>
+          Pro is priced in US dollars ({prices.usd.monthly} a month or {prices.usd.yearly} a year).
+          Prices here are converted to {currencyName(currency)} at today’s exchange rate, as a
+          guide. You’re charged in your {store}’s currency, at the price shown before you confirm.
+        </Text>
+      )}
       <Text style={[type.caption, styles.note]}>
-        {PRO_PRICES.trialDays}-day free trial, then {price} a {plan === 'yearly' ? 'year' : 'month'} for
-        the plan you picked. Payment is charged to your {store} when you confirm. Your subscription
+        {PRO_PRICES.trialDays}-day free trial, then {about}{price} a{' '}
+        {plan === 'yearly' ? 'year' : 'month'} for the plan you picked. Payment is charged to your {store} when you confirm. Your subscription
         renews automatically unless you cancel at least 24 hours before the end of the current
         period. Manage or cancel it any time in your account’s subscription settings.
       </Text>

@@ -11,6 +11,8 @@ export type AuthStackParamList = {
   SignIn: undefined;
   SignUp: undefined;
   VerifyEmail: { email: string };
+  ForgotPassword: { email?: string } | undefined;
+  ResetPassword: { email: string };
 };
 
 // The bottom tabs live inside the app stack, so pushed screens (event
@@ -38,13 +40,16 @@ export type AppStackParamList = {
   // Bill splitting. BillReview is where a bill is typed in or a scanned one
   // is checked; BillShare picks payment methods and shares it; Bill shows a
   // shared bill.
-  BillReview: { eventId: string; draft?: BillDraft };
+  // With editBillId, changes an already shared bill instead of making one.
+  // receivedCents is what's been paid on it so far.
+  BillReview: { eventId: string; draft?: BillDraft; editBillId?: string; receivedCents?: number };
   BillShare: { draft: BillDraft };
   Bill: { billId: string };
   FindPeople: undefined;
   FriendRequests: undefined;
   SentRequests: undefined;
   EventInvitations: undefined;
+  BlockedPeople: undefined;
 };
 
 // Tab screens can navigate to stack routes too, so their props compose both.

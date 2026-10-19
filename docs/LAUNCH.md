@@ -104,10 +104,26 @@ You don't need a different provider: the Gemini API becomes pay-per-token as soo
 
 **Why this is already future-proof:** the app never talks to Gemini directly. Only the `scan-receipt` function on the server does. You can change models (the `GEMINI_MODEL` secret), or move to Vertex AI, Claude or OpenAI, by editing that one function, with no app update. If you'd rather start cheaper, set `GEMINI_MODEL` to `gemini-3.5-flash-lite`; it read the test receipt perfectly.
 
+## 6b. Push notifications (Expo)
+
+Friend requests, chat messages and the roll opening are pushed by the server (`supabase/push.sql` and the `send-push` function) through Expo's free push service. The code is done; it switches on once these accounts exist. Until then the app quietly falls back to checking when it's opened.
+
+1. Run `supabase/push.sql` in the SQL editor, then deploy the function: `supabase functions deploy send-push --no-verify-jwt` (or Edge Functions → Deploy, with **Enforce JWT verification** off).
+2. `eas init` (see section 7). This writes `extra.eas.projectId` into `app.json`, which the app needs to get a push token.
+3. **iOS:** run `eas credentials`, pick iOS, and let EAS create an Apple Push Notifications key. It needs your Apple Developer account (section 4).
+4. **Android:** Expo sends through Firebase Cloud Messaging.
+   - console.firebase.google.com → Add project → add an Android app with package `app.rollcal` → download `google-services.json` into the project root.
+   - Add `"googleServicesFile": "./google-services.json"` under `android` in `app.json`.
+   - Firebase → Project settings → Service accounts → **Generate new private key**, then upload that JSON with `eas credentials` → Android → Google Service Account → FCM V1.
+5. Make new development builds (`eas build --profile development`). Push doesn't work in the iOS simulator; use real phones.
+6. Optional, recommended once live: expo.dev → your project → Push notifications → turn on **Enhanced security**, create an access token, and add it as the `EXPO_ACCESS_TOKEN` secret on the `send-push` function. Then only your server can send to your users.
+
+To check it's working: Supabase → Table editor → `push_tokens` should get a row when you sign in on a phone, and Edge Functions → `send-push` → Logs shows each batch sent.
+
 ## 7. Before the first store build
 
 - [ ] In-app purchases wired up. RevenueCat is recommended: it handles both stores' receipts and trials, and sets `is_pro` through a webhook. Until then, hide the "Coming soon" button or the review will be rejected.
-- [ ] Push notifications set up (Expo push and an EAS project) so reminders and payment alerts reach closed apps.
+- [ ] Push notifications set up (section 6b) so chat, friend requests and the roll opening reach closed apps.
 - [ ] `eas init` with slug `rollcal` under the account that will own the app.
-- [ ] Fill in `OPERATOR` and `PROVINCE` in `src/legal/documents.ts`, run `npm run build:legal`, and have a lawyer review the three documents.
+- [ ] Have a lawyer review the three documents in `src/legal/documents.ts` (operator: RollCal, governed by Ontario law), then run `npm run build:legal`. If RollCal isn't a registered business yet, the operator should be your legal name or the registered name.
 - [ ] Turn on leaked-password protection: Supabase → Authentication → Policies.

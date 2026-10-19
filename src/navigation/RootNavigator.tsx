@@ -27,8 +27,14 @@ import { useUnread } from '../context/UnreadContext';
 import { ArrowIcon } from '../components/icons';
 import { CalendarBlank, Gear, Ticket, Users } from 'phosphor-react-native';
 import CreateActionSheet from '../components/CreateActionSheet';
+import CurrencyPrompt from '../components/CurrencyPrompt';
 import { hapticLight } from '../lib/haptics';
-import { onNotificationTap } from '../lib/notifications';
+import {
+  NotificationTarget,
+  onNotificationTap,
+  onPushTokenChange,
+  registerForPush,
+} from '../lib/notifications';
 import BillReviewScreen from '../screens/BillReviewScreen';
 import BillScreen from '../screens/BillScreen';
 import BillShareScreen from '../screens/BillShareScreen';
@@ -37,6 +43,7 @@ import CreateEventScreen from '../screens/CreateEventScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import EventChatScreen from '../screens/EventChatScreen';
 import EventDetailScreen from '../screens/EventDetailScreen';
+import BlockedPeopleScreen from '../screens/BlockedPeopleScreen';
 import FindPeopleScreen from '../screens/FindPeopleScreen';
 import FriendRequestsScreen from '../screens/FriendRequestsScreen';
 import FriendsScreen from '../screens/FriendsScreen';
@@ -51,6 +58,8 @@ import JoinEventScreen from '../screens/JoinEventScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
 import { fonts } from '../theme';
 import { AppStackParamList, AuthStackParamList, TabParamList } from './types';
@@ -291,7 +300,7 @@ function NewTabIcon({ tile, mark }: { tile: string; mark: string }) {
 }
 
 export default function RootNavigator() {
-  const { session, loading } = useAuth();
+  const { session, loading, recovering } = useAuth();
   const { mode, colors } = useTheme();
 
   // Paper background everywhere, including during screen transitions.
@@ -331,25 +340,40 @@ export default function RootNavigator() {
     if (!loading) SplashScreen.hide();
   }, [loading]);
 
-  // Tapping a "bill shared" notification opens that bill. If the tap launched
-  // the app, navigation isn't ready yet, so the bill waits for onReady.
+  // Tapping a notification opens what it's about: a bill, an event's chat,
+  // the event (roll opening) or Friends. If the tap launched the app,
+  // navigation isn't ready yet, so it waits for onReady.
   const navRef = useNavigationContainerRef<AppStackParamList>();
-  const pendingBill = useRef<string | null>(null);
-  const openPendingBill = () => {
-    if (pendingBill.current && navRef.isReady()) {
-      navRef.navigate('Bill', { billId: pendingBill.current });
-      pendingBill.current = null;
-    }
+  const pendingTarget = useRef<NotificationTarget | null>(null);
+  const openPendingTarget = () => {
+    const target = pendingTarget.current;
+    if (!target || !navRef.isReady()) return;
+    pendingTarget.current = null;
+    if (target.kind === 'bill') navRef.navigate('Bill', { billId: target.billId });
+    else if (target.kind === 'chat') {
+      navRef.navigate('EventChat', { eventId: target.eventId, title: target.title });
+    } else if (target.kind === 'event') {
+      navRef.navigate('EventDetail', { eventId: target.eventId });
+    } else navRef.navigate('Tabs', { screen: 'FriendsTab' });
   };
   useEffect(() => {
     if (!session) return;
-    return onNotificationTap(({ billId }) => {
-      pendingBill.current = billId;
-      openPendingBill();
+    return onNotificationTap((target) => {
+      pendingTarget.current = target;
+      openPendingTarget();
     });
-    // openPendingBill only reads refs.
+    // openPendingTarget only reads refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  // Register this phone for push once signed in, and again if its token
+  // changes.
+  const signedInId = session?.user.id;
+  useEffect(() => {
+    if (!signedInId) return;
+    registerForPush(signedInId);
+    return onPushTokenChange(signedInId);
+  }, [signedInId]);
 
   // The native splash is still covering the screen while this renders.
   if (loading) return null;
@@ -359,10 +383,12 @@ export default function RootNavigator() {
       ref={navRef}
       theme={navTheme}
       linking={linking}
-      onReady={openPendingBill}
+      onReady={openPendingTarget}
     >
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
-      {session ? (
+      {/* Mid password reset there's already a session; stay on the sign-in
+          screens until the new password is saved. */}
+      {session && !recovering ? (
         <ProPromptProvider
           onSeePro={(reason) => navRef.navigate('Upgrade', { reason })}
         >
@@ -441,7 +467,11 @@ export default function RootNavigator() {
               name="BillReview"
               component={BillReviewScreen}
               options={({ route }) => ({
-                title: route.params.draft ? 'Check the bill' : 'New bill',
+                title: route.params.editBillId
+                  ? 'Edit bill'
+                  : route.params.draft
+                    ? 'Check the bill'
+                    : 'New bill',
               })}
             />
             <AppStack.Screen
@@ -453,6 +483,11 @@ export default function RootNavigator() {
               name="Bill"
               component={BillScreen}
               options={{ title: '' }}
+            />
+            <AppStack.Screen
+              name="BlockedPeople"
+              component={BlockedPeopleScreen}
+              options={{ title: 'Blocked people' }}
             />
             <AppStack.Screen
               name="FindPeople"
@@ -475,12 +510,15 @@ export default function RootNavigator() {
               options={{ title: 'Invitations' }}
             />
           </AppStack.Navigator>
+          <CurrencyPrompt />
         </ProPromptProvider>
       ) : (
         <AuthStack.Navigator screenOptions={{ headerShown: false }}>
           <AuthStack.Screen name="SignIn" component={SignInScreen} />
           <AuthStack.Screen name="SignUp" component={SignUpScreen} />
           <AuthStack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+          <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+          <AuthStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         </AuthStack.Navigator>
       )}
     </NavigationContainer>

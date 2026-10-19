@@ -32,6 +32,7 @@ import { daysLeft, loadPhotoExpiry, PhotoExpiry, WARN_DAYS } from '../lib/expiry
 import { pickRollMedia, uploadBlocker, uploadRollMedia } from '../lib/photos';
 import { rollState } from '../lib/roll';
 import { hapticLight } from '../lib/haptics';
+import { loadBlockedIds } from '../lib/safety';
 import { supabase } from '../lib/supabase';
 import {
   formatBytes,
@@ -45,6 +46,7 @@ import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Event, Photo } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, PlayIcon } from './icons';
+import ReportSheet from './ReportSheet';
 import { Button, EmptyNote } from './ui';
 
 const BUCKET = 'event-photos';
@@ -321,6 +323,7 @@ export default function EventAlbum({
   const [showCoverPicker, setShowCoverPicker] = useState(false);
   const [selectedCoverId, setSelectedCoverId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
   const [busySaving, setBusySaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [allowance, setAllowance] = useState<UploadAllowance | null>(null);
@@ -373,6 +376,7 @@ export default function EventAlbum({
 
   const closeViewer = useCallback(() => {
     panY.setValue(0);
+    setReporting(false);
     setViewerIndex(null);
   }, [panY]);
 
@@ -433,15 +437,20 @@ export default function EventAlbum({
   }, [panY]);
 
   const load = useCallback(async () => {
-    const { data: rows } = await supabase
-      .from('photos')
-      .select('*')
-      .eq('event_id', event.id)
-      .order('created_at', { ascending: true });
-    if (!rows) {
+    const [{ data: allRows }, blockedIds] = await Promise.all([
+      supabase
+        .from('photos')
+        .select('*')
+        .eq('event_id', event.id)
+        .order('created_at', { ascending: true }),
+      loadBlockedIds(),
+    ]);
+    if (!allRows) {
       setLoaded(true);
       return;
     }
+    // Photos and videos from people you've blocked stay out of your roll.
+    const rows = allRows.filter((r) => !blockedIds.has(r.uploader_id));
 
     let urlByPath = new Map<string, string>();
     // Videos are signed when opened, not for the grid.
@@ -716,6 +725,7 @@ export default function EventAlbum({
   const viewerIsVideo = viewerPhoto?.kind === 'video';
   const canDeleteViewer =
     viewerPhoto != null && (isLeader || viewerPhoto.uploader_id === userId);
+  const canReportViewer = viewerPhoto != null && viewerPhoto.uploader_id !== userId;
 
   let allowanceNote: string | null = null;
   if (allowance && overAllowance(allowance)) {
@@ -1197,7 +1207,7 @@ export default function EventAlbum({
 
             {notice && <Text style={styles.viewerNotice}>{notice}</Text>}
 
-            {((isLeader && !viewerIsVideo) || canDeleteViewer) && (
+            {((isLeader && !viewerIsVideo) || canDeleteViewer || canReportViewer) && (
               <View style={styles.viewerBottom}>
                 {isLeader && !viewerIsVideo && (
                   <Pressable
@@ -1234,9 +1244,27 @@ export default function EventAlbum({
                     </Text>
                   </Pressable>
                 )}
+                {canReportViewer && (
+                  <Pressable
+                    onPress={() => setReporting(true)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                  >
+                    <Text style={styles.viewerReport}>Report</Text>
+                  </Pressable>
+                )}
               </View>
             )}
             </Animated.View>
+            <ReportSheet
+              visible={reporting}
+              target="photo"
+              targetId={viewerPhoto.id}
+              targetUserId={viewerPhoto.uploader_id}
+              subject={viewerIsVideo ? 'this video' : 'this photo'}
+              onClose={() => setReporting(false)}
+            />
           </SafeAreaView>
         )}
       </Modal>
@@ -1693,6 +1721,11 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     viewerCoverActionActive: {
       color: c.accentText,
+    },
+    viewerReport: {
+      ...t.body,
+      fontFamily: fonts.bodySemiBold,
+      color: c.ink,
     },
     viewerDelete: {
       ...t.body,

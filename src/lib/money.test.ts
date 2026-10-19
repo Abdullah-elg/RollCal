@@ -38,6 +38,13 @@ describe('formatting', () => {
     assert.equal(formatCents(999, 'JPY'), '9.99 JPY');
   });
 
+  test('explicit labels say whose dollar it is', () => {
+    assert.equal(formatCents(5230, 'USD', { explicit: true }), 'US$52.30');
+    assert.equal(formatCents(7391, 'CAD', { explicit: true }), 'CA$73.91');
+    assert.equal(formatCents(500, 'EUR', { explicit: true }), '€5.00');
+    assert.equal(formatCents(-250, 'AUD', { explicit: true }), '-A$2.50');
+  });
+
   test('centsToInput round-trips through parseCents', () => {
     for (const c of [0, 5, 99, 100, 2340, 123456]) {
       assert.equal(parseCents(centsToInput(c)), c);

@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -11,13 +11,16 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import CurrencyPicker from '../components/CurrencyPicker';
 import { CloseIcon, PlusIcon } from '../components/icons';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useProPrompt } from '../context/ProPromptContext';
-import { BillDraft, DraftItem, itemsTotal } from '../lib/bills';
+import { BillDraft, DraftItem, editBill, itemsTotal } from '../lib/bills';
 import { percentOf, subtotalMismatch } from '../lib/billSplit';
+import { convertBill, currencyLabel, describeRate, rateBetween, Rates } from '../lib/currency';
+import { deviceCurrency, loadRates } from '../lib/fx';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
 import { loadScansLeft } from '../lib/pro';
@@ -27,7 +30,8 @@ import { fonts, Palette, spacing, TypeTokens } from '../theme';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'BillReview'>;
 
-type Line = { key: number; name: string; price: string; quantity: string };
+// id: the saved line this was loaded from, when editing a bill.
+type Line = { key: number; id?: string; name: string; price: string; quantity: string };
 type TipMode = 'amount' | 'percent';
 
 const amountText = (cents: number) => (cents > 0 ? centsToInput(cents) : '');
@@ -43,18 +47,31 @@ const parseQuantity = (text: string): number | null => {
 };
 
 export default function BillReviewScreen({ navigation, route }: Props) {
-  const { eventId, draft } = route.params;
+  const { eventId, draft, editBillId, receivedCents = 0 } = route.params;
+  const editing = !!editBillId;
   const { profile } = useAuth();
   const { colors, type } = useTheme();
   const { showProPrompt } = useProPrompt();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const insets = useSafeAreaInsets();
-  // A scanned receipt can name its currency; typed bills are in dollars.
-  const currency = draft?.currency ?? 'CAD';
+  // Bills are shared in the person's own currency. A receipt in another
+  // one (worked out by the scan, or chosen here) is typed and checked in its
+  // own currency, then converted when it's shared. Edits keep the bill's.
+  const preferred = profile?.currency ?? deviceCurrency();
+  const [currency, setCurrency] = useState(draft?.currency ?? preferred);
+  const [pickingCurrency, setPickingCurrency] = useState(false);
+  const converting = !editing && currency !== preferred;
+  // undefined while loading; null if today's rates couldn't be had.
+  const [rates, setRates] = useState<Rates | null | undefined>(undefined);
+  useEffect(() => {
+    if (converting && rates === undefined) loadRates().then(setRates);
+  }, [converting, rates]);
+  const rate = converting && rates ? rateBetween(currency, preferred, rates) : null;
 
   const nextKey = useRef(0);
   const newLine = (item?: DraftItem): Line => ({
     key: nextKey.current++,
+    id: item?.id,
     name: item?.name ?? '',
     price: item ? centsToInput(item.priceCents) : '',
     quantity: String(item?.quantity ?? 1),
@@ -69,6 +86,8 @@ export default function BillReviewScreen({ navigation, route }: Props) {
   const [tipMode, setTipMode] = useState<TipMode>('amount');
   const [fees, setFees] = useState(amountText(draft?.feesCents ?? 0));
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   // Free scans left this month; null when Pro or not known yet.
@@ -104,9 +123,20 @@ export default function BillReviewScreen({ navigation, route }: Props) {
     tipCents = optionalCents(tip);
   }
   const total = itemsCents + (taxCents ?? 0) + (tipCents ?? 0) + (feesCents ?? 0);
+  const converted =
+    rate !== null
+      ? convertBill(
+          { items: validItems, taxCents: taxCents ?? 0, tipCents: tipCents ?? 0, feesCents: feesCents ?? 0 },
+          rate
+        )
+      : null;
+  const convertedTotal = converted
+    ? itemsTotal(converted.items) + converted.taxCents + converted.tipCents + converted.feesCents
+    : null;
 
+  // A receipt's printed subtotal only means something before it's edited.
   const mismatch =
-    draft && subtotalMismatch(validItems, draft.subtotalCents) !== 0 ? draft.subtotalCents : null;
+    draft && !editing && subtotalMismatch(validItems, draft.subtotalCents) !== 0 ? draft.subtotalCents : null;
 
   const updateLine = (key: number, patch: Partial<Line>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -128,13 +158,14 @@ export default function BillReviewScreen({ navigation, route }: Props) {
     setTip('');
   };
 
-  const next = () => {
+  const next = async () => {
     setSubmitted(true);
     const linesOk =
       lines.length > 0 &&
       lines.every((l, i) => l.name.trim() && parsed[i].priceCents !== null && parsed[i].quantity !== null);
     if (!linesOk || taxCents === null || tipCents === null || feesCents === null) return;
     const items: DraftItem[] = lines.map((l, i) => ({
+      id: l.id,
       name: l.name.trim(),
       priceCents: parsed[i].priceCents as number,
       quantity: parsed[i].quantity as number,
@@ -148,12 +179,42 @@ export default function BillReviewScreen({ navigation, route }: Props) {
       tipCents,
       feesCents,
       items,
-      paymentMethodIds: [],
+      paymentMethodIds: draft?.paymentMethodIds ?? [],
     };
-    navigation.navigate('BillShare', { draft: bill });
+    if (!editing) {
+      // Shared in the person's currency, remembering what the receipt was in.
+      // Without today's rate it stays in the receipt's currency.
+      if (converting && rate !== null) {
+        const c = convertBill({ items, taxCents, tipCents, feesCents }, rate);
+        navigation.navigate('BillShare', {
+          draft: {
+            ...bill,
+            ...c,
+            currency: preferred,
+            subtotalCents: itemsTotal(c.items),
+            scannedCurrency: currency,
+            scannedRate: rate,
+          },
+        });
+      } else {
+        navigation.navigate('BillShare', { draft: bill });
+      }
+      return;
+    }
+    setSaveError(null);
+    setSaving(true);
+    const error = await editBill(editBillId, bill);
+    setSaving(false);
+    if (error) {
+      setSaveError(error);
+      return;
+    }
+    hapticSuccess();
+    navigation.goBack();
   };
 
-  const fmt = (cents: number) => formatCents(cents, currency);
+  // With two currencies on screen, say whose dollar it is (US$, CA$).
+  const fmt = (cents: number) => formatCents(cents, currency, { explicit: converting });
 
   // Reading takes a few seconds. On success the screen starts over with the
   // scanned lines, so everything below is filled in for checking.
@@ -163,7 +224,7 @@ export default function BillReviewScreen({ navigation, route }: Props) {
       showProPrompt('scan');
       return;
     }
-    const result = await scanReceipt(eventId, source, () => setScanning(true));
+    const result = await scanReceipt(eventId, source, () => setScanning(true), preferred);
     setScanning(false);
     if ('error' in result) setScanError(result.error);
     if ('limitReached' in result) {
@@ -197,7 +258,11 @@ export default function BillReviewScreen({ navigation, route }: Props) {
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
       >
-        {draft ? (
+        {editing ? (
+          <Text style={[type.bodyMuted, { marginBottom: spacing.md }]}>
+            Everyone in the event sees your changes. Payments already made stay as they are.
+          </Text>
+        ) : draft ? (
           <Text style={[type.bodyMuted, { marginBottom: spacing.md }]}>
             Filled in from the receipt. Check each line before you share.
           </Text>
@@ -234,6 +299,20 @@ export default function BillReviewScreen({ navigation, route }: Props) {
               </Pressable>
             )}
             <ErrorText message={scanError} />
+          </View>
+        )}
+
+        {!editing && (
+          <View style={styles.currencyRow}>
+            <Text style={[type.bodyMuted, { flex: 1 }]}>Receipt in {currencyLabel(currency)}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Change the receipt's currency"
+              hitSlop={12}
+              onPress={() => setPickingCurrency(true)}
+            >
+              <Text style={styles.proLinkText}>Change</Text>
+            </Pressable>
           </View>
         )}
 
@@ -402,9 +481,36 @@ export default function BillReviewScreen({ navigation, route }: Props) {
           <Text style={type.h3}>Total</Text>
           <Text style={styles.total}>{fmt(total)}</Text>
         </View>
+        {converting && (
+          <Text style={[type.bodyMuted, { marginBottom: spacing.md }]}>
+            {rate !== null && convertedTotal !== null
+              ? `Shared as ${formatCents(convertedTotal, preferred, { explicit: true })} (${describeRate(currency, preferred, rate)}).`
+              : rates === undefined
+                ? 'Getting today’s exchange rate…'
+                : `Can’t get today’s exchange rate, so this bill will be shared in ${currency}.`}
+          </Text>
+        )}
 
-        <Button title="Next" onPress={next} />
+        {editing && receivedCents > total && (
+          <Text style={[type.bodyMuted, { marginBottom: spacing.md }]}>
+            People have already paid you {fmt(receivedCents)}, which is more than the new total.
+          </Text>
+        )}
+        <ErrorText message={saveError} />
+        <Button title={editing ? 'Save changes' : 'Next'} onPress={next} loading={saving} />
       </ScrollView>
+
+      <CurrencyPicker
+        visible={pickingCurrency}
+        selected={currency}
+        title="Receipt currency"
+        intro={`What currency is the receipt in? If it isn't ${preferred}, it's converted to ${preferred} at today's rate when you share the bill.`}
+        onSelect={(code) => {
+          setCurrency(code);
+          setPickingCurrency(false);
+        }}
+        onClose={() => setPickingCurrency(false)}
+      />
     </FormScreen>
   );
 }
@@ -416,6 +522,12 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     scanButtons: { flexDirection: 'row', gap: spacing.sm },
     scanButton: { flex: 1 },
     proLink: { alignSelf: 'flex-start', marginTop: spacing.xs },
+    currencyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginBottom: spacing.md,
+    },
     proLinkText: { ...t.caption, fontFamily: fonts.bodySemiBold, color: c.ink },
     scanning: {
       flexDirection: 'row',

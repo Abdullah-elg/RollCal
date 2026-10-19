@@ -39,7 +39,7 @@ npm install
 cp .env.example .env   # then fill in your Supabase URL and anon key
 ```
 
-In the Supabase SQL editor, run these in order: `supabase/schema-updates.sql`, `supabase/policies.sql`, `supabase/bills.sql`, `supabase/media.sql`, then `supabase/security.sql`. All are safe to re-run. Deploy `supabase/functions/join` with JWT verification turned off so invite links work for people who aren't signed in.
+In the Supabase SQL editor, run these in order: `supabase/schema-updates.sql`, `supabase/policies.sql`, `supabase/bills.sql`, `supabase/media.sql`, `supabase/security.sql`, `supabase/expiry.sql`, `supabase/safety.sql`, `supabase/usernames.sql`, `supabase/bill-edits.sql`, `supabase/push.sql`, `supabase/currency.sql`, then `supabase/private-schema.sql`, which must always run last. All are safe to re-run; re-run `safety.sql` after `policies.sql`, `bill-edits.sql` after `bills.sql`, and `private-schema.sql` after re-running anything else. Deploy `supabase/functions/join` with JWT verification turned off so invite links work for people who aren't signed in. Deploy `supabase/functions/send-push` with JWT verification off too; it checks its own key. Push setup for the stores is in `docs/LAUNCH.md` (6b).
 
 ### Sign-in providers
 

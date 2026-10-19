@@ -411,3 +411,14 @@ export function PlayIcon({ size = 24, color }: IconProps) {
     </Svg>
   );
 }
+
+// Three dots (…) - the "more options" button.
+export function MoreIcon({ size = 18, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx={5} cy={12} r={2} fill={color} />
+      <Circle cx={12} cy={12} r={2} fill={color} />
+      <Circle cx={19} cy={12} r={2} fill={color} />
+    </Svg>
+  );
+}

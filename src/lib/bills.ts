@@ -19,6 +19,10 @@ export type Bill = {
   other_fees_cents: number;
   status: BillStatus;
   last_reminded_at: string | null;
+  // Set when a receipt in another currency was converted on sharing:
+  // what it was in, and 1 of that = scanned_rate of the bill's currency.
+  scanned_currency: string | null;
+  scanned_rate: number | null;
   created_at: string;
 };
 
@@ -31,8 +35,9 @@ export type BillItem = {
   position: number;
 };
 
-// A line being typed in on the review screen, before it has an id.
-export type DraftItem = { name: string; priceCents: number; quantity: number };
+// A line on the review screen. id is set for a line already saved on a
+// bill being edited, so payments made for it stay linked.
+export type DraftItem = { id?: string; name: string; priceCents: number; quantity: number };
 
 export type BillDraft = {
   eventId: string;
@@ -45,6 +50,9 @@ export type BillDraft = {
   feesCents: number;
   items: DraftItem[];
   paymentMethodIds: string[];
+  // A converted receipt (see Bill.scanned_currency).
+  scannedCurrency?: string;
+  scannedRate?: number;
 };
 
 export const itemsTotal = (items: { priceCents?: number; price_cents?: number; quantity: number }[]) =>
@@ -154,6 +162,8 @@ export async function createAndShareBill(
       tax_cents: draft.taxCents,
       tip_cents: draft.tipCents,
       other_fees_cents: draft.feesCents,
+      scanned_currency: draft.scannedCurrency ?? null,
+      scanned_rate: draft.scannedRate ?? null,
     })
     .select('id')
     .single();
@@ -198,4 +208,54 @@ export async function createAndShareBill(
   if (openError) return fail();
 
   return { billId: bill.id, error: null };
+}
+
+// Saves changes to a shared bill in one go (see edit_bill in
+// supabase/bill-edits.sql). Payments already made stay as they are.
+export async function editBill(billId: string, draft: BillDraft): Promise<string | null> {
+  const { error } = await supabase.rpc('edit_bill', {
+    p_bill: billId,
+    p_title: draft.title.trim(),
+    p_tax: draft.taxCents,
+    p_tip: draft.tipCents,
+    p_fees: draft.feesCents,
+    p_items: draft.items.map((item) => ({
+      id: item.id ?? null,
+      name: item.name.trim(),
+      price_cents: item.priceCents,
+      quantity: item.quantity,
+    })),
+  });
+  return error ? 'Could not save your changes. Please try again.' : null;
+}
+
+// Deletes a bill with its lines and every payment recorded on it.
+export async function deleteBill(billId: string): Promise<string | null> {
+  const { error, count } = await supabase
+    .from('bills')
+    .delete({ count: 'exact' })
+    .eq('id', billId);
+  if (error || count === 0) return 'Could not delete the bill. Please try again.';
+  return null;
+}
+
+// A saved bill as a draft for the review screen, to edit it.
+export function draftFromBill(detail: BillDetail): BillDraft {
+  const { bill, items } = detail;
+  return {
+    eventId: bill.event_id,
+    title: bill.title ?? '',
+    currency: bill.currency,
+    subtotalCents: itemsTotal(items),
+    taxCents: bill.tax_cents,
+    tipCents: bill.tip_cents,
+    feesCents: bill.other_fees_cents,
+    items: items.map((i) => ({
+      id: i.id,
+      name: i.name,
+      priceCents: i.price_cents,
+      quantity: i.quantity,
+    })),
+    paymentMethodIds: detail.paymentMethods.map((m) => m.id),
+  };
 }

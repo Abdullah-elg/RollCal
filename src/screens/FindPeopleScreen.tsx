@@ -9,7 +9,9 @@ import {
   View,
 } from 'react-native';
 import { SearchIcon } from '../components/icons';
+import PersonActionsSheet from '../components/PersonActionsSheet';
 import {
+  MoreAction,
   PersonList,
   PersonRow,
   RowAction,
@@ -25,6 +27,7 @@ import {
   searchProfiles,
   sendFriendRequest,
 } from '../lib/friends';
+import { loadHiddenPeople } from '../lib/safety';
 import { Palette, radii, spacing, TypeTokens } from '../theme';
 import { Profile } from '../types';
 
@@ -36,12 +39,14 @@ export default function FindPeopleScreen() {
   const [results, setResults] = useState<Profile[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [acting, setActing] = useState<Profile | null>(null);
 
   const runSearch = async () => {
     Keyboard.dismiss();
     setNotice(null);
     setSearching(true);
-    const found = await searchProfiles(query, userId);
+    const hidden = await loadHiddenPeople();
+    const found = await searchProfiles(query, userId, hidden);
     animateNext();
     setResults(found);
     setSearching(false);
@@ -49,8 +54,15 @@ export default function FindPeopleScreen() {
 
   const request = async (target: Profile) => {
     hapticLight();
-    const err = await sendFriendRequest(userId, target.id);
-    setNotice(err ?? `Request sent to ${target.first_name ?? target.display_name}.`);
+    const res = await sendFriendRequest(target.id);
+    const name = target.first_name ?? target.display_name;
+    setNotice(
+      'error' in res
+        ? res.error
+        : res.result === 'friends'
+          ? 'You’re now friends.'
+          : `Request sent to ${name}.`
+    );
     reload();
   };
 
@@ -130,12 +142,24 @@ export default function FindPeopleScreen() {
                   {relation === null && (
                     <RowAction label="Add" onPress={() => request(person)} />
                   )}
+                  <MoreAction name={person.display_name} onPress={() => setActing(person)} />
                 </PersonRow>
               );
             })}
           </PersonList>
         )
       )}
+
+      <PersonActionsSheet
+        person={acting && { id: acting.id, name: acting.display_name }}
+        onClose={() => setActing(null)}
+        onBlocked={() => {
+          const id = acting?.id;
+          animateNext();
+          setResults((prev) => prev && prev.filter((p) => p.id !== id));
+          reload();
+        }}
+      />
     </ScrollView>
   );
 }

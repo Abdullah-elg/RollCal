@@ -18,13 +18,13 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { pickAndUploadAvatar, removeAvatar } from '../lib/avatar';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
+import { cleanUsername, USERNAME_MAX, usernameProblem } from '../lib/username';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
 import { Palette, spacing, TypeTokens } from '../theme';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'EditProfile'>;
 
-const USERNAME_RULE = /^[a-z0-9._-]{3,30}$/;
 
 export default function EditProfileScreen({ navigation }: Props) {
   const { session, profile, refreshProfile } = useAuth();
@@ -92,11 +92,10 @@ export default function EditProfileScreen({ navigation }: Props) {
   };
 
   const save = async () => {
-    const cleanUsername = username.trim().toLowerCase();
-    if (!USERNAME_RULE.test(cleanUsername)) {
-      setError(
-        'Usernames are 3–30 characters: lowercase letters, numbers, dots, dashes or underscores.'
-      );
+    const newUsername = cleanUsername(username);
+    const problem = usernameProblem(newUsername);
+    if (problem) {
+      setError(`Username: ${problem}`);
       return;
     }
     setError(null);
@@ -107,7 +106,7 @@ export default function EditProfileScreen({ navigation }: Props) {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         display_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
-        username: cleanUsername,
+        username: newUsername,
       })
       .eq('id', session!.user.id);
     setBusy(false);
@@ -172,7 +171,7 @@ export default function EditProfileScreen({ navigation }: Props) {
               value={firstName}
               onChangeText={setFirstName}
               autoComplete="given-name"
-              maxLength={40}
+              maxLength={USERNAME_MAX + 1}
             />
           </View>
           <View style={{ flex: 1 }}>
@@ -194,8 +193,8 @@ export default function EditProfileScreen({ navigation }: Props) {
           maxLength={40}
         />
         <Text style={[type.caption, { marginTop: -spacing.sm, marginBottom: spacing.md }]}>
-          Unique to you. It's how friends find you. Lowercase letters,
-          numbers, dots, dashes.
+          Unique to you. It's how friends find you. Letters, numbers, dots,
+          dashes or underscores.
         </Text>
         <ErrorText message={error} />
         <Button

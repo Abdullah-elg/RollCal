@@ -61,11 +61,12 @@ export async function loadFriendData(userId: string): Promise<FriendData> {
   return result;
 }
 
-// Find people by name or @username. Strips characters that would break
-// PostgREST's `or` filter syntax.
+// Find people by name or @username, leaving out anyone either of you has
+// blocked. Strips characters that would break PostgREST's `or` filter syntax.
 export async function searchProfiles(
   query: string,
-  excludeUserId: string
+  excludeUserId: string,
+  hidden: Set<string> = new Set()
 ): Promise<Profile[]> {
   const q = query.trim().replace(/^@/, '').replace(/[,()*]/g, '');
   if (q.length < 2) return [];
@@ -75,22 +76,19 @@ export async function searchProfiles(
     .or(`display_name.ilike.%${q}%,username.ilike.%${q}%`)
     .neq('id', excludeUserId)
     .limit(20);
-  return data ?? [];
+  return ((data ?? []) as Profile[]).filter((p) => !hidden.has(p.id));
 }
 
-export async function sendFriendRequest(
-  userId: string,
-  otherId: string
-): Promise<string | null> {
-  const { error } = await supabase
-    .from('friendships')
-    .insert({ requester_id: userId, addressee_id: otherId, status: 'pending' });
-  if (!error) return null;
-  // 23505 = the unique pair constraint: a link already exists, possibly in
-  // the other direction.
-  return error.code === '23505'
-    ? 'There is already a request between you two.'
-    : error.message;
+// 'friends' when they had already asked you: their request is accepted
+// instead (how two people in Quiet mode add each other).
+export type FriendRequestResult = { result: 'requested' | 'friends' } | { error: string };
+
+export async function sendFriendRequest(otherId: string): Promise<FriendRequestResult> {
+  const { data, error } = await supabase.rpc('request_friend', { other: otherId });
+  if (error) return { error: 'Could not send the request. Please try again.' };
+  // 'unavailable' means a block either way; say no more than that.
+  if (data === 'unavailable') return { error: 'You can’t add this person.' };
+  return { result: data === 'friends' ? 'friends' : 'requested' };
 }
 
 export async function acceptFriendRequest(

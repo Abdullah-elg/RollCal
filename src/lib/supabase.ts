@@ -1,6 +1,6 @@
 import 'react-native-url-polyfill/auto';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { secureSessionStorage } from './secureSession';
 
 // Credentials come from .env (EXPO_PUBLIC_* vars are inlined by Expo at build time).
 // Never hardcode them here.
@@ -16,8 +16,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // Sessions persist on the device between app launches.
-    storage: AsyncStorage,
+    // Sessions persist on the device between app launches, encrypted with a
+    // key kept in the Keychain / Keystore (see secureSession.ts).
+    storage: secureSessionStorage,
     autoRefreshToken: true,
     persistSession: true,
     // No browser URL to parse on native.
