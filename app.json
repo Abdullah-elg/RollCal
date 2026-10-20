@@ -118,6 +118,12 @@
       "expo-video",
       "expo-secure-store",
       "expo-localization"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "108bc5b1-c875-4814-9d08-bafec67b2f3e"
+      }
+    },
+    "owner": "abdullah.elg"
   }
 }
