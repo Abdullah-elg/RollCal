@@ -10,9 +10,9 @@ import { LegalDoc } from '../legal/documents';
 import { hapticLight } from '../lib/haptics';
 import { currencyName, Rates } from '../lib/currency';
 import { deviceCurrency, loadRates } from '../lib/fx';
-import { PRO_PERKS, PRO_PRICES, proPriceText } from '../lib/pro';
+import { PRO_PERKS, PRO_PRICES, proPriceText, PURCHASES_LIVE } from '../lib/pro';
 import { AppStackParamList } from '../navigation/types';
-import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'Upgrade'>;
 type Plan = 'yearly' | 'monthly';
@@ -130,24 +130,40 @@ export default function UpgradeScreen({ navigation, route }: Props) {
         })}
       </View>
 
-      {/* Purchases aren't wired up yet, so the one action stays off. */}
-      <Button title="Coming soon" onPress={() => {}} disabled />
-      <Text style={[type.caption, styles.note]}>
-        Pro isn’t available to buy yet. We’ll let you know in the app when it is.
-      </Text>
+      {PURCHASES_LIVE ? null : (
+        // Nothing to buy yet: say so plainly and offer a way in, rather than a
+        // button that does nothing.
+        <View style={styles.beta}>
+          <Text style={type.h3}>Pro is free during the beta</Text>
+          <Text style={[type.bodyMuted, { marginTop: spacing.xs }]}>
+            Want to try it? Ask us and we’ll switch it on for your account.
+          </Text>
+          <Button
+            title="Ask for Pro"
+            variant="secondary"
+            onPress={() => navigation.navigate('Support')}
+            style={{ marginTop: spacing.md }}
+          />
+        </View>
+      )}
       {prices.converted && (
         <Text style={[type.caption, styles.note]}>
           Pro is priced in US dollars ({prices.usd.monthly} a month or {prices.usd.yearly} a year).
           Prices here are converted to {currency} ({currencyName(currency)}) at today’s exchange
-          rate, as a guide. You’re charged in your {store}’s currency, at the price shown before you confirm.
+          rate, as a guide.
+          {PURCHASES_LIVE &&
+            ` You’re charged in your ${store}’s currency, at the price shown before you confirm.`}
         </Text>
       )}
-      <Text style={[type.caption, styles.note]}>
-        {PRO_PRICES.trialDays}-day free trial, then {about}{price} a{' '}
-        {plan === 'yearly' ? 'year' : 'month'} for the plan you picked. Payment is charged to your {store} when you confirm. Your subscription
-        renews automatically unless you cancel at least 24 hours before the end of the current
-        period. Manage or cancel it any time in your account’s subscription settings.
-      </Text>
+      {PURCHASES_LIVE && (
+        <Text style={[type.caption, styles.note]}>
+          {PRO_PRICES.trialDays}-day free trial, then {about}{price} a{' '}
+          {plan === 'yearly' ? 'year' : 'month'} for the plan you picked. Payment is charged to your{' '}
+          {store} when you confirm. Your subscription renews automatically unless you cancel at least
+          24 hours before the end of the current period. Manage or cancel it any time in your
+          account’s subscription settings.
+        </Text>
+      )}
 
       <View style={styles.links}>
         {LINKS.map(({ doc, label }, i) => (
@@ -204,6 +220,13 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     radioFill: { width: 20, height: 20, borderRadius: 10, backgroundColor: c.ink, margin: -1.5 },
     note: { marginTop: spacing.md },
+    beta: {
+      backgroundColor: c.card,
+      borderRadius: radii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.line,
+      padding: spacing.lg,
+    },
     links: {
       flexDirection: 'row',
       flexWrap: 'wrap',

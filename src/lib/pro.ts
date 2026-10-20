@@ -9,6 +9,10 @@ import { supabase } from './supabase';
 // Pro is priced in US dollars and shown in each person's currency at the
 // day's exchange rate (see proPriceText). The stores charge their own local
 // price; once purchases are live, show the store's price instead.
+// Off until in-app purchases are set up (RevenueCat). While off, the upgrade
+// screen says Pro is free during the beta and leaves out the billing terms.
+export const PURCHASES_LIVE = false;
+
 export const PRO_PRICES = {
   monthlyUsdCents: 699,
   yearlyUsdCents: 4999,

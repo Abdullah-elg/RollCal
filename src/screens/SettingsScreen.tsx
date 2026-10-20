@@ -604,6 +604,18 @@ export default function SettingsScreen({ navigation }: Props) {
 
       <Text style={styles.sectionLabel}>About</Text>
       <View style={styles.card}>
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+          onPress={() => navigation.navigate('Support')}
+        >
+          <View style={styles.rowText}>
+            <Text style={type.body}>Support</Text>
+            <Text style={type.caption}>Ask for help or report a problem</Text>
+          </View>
+          <ChevronRightIcon size={16} color={colors.inkMuted} />
+        </Pressable>
+        <View style={styles.rowDivider} />
         {(
           [
             { doc: 'terms', label: 'Terms of Service' },

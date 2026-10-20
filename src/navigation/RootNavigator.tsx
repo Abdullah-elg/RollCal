@@ -58,6 +58,7 @@ import JoinEventScreen from '../screens/JoinEventScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
+import SupportScreen from '../screens/SupportScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
@@ -488,6 +489,11 @@ export default function RootNavigator() {
               name="BlockedPeople"
               component={BlockedPeopleScreen}
               options={{ title: 'Blocked people' }}
+            />
+            <AppStack.Screen
+              name="Support"
+              component={SupportScreen}
+              options={{ title: 'Support' }}
             />
             <AppStack.Screen
               name="FindPeople"

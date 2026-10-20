@@ -1,102 +1,154 @@
 # Generates RollCal's app icon, Android adaptive layers, splash mark and favicon.
-# Run from the repo root: python3 scripts/generate-icons.py (needs Pillow).
+# Run from the repo root: python3 scripts/generate-icons.py (needs Pillow and
+# numpy). Previews land in assets/previews/ and aren't used by the app.
 #
-# The mark is a calendar with one day circled, sitting on a frame of film:
-# the event, and the shared roll it ends in.
+# The mark is one frame of film that is also a calendar page: perforations
+# down both sides, binding rings on top, and the roll's lens in the window.
+# Everything is drawn at SS x size and scaled down with LANCZOS, so edges are
+# smooth with no stair-stepping.
 from pathlib import Path
-from PIL import Image, ImageDraw
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter
 
 OUT = Path(__file__).resolve().parent.parent / 'assets'
+PREVIEWS = OUT / 'previews'
+PREVIEWS.mkdir(exist_ok=True)
+
+SS = 4
+N = 1024 * SS
 GREEN = (31, 92, 74, 255)
-PAPER = (246, 244, 238, 255)
 INK = (22, 26, 23, 255)
-DOT = (214, 210, 199, 255)
-CLEAR = (0, 0, 0, 0)
-SS = 4  # supersample for smooth edges
-
-# All geometry is in a 1024 x 1024 design space.
-
-
-def film_strips(d, k, inset=0):
-    """Ink strips down both sides with cream sprocket holes."""
-    S = 1024 * k
-    sw = 128 * k
-    for left in (True, False):
-        x0 = inset * k if left else S - inset * k - sw
-        # Pillow includes the end pixel, hence the -1s: keeps the black either
-        # side of each hole exactly equal.
-        d.rectangle((x0, 0, x0 + sw - 1, S - 1), fill=INK)
-        n, h, w, top = 6, 62 * k, 58 * k, 150 * k
-        step = (S - 2 * top - h) / (n - 1)
-        cx = x0 + sw / 2
-        for i in range(n):
-            y = top + i * step
-            d.rounded_rectangle((cx - w / 2, y, cx + w / 2 - 1, y + h - 1), 14 * k, fill=PAPER)
+CREAM = (246, 244, 238, 255)
+WHITE = (255, 255, 255, 255)
+TOP = np.array([40, 112, 90], float)  # background gradient, top
+BOT = np.array([26, 78, 63], float)   # and bottom
 
 
-def calendar(d, k, fg=None):
-    """Calendar page with rings, a header band and one day circled.
-    fg draws the whole thing in a single colour (Android themed icons)."""
-    page, head, dot, hot = (fg, CLEAR, fg, fg) if fg else (PAPER, INK, DOT, GREEN)
-    x0, y0, x1, y1 = 246 * k, 262 * k, 778 * k, 800 * k
-    if fg:
-        # Single colour: outline the page instead of filling it.
-        d.rounded_rectangle((x0, y0, x1, y1), 52 * k, outline=page, width=round(36 * k))
-        d.rectangle((x0, 380 * k, x1, 410 * k), fill=page)
+def px(v):
+    return int(round(v * SS))
+
+
+def gradient():
+    t = np.linspace(0, 1, N)[:, None, None]
+    rgb = TOP * (1 - t) + BOT * t
+    return Image.fromarray(np.repeat(rgb, N, axis=1).astype(np.uint8), 'RGB').convert('RGBA')
+
+
+def mark(scale=1.0, mono=False):
+    """The film-frame calendar, centred on the canvas. Design units are a
+    1024 canvas at scale 1."""
+    k = scale
+    c = 512
+
+    def X(v):  # design x relative to the centre
+        return px(c + v * k)
+
+    def Y(v):
+        return px(c + v * k)
+
+    def box(l, t, r, b):
+        return [X(l), Y(t), X(r), Y(b)]
+
+    # Frame 616 x 560, sitting a little low so the rings balance it.
+    fl, ft, fr, fb, fr_r = -308, -250, 308, 310, 112
+    layer = Image.new('RGBA', (N, N), (0, 0, 0, 0))
+
+    if not mono:
+        shadow = Image.new('RGBA', (N, N), (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle(
+            box(fl, ft + 26, fr, fb + 26), radius=px(fr_r * k), fill=(6, 28, 22, 85))
+        layer = Image.alpha_composite(layer, shadow.filter(ImageFilter.GaussianBlur(px(34 * k))))
+
+    frame = Image.new('RGBA', (N, N), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(frame)
+    fd.rounded_rectangle(box(fl, ft, fr, fb), radius=px(fr_r * k), fill=WHITE if mono else CREAM)
+
+    # Cut-outs: three perforations a side, and (in one colour) the window.
+    cut = Image.new('L', (N, N), 0)
+    cd = ImageDraw.Draw(cut)
+    hw, hh, hr = 64, 76, 18
+    for x0 in (fl + 44, fr - 44 - hw):
+        for i in range(3):
+            y0 = ft + 98 + i * 136
+            cd.rounded_rectangle(box(x0, y0, x0 + hw, y0 + hh), radius=px(hr * k), fill=255)
+    wl, wt, wr, wb, wrad = fl + 150, ft + 96, fr - 150, fb - 96, 60
+    if mono:
+        cd.rounded_rectangle(box(wl, wt, wr, wb), radius=px(wrad * k), fill=255)
+    a = np.array(frame)
+    a[..., 3] = np.minimum(a[..., 3], 255 - np.array(cut))
+    frame = Image.fromarray(a, 'RGBA')
+    fd = ImageDraw.Draw(frame)
+
+    # The window and the lens in it.
+    lcx, lcy = 0, (wt + wb) / 2
+    R, hub = 104, 56
+    if not mono:
+        fd.rounded_rectangle(box(wl, wt, wr, wb), radius=px(wrad * k), fill=INK)
+        fd.ellipse(box(lcx - R, lcy - R, lcx + R, lcy + R), fill=CREAM)
+        fd.ellipse(box(lcx - hub, lcy - hub, lcx + hub, lcy + hub), fill=GREEN)
     else:
-        d.rounded_rectangle((x0, y0, x1, y1), 52 * k, fill=page)
-        d.rounded_rectangle((x0, y0, x1, 410 * k), 52 * k, fill=head)
-        d.rectangle((x0, 360 * k, x1, 410 * k), fill=head)
-    for cx in (376 * k, 648 * k):
-        d.rounded_rectangle((cx - 24 * k, 206 * k, cx + 24 * k, 316 * k), 24 * k, fill=page)
-    cols, rows = 4, 3
-    gx, gy = (x1 - x0 - 150 * k) / (cols - 1), 112 * k
-    for r in range(rows):
-        for c in range(cols):
-            cx, cy = x0 + 75 * k + c * gx, 494 * k + r * gy
-            rad = 46 * k if (r, c) == (1, 2) else 24 * k
-            d.ellipse((cx - rad, cy - rad, cx + rad, cy + rad), fill=hot if (r, c) == (1, 2) else dot)
+        # A white ring in the empty window.
+        fd.ellipse(box(lcx - R, lcy - R, lcx + R, lcy + R), fill=WHITE)
+        a = np.array(frame)
+        hole = Image.new('L', (N, N), 0)
+        ImageDraw.Draw(hole).ellipse(box(lcx - hub, lcy - hub, lcx + hub, lcy + hub), fill=255)
+        a[..., 3] = np.minimum(a[..., 3], 255 - np.array(hole))
+        frame = Image.fromarray(a, 'RGBA')
+
+    layer = Image.alpha_composite(layer, frame)
+
+    # Binding rings: pills crossing the top edge.
+    d = ImageDraw.Draw(layer)
+    rw = 56
+    for ox in (-136, 136):
+        d.rounded_rectangle(box(ox - rw / 2, ft - 70, ox + rw / 2, ft + 74),
+                            radius=px(rw / 2 * k), fill=WHITE if mono else CREAM)
+    return layer
 
 
-def render(size, draw, bg=CLEAR, corner=0.0):
-    k = SS * size / 1024
-    S = int(1024 * k)
-    im = Image.new('RGBA', (S, S), CLEAR)
-    d = ImageDraw.Draw(im)
-    if bg != CLEAR:
-        d.rounded_rectangle((0, 0, S - 1, S - 1), int(corner * S), fill=bg)
-    draw(d, k)
-    if corner:
-        mask = Image.new('L', (S, S), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, S - 1, S - 1), int(corner * S), fill=255)
-        im.putalpha(mask)
-    return im.resize((size, size), Image.LANCZOS)
+def down(img, size):
+    return img.resize((size, size), Image.LANCZOS)
 
 
-def full(d, k):
-    film_strips(d, k)
-    calendar(d, k)
+def rounded(img, radius_frac=0.2237):
+    """Clip to an iOS-style rounded square, antialiased."""
+    m = Image.new('L', (N, N), 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, N - 1, N - 1], radius=int(N * radius_frac), fill=255)
+    out = Image.new('RGBA', (N, N), (0, 0, 0, 0))
+    out.paste(img, (0, 0), m)
+    return out
 
 
-def shrink(art, scale, size):
-    """Centre art at `scale` of a `size` canvas (Android's safe zone is ~66%)."""
-    c = Image.new('RGBA', (size, size), CLEAR)
-    a = art.resize((int(size * scale),) * 2, Image.LANCZOS)
-    c.alpha_composite(a, ((size - a.width) // 2, (size - a.height) // 2))
-    return c
+# Android shows the middle 72 of the 108 dp canvas, and the 66 dp circle in
+# the middle is safe in every launcher shape; at 0.66 the mark fits in it.
+ANDROID_SCALE = 0.66
 
+full = Image.alpha_composite(gradient(), mark())
+down(full, 1024).convert('RGB').save(OUT / 'icon.png')  # iOS: square, no transparency
+down(rounded(full), 1024).save(OUT / 'splash-icon.png')
+down(rounded(full), 48).save(OUT / 'favicon.png')
+down(mark(ANDROID_SCALE), 1024).save(OUT / 'android-icon-foreground.png')
+down(gradient(), 1024).save(OUT / 'android-icon-background.png')
+down(mark(ANDROID_SCALE, mono=True), 1024).save(OUT / 'android-icon-monochrome.png')
 
-# iOS / store icon: full bleed and opaque.
-render(1024, full, GREEN).convert('RGB').save(OUT / 'icon.png')
-
-# Android adaptive icon. Launchers show only the middle 72 of 108dp, so the
-# strips move inward to stay visible, and the calendar sits in the safe zone.
-render(512, lambda d, k: film_strips(d, k, inset=215), GREEN).save(OUT / 'android-icon-background.png')
-shrink(render(512, calendar), 0.58, 512).save(OUT / 'android-icon-foreground.png')
-shrink(render(432, lambda d, k: calendar(d, k, fg=(255, 255, 255, 255))), 0.58, 432).save(
-    OUT / 'android-icon-monochrome.png'
-)
-
-# Splash and favicon: the icon as a rounded tile.
-render(1024, full, GREEN, corner=0.225).save(OUT / 'splash-icon.png')
-render(48, full, GREEN, corner=0.225).save(OUT / 'favicon.png')
+# Previews.
+paper = (246, 244, 238, 255)
+ios = Image.alpha_composite(Image.new('RGBA', (N, N), paper), rounded(full))
+down(ios, 512).save(PREVIEWS / 'preview-ios.png')
+android = Image.alpha_composite(gradient(), mark(ANDROID_SCALE))
+inner = android.crop((N // 6, N // 6, N - N // 6, N - N // 6)).resize((N, N), Image.LANCZOS)
+circle = Image.new('L', (N, N), 0)
+ImageDraw.Draw(circle).ellipse([0, 0, N - 1, N - 1], fill=255)
+pa = Image.new('RGBA', (N, N), paper)
+pa.paste(inner, (0, 0), circle)
+down(pa, 512).save(PREVIEWS / 'preview-android.png')
+mono = Image.alpha_composite(Image.new('RGBA', (N, N), (60, 64, 60, 255)), mark(ANDROID_SCALE, mono=True))
+mono = mono.crop((N // 6, N // 6, N - N // 6, N - N // 6))
+down(mono, 512).save(PREVIEWS / 'preview-mono.png')
+strip = Image.new('RGBA', (430, 200), paper)
+x = 10
+for size in (180, 87, 58, 40):
+    strip.alpha_composite(down(rounded(full), size), (x, 10))
+    x += size + 15
+strip.save(PREVIEWS / 'preview-small.png')
+print('done')
