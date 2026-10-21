@@ -4,7 +4,7 @@
     "target": {
       "namespace": "android_app",
       "package_name": "app.rollcal",
-      "sha256_cert_fingerprints": ["PLAY_APP_SIGNING_SHA256"]
+      "sha256_cert_fingerprints": ["A8:E6:B2:A8:68:2A:FD:A3:CB:86:DD:B8:8F:7A:1F:4E:F2:84:8C:79:F4:1D:86:42:6E:F8:EA:27:3F:39:68:0F"]
     }
   }
 ]

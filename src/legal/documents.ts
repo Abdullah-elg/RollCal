@@ -254,7 +254,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'How long we keep it',
         paragraphs: [
-          'We keep your information while you have an account. Event photos and videos may be deleted sooner under the storage rules shown in the app. When you delete your account, we delete your profile and the content linked to it, including events you created; copies may remain in backups for a short time before they are overwritten. Copies other people have already saved stay with them.',
+          'We keep your information while you have an account. Event photos and videos may be deleted sooner under the storage rules shown in the app. When you delete your account, we delete your profile and the content linked to it, including events you created; copies may remain in backups for up to 30 days before they are overwritten. Reports other people made about you are kept without the link to your account, so we can keep RollCal safe. Copies other people have already saved stay with them.',
         ],
       },
       {

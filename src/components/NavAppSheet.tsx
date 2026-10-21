@@ -31,8 +31,8 @@ export default function NavAppSheet({ visible, location, lat, lng, onClose }: Pr
           {
             label: 'Apple Maps',
             url: hasPin
-              ? `http://maps.apple.com/?ll=${ll}&q=${q || 'Event'}`
-              : `http://maps.apple.com/?q=${q}`,
+              ? `https://maps.apple.com/?ll=${ll}&q=${q || 'Event'}`
+              : `https://maps.apple.com/?q=${q}`,
           },
         ]
       : []),

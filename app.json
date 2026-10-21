@@ -90,7 +90,7 @@
           "locationWhenInUsePermission": "Allow RollCal to access your location to set event locations.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
-          "motionUsagePermission": false
+          "motionUsagePermission": "RollCal does not use motion or fitness data. This message is only here because the location feature it includes is able to ask for it."
         }
       ],
       [
