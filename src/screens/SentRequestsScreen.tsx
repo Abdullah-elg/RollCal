@@ -1,3 +1,6 @@
+// Friend requests the user has sent that nobody has answered yet, with a
+// way to cancel them.
+
 import { useMemo } from 'react';
 import {
   ActivityIndicator,

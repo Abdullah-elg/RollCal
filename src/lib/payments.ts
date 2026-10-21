@@ -188,7 +188,7 @@ export function subscribeToPayments(
 // Kept on this phone only, so nobody sees them until they're sent.
 // ---------------------------------------------------------------------------
 
-const picksKey = (userId: string, billId: string) => `socialink.billPicks.${userId}.${billId}`;
+const picksKey = (userId: string, billId: string) => `rollcal.billPicks.${userId}.${billId}`;
 
 export async function loadPicks(userId: string, billId: string): Promise<Record<string, ItemPick>> {
   try {

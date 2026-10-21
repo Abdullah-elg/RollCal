@@ -1,3 +1,7 @@
+// A full-screen map for choosing an event's location. Tap to drop a pin, drag
+// to adjust, or use the current location. Confirming turns the pin into a
+// readable address. iOS and Android use different location code paths.
+
 import * as Location from 'expo-location';
 import { useMemo, useRef, useState } from 'react';
 import {

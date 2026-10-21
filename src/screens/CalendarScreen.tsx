@@ -1,3 +1,7 @@
+// The Calendar tab. A month grid and a day view of events the user created,
+// RSVP'd to or accepted an invite to. An event that runs past midnight
+// shows on each day it touches. Days are kept in the phone's local time.
+
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useMemo, useState } from 'react';
 import {

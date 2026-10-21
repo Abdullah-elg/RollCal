@@ -1,3 +1,7 @@
+// Search for people by name or username and send friend requests. Shows
+// whether someone is already a friend or has a request pending, and leaves
+// out people who are blocked.
+
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,

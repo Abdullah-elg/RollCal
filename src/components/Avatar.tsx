@@ -1,3 +1,7 @@
+// Round profile picture. Falls back to initials on a muted background color
+// picked from the user's id, so the same person always gets the same color.
+// Tappable when given onPress.
+
 import { useRef } from 'react';
 import {
   Animated,

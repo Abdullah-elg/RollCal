@@ -1,3 +1,7 @@
+// The Events tab. Groups the user's events by when they happen, with a hero
+// card for the next one this week. Events from the last load stay on screen
+// with a note if the server can't be reached.
+
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {

@@ -1,3 +1,6 @@
+// The month grid used by DateTimeField for choosing a day, drawn in the app's
+// own style so it follows the theme. Days before minDate can't be picked.
+
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';

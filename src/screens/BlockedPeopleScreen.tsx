@@ -1,3 +1,5 @@
+// The list of people the user has blocked, with a way to unblock them.
+
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from 'react-native';

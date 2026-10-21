@@ -7,7 +7,7 @@ import { eventEndsAt, isRollOpen } from './coverPhoto';
 
 type ReadMap = Record<string, string>;
 
-const readKey = (userId: string) => `socialink.chatRead.${userId}`;
+const readKey = (userId: string) => `rollcal.chatRead.${userId}`;
 
 export async function getChatReadMap(userId: string): Promise<ReadMap> {
   try {
@@ -61,7 +61,7 @@ export async function loadUnreadChats(
   return unread;
 }
 
-const photoReadKey = (userId: string) => `socialink.photoRead.${userId}`;
+const photoReadKey = (userId: string) => `rollcal.photoRead.${userId}`;
 
 export async function getPhotoReadMap(userId: string): Promise<ReadMap> {
   try {

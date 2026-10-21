@@ -1,3 +1,7 @@
+// The camera scanner for joining an event. Reads a join link or a bare code
+// from a QR code and passes the code on. Handles a denied camera permission
+// by pointing to Settings, and offers a torch and manual entry.
+
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {

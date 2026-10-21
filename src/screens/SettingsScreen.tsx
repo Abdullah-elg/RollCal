@@ -1,3 +1,8 @@
+// The Settings tab: profile, theme, default currency, reminder and
+// notification toggles, quiet mode (Pro), payment methods, support, legal
+// pages, sign out and account deletion. Deletion calls the delete-account
+// edge function.
+
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {

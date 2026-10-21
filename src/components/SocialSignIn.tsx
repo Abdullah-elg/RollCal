@@ -10,9 +10,13 @@ import { ErrorText } from './ui';
 
 // "Continue with Apple" (iOS only) and "Continue with Google", above an
 // "or" divider that leads into the email form below. On sign-up, pass
-// onShowTerms: these buttons skip the form's terms checkbox, so they carry
-// their own notice instead.
-export default function SocialSignIn({ onShowTerms }: { onShowTerms?: () => void }) {
+// onShowLegal: these buttons skip the form's terms checkbox, so they carry
+// their own notice instead, linking to the same two documents.
+export default function SocialSignIn({
+  onShowLegal,
+}: {
+  onShowLegal?: (doc: 'terms' | 'privacy') => void;
+}) {
   const { signInWithApple, signInWithGoogle } = useAuth();
   const { colors, type, mode } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
@@ -70,11 +74,15 @@ export default function SocialSignIn({ onShowTerms }: { onShowTerms?: () => void
         )}
       </Pressable>
 
-      {onShowTerms && (
+      {onShowLegal && (
         <Text style={styles.terms}>
           By continuing with one of these sign-in options, you agree to the{' '}
-          <Text style={styles.termsLink} onPress={onShowTerms}>
-            Terms and Conditions
+          <Text style={styles.termsLink} onPress={() => onShowLegal('terms')}>
+            Terms of Service
+          </Text>{' '}
+          and{' '}
+          <Text style={styles.termsLink} onPress={() => onShowLegal('privacy')}>
+            Privacy Policy
           </Text>
           .
         </Text>

@@ -1,3 +1,7 @@
+// All navigation: the signed-out stack, the signed-in stack, and the five
+// tabs (the + opens CreateActionSheet instead of a screen). Also handles
+// join links, notification taps, push registration and the loading splash.
+
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   DarkTheme,

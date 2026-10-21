@@ -1,3 +1,5 @@
+// Friend requests other people have sent the user, to accept or decline.
+
 import { useMemo } from 'react';
 import {
   ActivityIndicator,

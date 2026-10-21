@@ -1,3 +1,7 @@
+// The sign-up form. Checks the username is free, asks for a birth date for
+// the age check, and defaults the currency to the phone's region. If email
+// confirmation is on, it goes on to enter the emailed code.
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -13,7 +17,14 @@ import LegalText from '../components/LegalText';
 import SocialSignIn from '../components/SocialSignIn';
 import BirthDateFields from '../components/BirthDateFields';
 import CurrencyPicker from '../components/CurrencyPicker';
-import { Button, ErrorText, Field, FormScreen, SelectField } from '../components/ui';
+import {
+  Button,
+  ErrorText,
+  Field,
+  FormScreen,
+  PasswordField,
+  SelectField,
+} from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { LEGAL, LegalDoc } from '../legal/documents';
@@ -45,10 +56,20 @@ export default function SignUpScreen({ navigation }: Props) {
   const [birthMonth, setBirthMonth] = useState<number | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [confirmTouched, setConfirmTouched] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const passwordsMatch = confirmPassword === password;
+  // Only once they've finished typing the second one (left the box, or typed
+  // as many characters as the first), so it doesn't flag every keystroke.
+  const showMismatch =
+    !passwordsMatch &&
+    confirmPassword.length > 0 &&
+    (confirmTouched || confirmPassword.length >= password.length);
 
   const chosen = cleanUsername(username);
   const problem = chosen ? usernameProblem(chosen) : null;
@@ -92,6 +113,10 @@ export default function SignUpScreen({ navigation }: Props) {
       return;
     }
     if (ageResult !== 'ok') return;
+    if (!passwordsMatch) {
+      setConfirmTouched(true);
+      return;
+    }
     setBusy(true);
     const { error, needsEmailConfirm } = await signUp(
       email,
@@ -113,7 +138,7 @@ export default function SignUpScreen({ navigation }: Props) {
   };
 
   return (
-    <FormScreen style={styles.screen}>
+    <FormScreen style={styles.screen} safeArea>
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -121,7 +146,7 @@ export default function SignUpScreen({ navigation }: Props) {
       >
         <Text style={[type.title, { marginBottom: spacing.xl }]}>Create account</Text>
 
-        <SocialSignIn onShowTerms={() => setLegalDoc('terms')} />
+        <SocialSignIn onShowLegal={setLegalDoc} />
 
         <View style={styles.nameRow}>
           <View style={{ flex: 1 }}>
@@ -192,13 +217,20 @@ export default function SignUpScreen({ navigation }: Props) {
           keyboardType="email-address"
           placeholder="you@example.com"
         />
-        <Field
+        <PasswordField
           label="Password"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
           placeholder="At least 6 characters"
         />
+        <PasswordField
+          label="Confirm password"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          onBlur={() => setConfirmTouched(true)}
+          placeholder="Type it again"
+        />
+        {showMismatch && <Text style={styles.passwordMismatch}>Passwords don’t match.</Text>}
         <Pressable
           style={styles.termsRow}
           onPress={() => setTermsAccepted((prev) => !prev)}
@@ -251,6 +283,7 @@ export default function SignUpScreen({ navigation }: Props) {
             free === false ||
             !email ||
             password.length < 6 ||
+            !passwordsMatch ||
             !termsAccepted
           }
         />
@@ -332,10 +365,17 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flexGrow: 1,
       justifyContent: 'center',
       paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
     },
     nameRow: {
       flexDirection: 'row',
       gap: spacing.sm,
+    },
+    passwordMismatch: {
+      ...t.caption,
+      color: c.danger,
+      marginTop: -spacing.sm,
+      marginBottom: spacing.md,
     },
     usernameStatus: {
       ...t.caption,

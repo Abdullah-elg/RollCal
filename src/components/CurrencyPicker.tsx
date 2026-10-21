@@ -1,3 +1,6 @@
+// A searchable sheet for choosing one of the currencies in lib/currency.
+// Used at sign-up, in Settings and when reviewing a bill.
+
 import { useMemo, useState } from 'react';
 import {
   FlatList,

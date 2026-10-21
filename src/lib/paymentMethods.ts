@@ -1,3 +1,7 @@
+// A user's saved payment handles (for example e-transfer or Venmo) that bills
+// show to the people who owe them. Only one can be the default, so changing
+// the default takes two steps in a set order. Also re-exports paymentHandles.
+
 import { PaymentMethod, PaymentMethodType } from './paymentHandles';
 import { supabase } from './supabase';
 

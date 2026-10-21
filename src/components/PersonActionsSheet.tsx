@@ -1,3 +1,7 @@
+// The small menu for one person with Report and Block, plus an optional extra
+// action such as the host's "Remove from event". It hands off between
+// modals one at a time because iOS drops a modal opened mid-close.
+
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

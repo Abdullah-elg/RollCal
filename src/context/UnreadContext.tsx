@@ -1,3 +1,7 @@
+// App-wide counts of what's waiting: unread chats, new photos, friend
+// requests and event invitations. The tab bar reads them, and screens call
+// the mark-as-read functions to clear a dot right away.
+
 import {
   createContext,
   ReactNode,

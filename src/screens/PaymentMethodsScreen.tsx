@@ -1,3 +1,6 @@
+// Manage saved payment handles: add, edit, remove and choose the default.
+// Bills show these to the people who owe money.
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {

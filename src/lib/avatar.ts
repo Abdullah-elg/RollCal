@@ -1,3 +1,7 @@
+// Profile photo upload and removal for the public avatars bucket. The photo is
+// cropped square and re-saved first, which strips location and other hidden
+// details.
+
 import * as ImagePicker from 'expo-image-picker';
 import { cleanPhoto } from './cleanPhoto';
 import { supabase } from './supabase';

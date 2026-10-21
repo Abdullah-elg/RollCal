@@ -129,7 +129,7 @@ export const FRIEND_PREF_KEYS = [
 
 export const CHAT_PREF_KEYS = ['chatMessage'] as const;
 
-const PREFS_KEY = 'socialink.reminderPrefs';
+const PREFS_KEY = 'rollcal.reminderPrefs';
 
 export async function getReminderPrefs(): Promise<ReminderPrefs> {
   try {
@@ -283,7 +283,7 @@ type FriendNotifyState = {
   pendingOutgoing: string[];
 };
 
-const friendStateKey = (userId: string) => `socialink.friendNotify.${userId}`;
+const friendStateKey = (userId: string) => `rollcal.friendNotify.${userId}`;
 
 export async function notifyFriendActivity(
   userId: string,
@@ -375,7 +375,7 @@ type InviteSnapshot = {
   hostName: string;
 }[];
 
-const inviteStateKey = (userId: string) => `socialink.inviteNotify.${userId}`;
+const inviteStateKey = (userId: string) => `rollcal.inviteNotify.${userId}`;
 
 export async function notifyEventInvitations(
   userId: string,
@@ -428,8 +428,8 @@ export async function notifyEventInvitations(
 // be muted from inside their chat, which is stored on the device.
 // ---------------------------------------------------------------------------
 
-const mutedChatsKey = (userId: string) => `socialink.chatMuted.${userId}`;
-const chatSeenKey = (userId: string) => `socialink.chatSeen.${userId}`;
+const mutedChatsKey = (userId: string) => `rollcal.chatMuted.${userId}`;
+const chatSeenKey = (userId: string) => `rollcal.chatSeen.${userId}`;
 
 export async function getMutedChats(userId: string): Promise<string[]> {
   try {
@@ -556,7 +556,7 @@ export async function notifyChatMessages(
 // bill (see onNotificationTap).
 // ---------------------------------------------------------------------------
 
-const billStateKey = (userId: string) => `socialink.billNotify.${userId}`;
+const billStateKey = (userId: string) => `rollcal.billNotify.${userId}`;
 
 export async function notifyBillsShared(
   userId: string,
@@ -625,7 +625,7 @@ type BillPayState = {
   reminded: Record<string, string>;
 };
 
-const billPayKey = (userId: string) => `socialink.billPay.${userId}`;
+const billPayKey = (userId: string) => `rollcal.billPay.${userId}`;
 
 export async function notifyBillPayments(
   userId: string,

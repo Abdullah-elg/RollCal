@@ -1,3 +1,7 @@
+// A shared bill. Everyone claims what they had and sees what they owe. They
+// can send a payment, and the person who paid can confirm payments, send
+// reminders and edit the bill. Updates arrive live.
+
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

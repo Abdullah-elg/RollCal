@@ -1,3 +1,8 @@
+// Holds the signed-in session and the user's profile for the whole app, and
+// the sign-in, sign-up and password reset flows. It creates the profile row
+// the first time a session arrives, and owns the under-13 block, which is
+// kept on this phone only.
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session } from '@supabase/supabase-js';
 import {

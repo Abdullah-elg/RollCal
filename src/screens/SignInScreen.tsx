@@ -1,3 +1,6 @@
+// Email and password sign-in, with Apple and Google, and the way into sign-up
+// and password reset. Signing in switches the app to the signed-in stack.
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
 import {
@@ -8,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import SocialSignIn from '../components/SocialSignIn';
-import { Button, ErrorText, Field, FormScreen } from '../components/ui';
+import { Button, ErrorText, Field, FormScreen, PasswordField } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { AuthStackParamList } from '../navigation/types';
@@ -36,7 +39,7 @@ export default function SignInScreen({ navigation }: Props) {
   };
 
   return (
-    <FormScreen style={styles.screen}>
+    <FormScreen style={styles.screen} safeArea>
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -58,11 +61,10 @@ export default function SignInScreen({ navigation }: Props) {
           keyboardType="email-address"
           placeholder="you@example.com"
         />
-        <Field
+        <PasswordField
           label="Password"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
           placeholder="••••••••"
         />
         <Pressable
@@ -102,6 +104,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flexGrow: 1,
       justifyContent: 'center',
       paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
     },
     wordmark: {
       ...t.title,

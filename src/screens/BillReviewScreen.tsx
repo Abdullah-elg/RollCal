@@ -1,3 +1,7 @@
+// Step one of splitting a bill: scan a receipt or type the lines in, then
+// check items, tax and tip. Free accounts have a monthly scan limit. A
+// receipt in another currency is checked in its own and converted on share.
+
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

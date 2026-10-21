@@ -1,3 +1,7 @@
+// Sign in with Apple and Google. Apple only shares a name the first time, so
+// it is passed back before the session starts. Google goes through
+// Supabase's hosted page and returns to the app by link.
+
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';

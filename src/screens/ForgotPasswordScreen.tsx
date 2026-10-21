@@ -28,7 +28,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
   };
 
   return (
-    <FormScreen style={styles.screen}>
+    <FormScreen style={styles.screen} safeArea>
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -71,6 +71,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flexGrow: 1,
       justifyContent: 'center',
       paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
     },
     back: {
       marginTop: spacing.lg,

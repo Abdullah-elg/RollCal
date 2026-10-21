@@ -1,3 +1,6 @@
+// Shows one of the legal documents (terms, privacy and so on) from
+// legal/documents, chosen by the doc route param.
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';

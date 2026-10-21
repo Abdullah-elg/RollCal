@@ -1,3 +1,6 @@
+// The "open with" chooser for an event's location. Uses each maps app's
+// https link, so the app opens when it's installed and the website if not.
+
 import { useMemo } from 'react';
 import { Linking, Modal, Platform, Pressable, StyleSheet, Text } from 'react-native';
 import { useTheme } from '../context/ThemeContext';

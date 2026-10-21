@@ -1,3 +1,8 @@
+// The roll on the event screen: the photo and video grid, the full-screen
+// viewer, uploading, saving to the phone, deleting and choosing the cover.
+// Photos from blocked people are hidden, and free events show when their
+// photos will be deleted.
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { File, Paths } from 'expo-file-system';
@@ -13,15 +18,18 @@ import {
   FlatList,
   GestureResponderEvent,
   Image,
+  ImageStyle,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   StatusBar as RNStatusBar,
+  StyleProp,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
+  ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
@@ -180,8 +188,8 @@ function DevelopingPhotoItem({
   children,
 }: {
   photo: LoadedPhoto;
-  style: any;
-  imageStyle: any;
+  style: StyleProp<ViewStyle>;
+  imageStyle: StyleProp<ImageStyle>;
   isDeveloping?: boolean;
   onPress: () => void;
   children?: React.ReactNode;
@@ -509,7 +517,7 @@ export default function EventAlbum({
   useEffect(() => {
     const at = expiry?.expiresAt;
     if (!isLeader || !at || expiry?.expiredAt || daysLeft(at) > WARN_DAYS) return;
-    const key = `socialink.expiryPrompt.${event.id}`;
+    const key = `rollcal.expiryPrompt.${event.id}`;
     const today = new Date().toDateString();
     AsyncStorage.getItem(key)
       .then((shown) => {
@@ -535,7 +543,7 @@ export default function EventAlbum({
       setNotice(blocked);
       return;
     }
-    const assets = await pickRollMedia(isPro);
+    const assets = await pickRollMedia();
     if (assets.length === 0) return;
 
     setUploading(`0/${assets.length}`);

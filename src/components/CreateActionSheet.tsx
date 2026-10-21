@@ -1,3 +1,7 @@
+// The sheet behind the + tab. Offers a new event, joining with a code, and
+// adding photos to a roll that is still open for uploads (the user picks the
+// event first). Checks upload limits and opens the Pro pop-up when needed.
+
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -91,7 +95,7 @@ export default function CreateActionSheet({
       Alert.alert('Upload limit reached', blocked);
       return;
     }
-    const assets = await pickRollMedia(!!profile?.is_pro);
+    const assets = await pickRollMedia();
     if (assets.length === 0) return;
     setUploading(true);
     const { uploaded, needsPro, problems } = await uploadRollMedia(

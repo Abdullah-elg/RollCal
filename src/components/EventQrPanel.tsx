@@ -1,3 +1,7 @@
+// The event's QR pass: shows the join link as a QR code, with buttons to copy
+// or share it. The link opens the app if it's installed, or the join page
+// on rollcal.app if not.
+
 import * as Clipboard from '../lib/clipboard';
 import { useMemo, useState } from 'react';
 import {

@@ -1,3 +1,6 @@
+// Invitations to events that the user hasn't answered yet, to accept or
+// decline.
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,

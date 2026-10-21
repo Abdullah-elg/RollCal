@@ -1,3 +1,7 @@
+// Step two of splitting a bill: choose which saved payment methods to show,
+// then create and share the bill. On success it replaces this screen and
+// the review screen with the bill.
+
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useMemo, useRef, useState } from 'react';

@@ -1,3 +1,6 @@
+// The Going, Maybe and Can't go buttons. Shows the current answer and calls
+// onSelect for a new one. Saving the answer is up to the screen using it.
+
 import { useEffect, useMemo, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
@@ -29,7 +32,7 @@ function RsvpOption({
   selected: boolean;
   disabled?: boolean;
   onPress: () => void;
-  styles: any;
+  styles: ReturnType<typeof makeStyles>;
   colors: Palette;
 }) {
   const scale = useRef(new Animated.Value(1)).current;

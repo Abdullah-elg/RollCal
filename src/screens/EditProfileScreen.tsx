@@ -1,3 +1,6 @@
+// Edit first and last name, username and profile photo. Usernames are
+// unique, so a taken one is caught and reported.
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
 import {

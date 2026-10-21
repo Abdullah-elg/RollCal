@@ -28,8 +28,9 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
-import { ChevronRightIcon } from './icons';
+import { ChevronRightIcon, EyeIcon, EyeOffIcon } from './icons';
 import {
   fonts,
   Palette,
@@ -141,9 +142,19 @@ export function Button({
 type FieldProps = TextInputProps & {
   label: string;
   singleLineEllipsis?: boolean;
+  // A button inside the field's right edge, such as PasswordField's eye.
+  accessory?: ReactNode;
 };
 
-export function Field({ label, style, singleLineEllipsis, ...inputProps }: FieldProps) {
+export function Field({
+  label,
+  style,
+  singleLineEllipsis,
+  accessory,
+  onFocus,
+  onBlur,
+  ...inputProps
+}: FieldProps) {
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const [focused, setFocused] = useState(false);
@@ -171,14 +182,16 @@ export function Field({ label, style, singleLineEllipsis, ...inputProps }: Field
         <TextInput
           ref={inputRef}
           placeholderTextColor={colors.inkMuted}
+          // Taken out of inputProps above, so the spread below can't replace
+          // these and leave the field looking focused.
           onFocus={(e) => {
             setFocused(true);
-            inputProps.onFocus?.(e);
+            onFocus?.(e);
           }}
           onBlur={(e) => {
             setFocused(false);
             setSelection(undefined);
-            inputProps.onBlur?.(e);
+            onBlur?.(e);
           }}
           selection={selection}
           multiline={singleLineEllipsis ? false : inputProps.multiline}
@@ -187,10 +200,12 @@ export function Field({ label, style, singleLineEllipsis, ...inputProps }: Field
             styles.input,
             focused && { borderColor: colors.ink },
             isEllipsisActive && { opacity: 0 },
+            accessory ? { paddingRight: 48 } : null,
             style,
           ]}
           {...inputProps}
         />
+        {accessory ? <View style={styles.fieldAccessory}>{accessory}</View> : null}
         {isEllipsisActive && (
           <Pressable
             onPress={handleOverlayPress}
@@ -214,6 +229,36 @@ export function Field({ label, style, singleLineEllipsis, ...inputProps }: Field
     </View>
   );
 }
+
+// A password Field with an eye button to show or hide what's typed.
+export function PasswordField(props: Omit<FieldProps, 'secureTextEntry' | 'accessory'>) {
+  const { colors } = useTheme();
+  const [shown, setShown] = useState(false);
+  const Icon = shown ? EyeOffIcon : EyeIcon;
+  return (
+    <Field
+      {...props}
+      secureTextEntry={!shown}
+      autoCapitalize="none"
+      autoCorrect={false}
+      accessory={
+        <Pressable
+          onPress={() => setShown((v) => !v)}
+          hitSlop={8}
+          style={passwordStyles.eye}
+          accessibilityRole="button"
+          accessibilityLabel={shown ? 'Hide password' : 'Show password'}
+        >
+          <Icon color={colors.inkMuted} />
+        </Pressable>
+      }
+    />
+  );
+}
+
+const passwordStyles = StyleSheet.create({
+  eye: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+});
 
 // Wrapper for a scrolling form, handling the keyboard per platform.
 //
@@ -259,21 +304,33 @@ export function SelectField({
   );
 }
 
+// safeArea: for screens without a navigation header (the sign-in flow). It
+// keeps a form taller than the screen clear of the status bar, notch and
+// home indicator; screens with a header already get that from the header.
 export function FormScreen({
   style,
+  safeArea = false,
   children,
 }: {
   style?: ViewStyle;
+  safeArea?: boolean;
   children: ReactNode;
 }) {
+  const body = safeArea ? (
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+      {children}
+    </SafeAreaView>
+  ) : (
+    children
+  );
   if (Platform.OS === 'android') {
     return (
       <KeyboardAvoidingView style={style} behavior="padding">
-        {children}
+        {body}
       </KeyboardAvoidingView>
     );
   }
-  return <View style={style}>{children}</View>;
+  return <View style={style}>{body}</View>;
 }
 
 // Each platform's own switch - iOS's glass one, Android's Material one  - 
@@ -425,6 +482,13 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       borderRadius: radii.sm,
       paddingHorizontal: spacing.md,
       height: 48,
+    },
+    fieldAccessory: {
+      position: 'absolute',
+      right: 2,
+      top: 0,
+      bottom: 0,
+      justifyContent: 'center',
     },
     truncatedOverlay: {
       justifyContent: 'center',

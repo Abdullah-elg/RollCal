@@ -1,3 +1,7 @@
+// The Pro screen: what Pro adds. Once purchases are live (PURCHASES_LIVE in
+// lib/pro) it also shows the yearly and monthly prices in the user's
+// currency; until then it hides them and offers to switch Pro on for free.
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

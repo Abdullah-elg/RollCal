@@ -29,6 +29,7 @@ All of them **DNS only** (grey cloud), never proxied (orange cloud).
 ### Email: Resend (support and report emails sent by the app)
 - [ ] TXT `resend._domainkey` → the `p=MIGfMA0GCSq…` key (copy the full value from Resend → Domains → rollcal.app)
 - [ ] CNAME `send` → `send.forge.rmta.net` (Resend's GoDaddy setup used one CNAME here, which carries the bounce MX and SPF; don't add them separately)
+- [ ] CNAME `rsend` → `rsend.forge.rmta.net` (the return address Resend actually sends with. Missed in the first move on 20 October 2026: Gmail still accepted the mail, but Microsoft 365/Proofpoint rejected it with "550 5.1.8 Sender address rejected: Domain not found" and Outlook.com filed it as junk. Resend's dashboard kept showing it as Verified from the GoDaddy days, so check it with a DNS lookup, not the dashboard.)
 
 ## Don't copy these
 

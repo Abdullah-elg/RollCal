@@ -1,3 +1,7 @@
+// Join an event with a code, from a scan, a pasted code or a join link.
+// Events aren't publicly readable, so the lookup goes through the
+// get_event_by_code function. Joining records an RSVP and sets reminders.
+
 import * as Clipboard from '../lib/clipboard';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';

@@ -85,7 +85,7 @@ export async function loadEventActivity(
 
     if (rsvps && rsvps.length > 0) {
       const joinedToday = rsvps.filter(
-        (r: any) => r.created_at && r.created_at >= todayIso
+        (r: { created_at: string | null }) => r.created_at && r.created_at >= todayIso
       );
 
       if (joinedToday.length > 0) {

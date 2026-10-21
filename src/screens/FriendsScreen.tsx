@@ -1,3 +1,6 @@
+// The Friends tab: the friends list, with links to find people, requests
+// received and requests sent. Blocking someone also ends the friendship.
+
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,

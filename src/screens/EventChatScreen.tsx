@@ -1,3 +1,7 @@
+// An event's group chat. Updates arrive live and new messages appear before
+// they are confirmed. Messages from blocked people are hidden. Each chat can
+// be muted on this phone, and long-press opens report and block.
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {

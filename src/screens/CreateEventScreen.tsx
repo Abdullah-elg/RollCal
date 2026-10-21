@@ -1,3 +1,7 @@
+// The form for creating an event, also used to edit one. Defaults to
+// tomorrow at 7 pm for two hours, and doesn't allow moving a start into the
+// past. Saving schedules the user's reminders.
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
 import {

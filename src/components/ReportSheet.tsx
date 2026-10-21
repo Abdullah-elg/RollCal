@@ -1,3 +1,6 @@
+// The form for reporting a person, event, message or photo: pick a reason,
+// add optional details, send. The report itself is sent by lib/safety.
+
 import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,

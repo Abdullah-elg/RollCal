@@ -1,7 +1,7 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Button, ErrorText, Field, FormScreen } from '../components/ui';
+import { Button, ErrorText, FormScreen, PasswordField } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { AuthStackParamList } from '../navigation/types';
@@ -69,7 +69,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
   };
 
   return (
-    <FormScreen style={styles.screen}>
+    <FormScreen style={styles.screen} safeArea>
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -91,14 +91,13 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
           autoComplete="one-time-code"
           maxLength={8}
           autoFocus
-          style={styles.codeInput}
+          style={[styles.codeInput, !code && styles.codeEmpty]}
           accessibilityLabel="Reset code"
         />
-        <Field
+        <PasswordField
           label="New password"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
           textContentType="newPassword"
           autoComplete="new-password"
           placeholder={`At least ${MIN_PASSWORD} characters`}
@@ -142,6 +141,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flexGrow: 1,
       justifyContent: 'center',
       paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
     },
     email: {
       fontFamily: fonts.bodySemiBold,
@@ -156,9 +156,19 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       borderWidth: 1,
       borderColor: c.line,
       borderRadius: radii.sm,
-      paddingVertical: spacing.md,
+      // Same as the code field on VerifyEmailScreen: a fixed height with no
+      // vertical padding, or iOS clips the tops of these large digits.
+      height: 64,
       paddingHorizontal: spacing.md,
+      textAlignVertical: 'center',
       marginBottom: spacing.md,
+    },
+    // The placeholder in the normal field style, so the letter spacing
+    // doesn't push "Code" under the cursor.
+    codeEmpty: {
+      fontFamily: fonts.body,
+      fontSize: 15,
+      letterSpacing: 0,
     },
     notice: {
       ...t.caption,

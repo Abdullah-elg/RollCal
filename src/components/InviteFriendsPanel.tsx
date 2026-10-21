@@ -1,3 +1,7 @@
+// The invite page of the event sheet. Hosts invite friends directly and
+// withdraw invitations. Other attendees ask the host to invite someone, and
+// the host approves or declines those requests.
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';

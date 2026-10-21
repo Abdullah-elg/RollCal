@@ -1,3 +1,7 @@
+// The event page: details, RSVP, attendees, bills, the roll (EventAlbum),
+// activity, and the invite and QR pass sheet. The host edits, deletes,
+// reopens the roll, removes people and chooses the cover from here.
+
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,10 +17,12 @@ import {
   RefreshControl,
   ScrollView,
   StatusBar as RNStatusBar,
+  StyleProp,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
+  ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
@@ -92,7 +98,7 @@ function SlideInAvatar({
   avatarUrl?: string | null;
   size: number;
   shouldSlideIn?: boolean;
-  style: any;
+  style: StyleProp<ViewStyle>;
 }) {
   const anim = useRef(new Animated.Value(shouldSlideIn ? 0 : 1)).current;
 

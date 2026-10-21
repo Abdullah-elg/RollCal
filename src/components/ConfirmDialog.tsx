@@ -1,3 +1,5 @@
+// The themed yes/no dialog used in place of Alert.alert for confirmations.
+
 import { useMemo } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';

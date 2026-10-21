@@ -1,3 +1,7 @@
+// Roll uploads. Finds the events a user can still add photos to, picks media,
+// strips hidden details, and uploads to storage while checking the plan's
+// storage allowance and Pro-only video. Also deletes an event's files.
+
 import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { cleanPhoto } from './cleanPhoto';
@@ -47,15 +51,26 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 }
 
 // Events the user is part of whose 48-hour upload window is open right now.
+// Being able to see an event isn't enough: a pending or declined invite shows
+// it too, but only members can add to its roll (private.is_member: the host,
+// anyone with an RSVP, or an accepted invite).
 export async function getOpenUploadEvents(userId: string): Promise<Event[]> {
-  const { data, error } = await supabase
-    .from('events')
-    .select('*')
-    .order('ends_at', { ascending: false });
+  const [events, rsvps, invites] = await Promise.all([
+    supabase.from('events').select('*').order('ends_at', { ascending: false }),
+    supabase.from('rsvps').select('event_id').eq('user_id', userId),
+    supabase
+      .from('invitations')
+      .select('event_id')
+      .eq('invited_user_id', userId)
+      .eq('status', 'accepted'),
+  ]);
+  if (events.error || !events.data) return [];
 
-  if (error || !data) return [];
-
-  return data.filter((e) => rollState(e, e.uploads_closed).uploadOpen);
+  const joined = new Set([...(rsvps.data ?? []), ...(invites.data ?? [])].map((r) => r.event_id));
+  return events.data.filter(
+    (e) =>
+      (e.creator_id === userId || joined.has(e.id)) && rollState(e, e.uploads_closed).uploadOpen
+  );
 }
 
 // Uploads one picked photo or video to the event's folder and records it in
@@ -141,7 +156,7 @@ export async function uploadBlocker(isPro: boolean): Promise<'storage' | string 
 
 // The roll's picker: photos and videos for everyone, so free users can see
 // videos are possible; uploadRollMedia turns theirs into a Pro prompt.
-export async function pickRollMedia(isPro: boolean): Promise<ImagePicker.ImagePickerAsset[]> {
+export async function pickRollMedia(): Promise<ImagePicker.ImagePickerAsset[]> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images', 'videos'],
     allowsMultipleSelection: true,

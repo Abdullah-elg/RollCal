@@ -1,3 +1,6 @@
+// Ask for help or report a problem. The message goes to support by email
+// with the user's address as reply-to.
+
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';

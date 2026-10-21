@@ -1,3 +1,7 @@
+// A labeled date and time field. The date comes from CalendarPicker, the
+// time from scroll wheels (5-minute steps) and an AM/PM toggle. The wheels
+// are plain ScrollViews, so they behave the same on iOS and Android.
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   NativeScrollEvent,

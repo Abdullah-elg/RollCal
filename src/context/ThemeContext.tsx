@@ -1,3 +1,6 @@
+// Provides the light or dark palette. The choice (system, light or dark) is
+// saved on this phone, and nothing renders until it has loaded.
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createContext,
@@ -10,7 +13,7 @@ import {
 import { useColorScheme } from 'react-native';
 import { makeType, Palette, palettes, TypeTokens } from '../theme';
 
-const STORAGE_KEY = 'socialink.themePreference';
+const STORAGE_KEY = 'rollcal.themePreference';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type ThemeMode = 'light' | 'dark';

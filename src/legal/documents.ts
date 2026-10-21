@@ -23,7 +23,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
   terms: {
     title: 'Terms of Service',
     updated: UPDATED,
-    intro: `These terms are an agreement between you and ${OPERATOR} ("we", "us"), who runs RollCal. By creating an account or using the app, you agree to them. If you don't agree, please don't use RollCal.`,
+    intro: `These terms are an agreement between you and ${OPERATOR} (“we”, “us”), who runs RollCal. By creating an account or using the app, you agree to them. If you don’t agree, please don’t use RollCal.`,
     sections: [
       {
         heading: 'Who can use RollCal',
@@ -35,7 +35,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Your content',
         paragraphs: [
-          'You own the photos, videos, messages and other things you add ("your content").',
+          'You own the photos, videos, messages and other things you add (“your content”).',
           'So that the app can work, you give us a worldwide, non-exclusive, royalty-free licence to host, store, copy, process and display your content, only to run and improve RollCal. This licence ends when your content is deleted, except for copies we must keep by law or that remain for a short time in backups.',
           'When you add photos or videos to an event, everyone in that event can view, download and save them. Copies people have already saved stay with them even if you later delete yours.',
           'Only add content you have the right to share, and only share photos or videos of other people when they are comfortable with it.',
@@ -99,7 +99,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Disclaimers',
         paragraphs: [
-          'We work hard to keep RollCal running well, but to the extent the law allows, it is provided "as is" and "as available", without warranties of any kind, including that it will always be available, error-free or secure.',
+          'We work hard to keep RollCal running well, but to the extent the law allows, it is provided “as is” and “as available”, without warranties of any kind, including that it will always be available, error-free or secure.',
         ],
       },
       {
@@ -144,6 +144,12 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         heading: 'What Pro includes',
         paragraphs: [
           'Pro adds the features listed on the Pro screen in the app. We may add, change or remove Pro features over time; if we remove a major one, we will tell you in advance.',
+        ],
+      },
+      {
+        heading: 'During the beta',
+        paragraphs: [
+          'While RollCal is in beta, Pro can’t be bought in the app. We may switch it on for free when you ask. No payment is taken, and we will tell you in the app before free beta access ends. The sections below about price, trials and renewal apply once Pro is sold through the App Store and Google Play.',
         ],
       },
       {
@@ -229,7 +235,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Who can see it',
         paragraphs: [
-          'People in an event can see that event’s details, members, chat, photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Friends and people you share events with can see your name, username and profile photo.',
+          'People in an event can see that event’s details, members, chat, photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name, username and profile photo, so friends can add you. Your email address is never shown to other people.',
         ],
       },
       {
@@ -241,6 +247,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
           'Resend sends our emails, such as replies to support messages, from our servers.',
           'When you drop a pin on the map, your phone sends its coordinates to OpenStreetMap’s Nominatim service to find the place’s name, under the OpenStreetMap Foundation’s privacy policy. Nothing else about you is sent.',
           'Notifications: if you allow them, we keep a token for your phone and send each notification’s text (for example a friend’s name or a preview of a chat message) through Expo’s push service and Apple’s or Google’s notification service, which deliver it to your phone. You can turn notifications off in the app or in your phone’s settings.',
+          'Maps are shown with Apple Maps on iPhone and Google Maps on Android. They receive the area of the map you are looking at, as any map app does, under Apple’s and Google’s privacy policies.',
           'Exchange rates come from ExchangeRate-API’s public feed. Our servers fetch the day’s rates; nothing about you is sent.',
         ],
       },
