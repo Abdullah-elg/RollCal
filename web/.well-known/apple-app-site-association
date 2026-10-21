@@ -2,7 +2,7 @@
   "applinks": {
     "details": [
       {
-        "appIDs": ["TEAMID.app.rollcal"],
+        "appIDs": ["N9AU2V6QSX.app.rollcal"],
         "components": [{ "/": "/join/*" }, { "/": "/event/*" }]
       }
     ]

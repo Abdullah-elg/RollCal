@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-modules-jsi/apple/Package.swift b/node_modules/expo-modules-jsi/apple/Package.swift
+index 77b0525..0b70513 100644
+--- a/node_modules/expo-modules-jsi/apple/Package.swift
++++ b/node_modules/expo-modules-jsi/apple/Package.swift
+@@ -88,7 +88,7 @@ let package = Package(
+ 
+         // Enable some upcoming features that improve ergonomics and reduce executor hoppings
+         // https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md
+-        .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
++        // .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+         // https://github.com/swiftlang/swift-evolution/blob/main/proposals/0470-isolated-conformances.md
+         .enableUpcomingFeature("InferIsolatedConformances"),
+ 
+@@ -150,7 +150,7 @@ let package = Package(
+       path: "Benchmarks",
+     ),
+   ] + testFrameworks.binaryTargets,
+-  swiftLanguageModes: [.v6],
++  swiftLanguageModes: [.v6],  // patched: Swift 6.2.4 (Xcode 26.3) rejects region-isolation in JavaScriptRuntime.swift
+   cxxLanguageStandard: .cxx20
+ )
+ 
