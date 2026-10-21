@@ -11,11 +11,13 @@ import {
 import { CheckIcon, CloseIcon } from '../components/icons';
 import LegalText from '../components/LegalText';
 import SocialSignIn from '../components/SocialSignIn';
+import BirthDateFields from '../components/BirthDateFields';
 import CurrencyPicker from '../components/CurrencyPicker';
 import { Button, ErrorText, Field, FormScreen, SelectField } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { LEGAL, LegalDoc } from '../legal/documents';
+import { checkAge } from '../lib/age';
 import { currencyLabel } from '../lib/currency';
 import { deviceCurrency } from '../lib/fx';
 import { cleanUsername, USERNAME_MAX, usernameProblem } from '../lib/username';
@@ -26,7 +28,7 @@ import { fonts, Palette, spacing, TypeTokens } from '../theme';
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
 
 export default function SignUpScreen({ navigation }: Props) {
-  const { signUp } = useAuth();
+  const { signUp, blockForAge } = useAuth();
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const [firstName, setFirstName] = useState('');
@@ -39,6 +41,8 @@ export default function SignUpScreen({ navigation }: Props) {
   // Starts on the phone's region; bills and Pro prices are shown in it.
   const [currency, setCurrency] = useState(deviceCurrency);
   const [pickingCurrency, setPickingCurrency] = useState(false);
+  const [birthYear, setBirthYear] = useState('');
+  const [birthMonth, setBirthMonth] = useState<number | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -77,8 +81,17 @@ export default function SignUpScreen({ navigation }: Props) {
             ? { text: `@${chosen} is yours if you want it.`, tone: 'good' }
             : { text: 'How friends find you on RollCal.', tone: 'muted' };
 
+  const ageResult = birthYear.length === 4 ? checkAge(Number(birthYear), birthMonth) : 'invalid';
+  const ageAnswered = ageResult === 'ok' || ageResult === 'too_young';
+
   const submit = async () => {
     setError(null);
+    // Checked only on submit, so the form doesn't hint at the cut-off.
+    if (ageResult === 'too_young') {
+      await blockForAge();
+      return;
+    }
+    if (ageResult !== 'ok') return;
     setBusy(true);
     const { error, needsEmailConfirm } = await signUp(
       email,
@@ -149,6 +162,21 @@ export default function SignUpScreen({ navigation }: Props) {
         >
           {usernameStatus.text}
         </Text>
+        <BirthDateFields
+          year={birthYear}
+          onYear={(v) => {
+            setBirthYear(v);
+            setBirthMonth(null);
+          }}
+          month={birthMonth}
+          onMonth={setBirthMonth}
+          askMonth={birthYear.length === 4 && checkAge(Number(birthYear), null) === 'need_month'}
+        />
+        {birthYear.length === 4 && ageResult === 'invalid' && checkAge(Number(birthYear), null) === 'invalid' ? (
+          <Text style={[type.caption, { color: colors.danger, marginTop: -spacing.sm, marginBottom: spacing.md }]}>
+            Enter the four-digit year you were born.
+          </Text>
+        ) : null}
         <SelectField
           label="Currency"
           value={currencyLabel(currency)}
@@ -216,6 +244,7 @@ export default function SignUpScreen({ navigation }: Props) {
           disabled={
             !firstName.trim() ||
             !lastName.trim() ||
+            !ageAnswered ||
             !chosen ||
             !!problem ||
             free === undefined ||

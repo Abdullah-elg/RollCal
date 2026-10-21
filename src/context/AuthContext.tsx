@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session } from '@supabase/supabase-js';
 import {
   createContext,
@@ -47,6 +48,14 @@ type AuthContextValue = {
   // True between a correct reset code and the new password being saved.
   // The app stays on the sign-in screens meanwhile.
   recovering: boolean;
+  // Someone on this phone said they're under 13. Kept on the device, so the
+  // answer can't simply be changed and tried again.
+  ageBlocked: boolean;
+  // Records that the signed-in person passed the age check.
+  confirmAge: () => Promise<{ error: string | null }>;
+  // Under 13: deletes the account just made, signs out, blocks this phone.
+  refuseUnderAge: () => Promise<void>;
+  blockForAge: () => Promise<void>;
   signInWithApple: () => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -55,12 +64,19 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const AGE_BLOCK_KEY = 'rollcal.ageBlocked';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [recovering, setRecovering] = useState(false);
+  const [ageBlocked, setAgeBlocked] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(AGE_BLOCK_KEY)
+      .then((v) => setAgeBlocked(!!v))
+      .catch(() => {});
+  }, []);
   // Set just before an Apple sign-in, read when that new user's profile is
   // created. A ref (not state) so the profile effect sees it immediately.
   const pendingName = useRef<social.AppleName | null>(null);
@@ -191,6 +207,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           display_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
           username: cleanUsername(username),
           currency,
+          // Passed the age check on the sign-up form.
+          age_confirmed: true,
         },
       },
     });
@@ -259,6 +277,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
+  const blockForAge = async () => {
+    setAgeBlocked(true);
+    await AsyncStorage.setItem(AGE_BLOCK_KEY, new Date().toISOString()).catch(() => {});
+  };
+
+  const confirmAge: AuthContextValue['confirmAge'] = async () => {
+    const { error } = await supabase.auth.updateUser({ data: { age_confirmed: true } });
+    return { error: error ? 'Couldn’t save that. Check your connection and try again.' : null };
+  };
+
+  const refuseUnderAge = async () => {
+    await blockForAge();
+    // The same function as Settings → Delete account.
+    await supabase.functions.invoke('delete-account', { method: 'POST' }).catch(() => {});
+    await unregisterPush();
+    await supabase.auth.signOut();
+  };
+
   const signInWithApple = () => {
     setRecovering(false);
     return social.signInWithApple((name) => {
@@ -302,6 +338,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sendPasswordReset,
         resetPassword,
         recovering,
+        ageBlocked,
+        confirmAge,
+        refuseUnderAge,
+        blockForAge,
         signInWithApple,
         signInWithGoogle,
         signOut,

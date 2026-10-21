@@ -8,9 +8,10 @@ import CurrencyPicker from './CurrencyPicker';
 // people who signed up with Apple or Google, and accounts from before
 // currencies existed. Email sign-ups choose on the sign-up form instead.
 export default function CurrencyPrompt() {
-  const { profile, refreshProfile } = useAuth();
+  const { session, profile, refreshProfile } = useAuth();
   const [saving, setSaving] = useState(false);
-  if (!profile || profile.currency) return null;
+  // After the age question, never on top of it.
+  if (!profile || profile.currency || session?.user.user_metadata?.age_confirmed !== true) return null;
 
   const choose = async (code: string) => {
     if (saving) return;

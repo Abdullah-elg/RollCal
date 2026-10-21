@@ -116,7 +116,7 @@ export async function uploadPhotoAsset(
   return data.id;
 }
 
-// Why an upload stopped: 'limit' = the month's allowance is used up,
+// Why an upload stopped: 'limit' = their storage is full,
 // 'video' = a video without Pro.
 export class UploadError extends Error {
   constructor(
@@ -233,9 +233,7 @@ export async function uploadRollMedia(
 }
 
 function proLimitMessage(a: UploadAllowance): string {
-  return a.storedLimit !== null && a.stored >= a.storedLimit
-    ? `You’ve stored ${formatBytes(a.storedLimit)}, the most Pro allows. Remove some uploads to add more.`
-    : `You’ve uploaded ${formatBytes(a.monthLimit)} this month, the most Pro allows. It resets on the 1st.`;
+  return `You’ve stored ${formatBytes(a.storedLimit)}, the most Pro allows. Remove some uploads to add more.`;
 }
 
 // Deletes every file in an event's folder. Called before the event row is

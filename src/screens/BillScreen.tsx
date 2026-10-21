@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
 import ConfirmDialog from '../components/ConfirmDialog';
+import RatesCredit from '../components/RatesCredit';
 import { CheckIcon } from '../components/icons';
 import { Button, ErrorText } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
@@ -359,7 +360,8 @@ export default function BillScreen({ navigation, route }: Props) {
         {bill.scanned_currency && bill.scanned_rate ? (
           <Text style={type.caption}>
             Receipt in {bill.scanned_currency}, converted at{' '}
-            {describeRate(bill.scanned_currency, bill.currency, Number(bill.scanned_rate))}
+            {describeRate(bill.scanned_currency, bill.currency, Number(bill.scanned_rate))}.{' '}
+            <RatesCredit />
           </Text>
         ) : null}
         <Text style={styles.total}>{fmt(left)}</Text>

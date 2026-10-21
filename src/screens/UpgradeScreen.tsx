@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckIcon } from '../components/icons';
+import RatesCredit from '../components/RatesCredit';
 import { Button } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -83,7 +84,7 @@ export default function UpgradeScreen({ navigation, route }: Props) {
       : reason === 'video'
         ? 'Share videos with Pro.'
         : reason === 'storage'
-          ? 'You’ve used this month’s uploads.'
+          ? 'You’ve used your storage.'
           : reason === 'expiry'
             ? 'Keep your event’s photos.'
             : reason === 'quiet'
@@ -97,38 +98,43 @@ export default function UpgradeScreen({ navigation, route }: Props) {
     <ScrollView style={styles.screen} contentContainerStyle={content}>
       <Text style={type.display}>{headline}</Text>
       <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>
-        Pro is {PRO_PRICES.trialDays} days free, then {about}
-        {prices.monthly} a month or {prices.yearly} a year.
+        {PURCHASES_LIVE
+          ? `Pro is ${PRO_PRICES.trialDays} days free, then ${about}${prices.monthly} a month or ${prices.yearly} a year.`
+          : 'Here’s what Pro adds.'}
       </Text>
 
       {perks}
 
-      <View style={styles.plans}>
-        {(['yearly', 'monthly'] as const).map((p, i) => {
-          const selected = plan === p;
-          return (
-            <View key={p}>
-              {i > 0 && <View style={styles.divider} />}
-              <Pressable
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                onPress={() => choose(p)}
-                style={({ pressed }) => [styles.planRow, pressed && { opacity: 0.6 }]}
-              >
-                <View style={styles.perkText}>
-                  <Text style={type.body}>
-                    {p === 'yearly'
-                      ? `Yearly · ${about}${prices.yearly} a year`
-                      : `Monthly · ${about}${prices.monthly} a month`}
-                  </Text>
-                  {p === 'yearly' && <Text style={type.caption}>Save {PRO_PRICES.yearlySaving}</Text>}
-                </View>
-                <View style={styles.radio}>{selected && <View style={styles.radioFill} />}</View>
-              </Pressable>
-            </View>
-          );
-        })}
-      </View>
+      {/* No prices while there's nothing to buy: App Review treats prices
+          for a purchase the app can't make as unfinished. */}
+      {PURCHASES_LIVE && (
+        <View style={styles.plans}>
+          {(['yearly', 'monthly'] as const).map((p, i) => {
+            const selected = plan === p;
+            return (
+              <View key={p}>
+                {i > 0 && <View style={styles.divider} />}
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  onPress={() => choose(p)}
+                  style={({ pressed }) => [styles.planRow, pressed && { opacity: 0.6 }]}
+                >
+                  <View style={styles.perkText}>
+                    <Text style={type.body}>
+                      {p === 'yearly'
+                        ? `Yearly · ${about}${prices.yearly} a year`
+                        : `Monthly · ${about}${prices.monthly} a month`}
+                    </Text>
+                    {p === 'yearly' && <Text style={type.caption}>Save {PRO_PRICES.yearlySaving}</Text>}
+                  </View>
+                  <View style={styles.radio}>{selected && <View style={styles.radioFill} />}</View>
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       {PURCHASES_LIVE ? null : (
         // Nothing to buy yet: say so plainly and offer a way in, rather than a
@@ -146,13 +152,14 @@ export default function UpgradeScreen({ navigation, route }: Props) {
           />
         </View>
       )}
-      {prices.converted && (
+      {PURCHASES_LIVE && prices.converted && (
         <Text style={[type.caption, styles.note]}>
           Pro is priced in US dollars ({prices.usd.monthly} a month or {prices.usd.yearly} a year).
           Prices here are converted to {currency} ({currencyName(currency)}) at today’s exchange
           rate, as a guide.
           {PURCHASES_LIVE &&
-            ` You’re charged in your ${store}’s currency, at the price shown before you confirm.`}
+            ` You’re charged in your ${store}’s currency, at the price shown before you confirm.`}{' '}
+          <RatesCredit />
         </Text>
       )}
       {PURCHASES_LIVE && (

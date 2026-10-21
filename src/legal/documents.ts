@@ -8,7 +8,7 @@
 const OPERATOR = 'RollCal';
 const CONTACT = 'support@rollcal.app';
 const PROVINCE = 'Ontario';
-const UPDATED = 'October 19, 2026';
+const UPDATED = 'October 20, 2026';
 
 export type LegalDoc = 'terms' | 'pro' | 'privacy';
 
@@ -28,7 +28,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Who can use RollCal',
         paragraphs: [
-          'You must be at least 13 years old. If you are under the age of majority where you live, you need a parent or guardian’s permission.',
+          'You must be at least 13 years old. We ask when you were born when you join (we don’t keep the date), and accounts belonging to anyone under 13 are deleted. If you are under the age of majority where you live, you need a parent or guardian’s permission.',
           'Give accurate details when you sign up, keep your login secure, and tell us if you think someone else is using your account. You are responsible for what happens under your account.',
         ],
       },
@@ -44,8 +44,15 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Things you must not do',
         paragraphs: [
-          'Don’t use RollCal to break the law, harass, threaten or bully anyone, share hateful content, share sexual content involving anyone under 18, share intimate images of anyone without their consent, impersonate others, spam, or upload anything harmful such as malware. Don’t try to access accounts or data that aren’t yours, or copy the app’s data by automated means.',
+          'We have zero tolerance for objectionable content and abusive users. Don’t use RollCal to break the law, harass, threaten or bully anyone, share hateful content, share sexual content involving anyone under 18, share intimate images of anyone without their consent, impersonate others, spam, or upload anything harmful such as malware. Don’t try to access accounts or data that aren’t yours, or copy the app’s data by automated means.',
           'You can block anyone and report people, messages, photos and events in the app. We review reports within 24 hours, and we may remove content or suspend or close accounts that break these rules. We may report illegal content to the authorities.',
+        ],
+      },
+      {
+        heading: 'Copyright',
+        paragraphs: [
+          'Respect other people’s work: don’t add photos, videos or other material you don’t have the right to share.',
+          `If you believe something on RollCal infringes your copyright, email ${CONTACT} with your name and contact details, a description of the work, where it appears in RollCal, and a statement that you believe in good faith the use isn’t authorized. We will remove infringing content, forward notices as the law requires, and close the accounts of people who infringe repeatedly.`,
         ],
       },
       {
@@ -73,6 +80,8 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         heading: 'Other services',
         paragraphs: [
           'RollCal works with services run by others, such as Sign in with Apple, Google sign-in, maps and payment apps. Their own terms and privacy policies apply when you use them, and we are not responsible for them.',
+          'Apple, Google, Interac, Venmo, PayPal, Cash App and other names of services mentioned in the app are trademarks of their owners. RollCal is not affiliated with or endorsed by them; their names are used only to say which service you use.',
+          'Parts of RollCal are open-source software and open data, used under their own licences. They are listed in Settings → Open-source licences. Place names come from OpenStreetMap (© OpenStreetMap contributors) and exchange rates from ExchangeRate-API.',
         ],
       },
       {
@@ -140,7 +149,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Fair use of storage',
         paragraphs: [
-          'Pro lets you upload up to 200 GB of photos and videos a month, with up to 1 TB stored in total across all your events. If you reach the total, new uploads pause until you remove something; nothing you have already uploaded is deleted because of it.',
+          'Pro includes up to 200 GB of stored photos and videos across all your events (free accounts include 2 GB). If you reach it, new uploads pause until you remove something; nothing you have already uploaded is deleted because of it.',
         ],
       },
       {
@@ -205,6 +214,9 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
           'Account details: your name, email address, username, profile photo, preferred currency, and, if you sign in with Apple or Google, the details they share with us.',
           'What you add: events, RSVPs, invitations, friend connections, chat messages, photos and videos, bills and their items, and the payment handles you choose to add (such as an email or phone number for Interac e-Transfer, or a Venmo, PayPal or Cash App username).',
           'Locations you choose: an event’s address or map pin. If you use “current location” when picking a place, your device’s location is used once for that and is not stored separately.',
+          'When you contact support or report something: what you write, your account email (so we can reply), your phone type and app version, and for reports, what you reported. The person you report is not told who reported them.',
+          'If you allow notifications: a notification token for your phone and your notification settings.',
+          'Your age: we ask when you were born when you join, to check you are 13 or older. We keep only the fact that you passed, never the date.',
           'We do not use advertising or analytics tracking, and we do not sell your information.',
         ],
       },
@@ -226,6 +238,8 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
           'Supabase hosts our database, file storage and sign-in. Your information is stored on servers in the United States, so it may be accessed by authorities there under US law.',
           'When you scan a receipt, the photo is sent to Google’s Gemini service to read it, under Google’s terms for that service. We do not keep the photo after it has been read.',
           'Apple and Google handle sign-in when you use them, and will handle payment for Pro; we never see your card details.',
+          'Resend sends our emails, such as replies to support messages, from our servers.',
+          'When you drop a pin on the map, your phone sends its coordinates to OpenStreetMap’s Nominatim service to find the place’s name, under the OpenStreetMap Foundation’s privacy policy. Nothing else about you is sent.',
           'Notifications: if you allow them, we keep a token for your phone and send each notification’s text (for example a friend’s name or a preview of a chat message) through Expo’s push service and Apple’s or Google’s notification service, which deliver it to your phone. You can turn notifications off in the app or in your phone’s settings.',
           'Exchange rates come from ExchangeRate-API’s public feed. Our servers fetch the day’s rates; nothing about you is sent.',
         ],
@@ -241,6 +255,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         paragraphs: [
           'You can view and edit your profile, delete your content, and delete your account in the app. Depending on where you live, you may also have the right to ask for a copy of your information, to correct it, or to have it deleted; contact us to do this.',
           'You can withdraw permission for photos, camera, location or notifications at any time in your device settings.',
+          `Our privacy officer handles privacy questions and requests at ${CONTACT}. We reply within 30 days. If you are not satisfied, you can complain to the Office of the Privacy Commissioner of Canada (priv.gc.ca) or the privacy regulator where you live.`,
         ],
       },
       {

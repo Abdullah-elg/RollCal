@@ -1,16 +1,13 @@
 import { supabase } from './supabase';
 
-// How much someone has uploaded to event rolls this month against their
-// allowance. The numbers and the enforcement live in the database
-// (supabase/media.sql); this only reads them for the app to show.
+// How much someone has stored in event rolls against their plan's total
+// (2 GB free, 200 GB Pro). The numbers and the enforcement live in the
+// database (supabase/media.sql); this only reads them for the app to show.
 
 export type UploadAllowance = {
   isPro: boolean;
-  monthUsed: number;
-  monthLimit: number;
   stored: number;
-  // null for free accounts: their photos expire instead.
-  storedLimit: number | null;
+  storedLimit: number;
 };
 
 // Each file is capped by the storage bucket (the most the Supabase Free plan
@@ -22,28 +19,19 @@ export const VIDEO_MAX_SECONDS = 60;
 export async function loadUploadAllowance(): Promise<UploadAllowance | null> {
   const { data, error } = await supabase.rpc('my_upload_allowance').maybeSingle();
   if (error || !data) return null;
-  const row = data as {
-    is_pro: boolean;
-    month_used: number;
-    month_limit: number;
-    stored: number;
-    stored_limit: number | null;
-  };
+  const row = data as { is_pro: boolean; stored: number; stored_limit: number };
   return {
     isPro: row.is_pro,
-    monthUsed: Number(row.month_used),
-    monthLimit: Number(row.month_limit),
     stored: Number(row.stored),
-    storedLimit: row.stored_limit === null ? null : Number(row.stored_limit),
+    storedLimit: Number(row.stored_limit),
   };
 }
 
-export const overAllowance = (a: UploadAllowance) =>
-  a.monthUsed >= a.monthLimit || (a.storedLimit !== null && a.stored >= a.storedLimit);
+export const overAllowance = (a: UploadAllowance) => a.stored >= a.storedLimit;
 
-// Worth a heads-up from 80% of the month's allowance.
+// Worth a heads-up from 80% full.
 export const nearAllowance = (a: UploadAllowance) =>
-  !overAllowance(a) && a.monthUsed >= a.monthLimit * 0.8;
+  !overAllowance(a) && a.stored >= a.storedLimit * 0.8;
 
 // 1.6 GB, 840 MB, 12 MB. Binary units, to match how limits are set.
 export function formatBytes(bytes: number): string {

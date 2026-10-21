@@ -729,9 +729,9 @@ export default function EventAlbum({
 
   let allowanceNote: string | null = null;
   if (allowance && overAllowance(allowance)) {
-    allowanceNote = `You’ve used this month’s ${formatBytes(allowance.monthLimit)}. Uploads open again on the 1st.`;
+    allowanceNote = `You’ve used all ${formatBytes(allowance.storedLimit)} of your storage. Remove some uploads to add more.`;
   } else if (allowance && nearAllowance(allowance)) {
-    allowanceNote = `You’ve uploaded ${formatBytes(allowance.monthUsed)} of your ${formatBytes(allowance.monthLimit)} this month.`;
+    allowanceNote = `You’ve used ${formatBytes(allowance.stored)} of your ${formatBytes(allowance.storedLimit)} of storage.`;
   }
 
   const colWidth = Math.floor((screenWidth - GRID_GAP * 2) / 3);

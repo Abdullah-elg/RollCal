@@ -122,7 +122,7 @@ To check it's working: Supabase → Table editor → `push_tokens` should get a 
 
 ## 7. Before the first store build
 
-- [ ] In-app purchases wired up. RevenueCat is recommended: it handles both stores' receipts and trials, and sets `is_pro` through a webhook. Until then, hide the "Coming soon" button or the review will be rejected.
+- [ ] In-app purchases wired up. RevenueCat is recommended: it handles both stores' receipts and trials, and sets `is_pro` through a webhook. Until then `PURCHASES_LIVE` in `src/lib/pro.ts` stays `false`, which hides prices and shows "Pro is free during the beta".
 - [ ] Push notifications set up (section 6b) so chat, friend requests and the roll opening reach closed apps.
 - [ ] `eas init` with slug `rollcal` under the account that will own the app.
 - [ ] Have a lawyer review the three documents in `src/legal/documents.ts` (operator: RollCal, governed by Ontario law), then run `npm run build:legal`. If RollCal isn't a registered business yet, the operator should be your legal name or the registered name.

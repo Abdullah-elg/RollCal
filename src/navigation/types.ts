@@ -51,6 +51,7 @@ export type AppStackParamList = {
   EventInvitations: undefined;
   BlockedPeople: undefined;
   Support: undefined;
+  Licenses: undefined;
 };
 
 // Tab screens can navigate to stack routes too, so their props compose both.

@@ -1,6 +1,7 @@
 import * as Location from 'expo-location';
 import { useMemo, useRef, useState } from 'react';
 import {
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -13,6 +14,7 @@ import MapView, { MapPressEvent, Marker, Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { lookupPlace, OSM_CREDIT } from '../lib/geocode';
 import { Button } from './ui';
 
 export type PickedLocation = {
@@ -193,28 +195,11 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
     if (!pin) return;
     setBusy(true);
     let label = 'Dropped pin';
-    try {
-      const res = await Promise.race([
-        fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${pin.lat}&lon=${pin.lng}&format=json`,
-          { headers: { 'User-Agent': 'RollCal-App/1.0' } }
-        ),
-        new Promise<Response>((_, reject) =>
-          setTimeout(() => reject(new Error('Geocode timeout')), 3000)
-        ),
-      ]);
-      if (res && res.ok) {
-        const data = await res.json();
-        const addr = data.address;
-        if (addr) {
-          const main = addr.road || addr.suburb || addr.neighbourhood || addr.amenity || data.name;
-          const city = addr.city || addr.town || addr.village || addr.county;
-          if (main && city) label = `${main}, ${city}`;
-          else if (main) label = main;
-          else if (data.display_name) label = (data.display_name as string).split(',').slice(0, 2).join(',');
-        }
-      }
-    } catch {
+    // OpenStreetMap first (see src/lib/geocode.ts for its usage rules).
+    const found = await lookupPlace(pin.lat, pin.lng);
+    if (found) {
+      label = found;
+    } else {
       // Fallback: on Android try native geocode, on iOS avoid expo-location Swift crash
       if (Platform.OS === 'android') {
         try {
@@ -308,6 +293,13 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
         </MapView>
 
         {notice && <Text style={styles.notice}>{notice}</Text>}
+        <Text
+          style={styles.credit}
+          accessibilityRole="link"
+          onPress={() => Linking.openURL('https://www.openstreetmap.org/copyright')}
+        >
+          Place names {OSM_CREDIT}
+        </Text>
         <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
           <Button
             title="Use current location"
@@ -362,6 +354,12 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       color: c.danger,
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.sm,
+    },
+    credit: {
+      ...t.caption,
+      fontSize: 11,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.xs,
     },
     footer: {
       flexDirection: 'row',

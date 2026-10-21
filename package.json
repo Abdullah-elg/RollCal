@@ -47,7 +47,8 @@
   "devDependencies": {
     "@types/react": "~19.2.4",
     "patch-package": "^8.0.1",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "wrangler": "^4.151.3"
   },
   "scripts": {
     "start": "expo start",
@@ -57,7 +58,10 @@
     "typecheck": "tsc --noEmit",
     "postinstall": "patch-package",
     "test": "node --test \"src/**/*.test.ts\" \"supabase/functions/**/*.test.ts\"",
-    "build:legal": "node scripts/build-legal-pages.mjs"
+    "build:legal": "node scripts/build-legal-pages.mjs",
+    "build:licenses": "node scripts/build-licenses.mjs",
+    "deploy": "npx expo export -p web && wrangler deploy",
+    "preview": "npx expo export -p web && wrangler dev"
   },
   "private": true
 }

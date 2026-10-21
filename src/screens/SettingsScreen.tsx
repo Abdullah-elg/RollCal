@@ -635,6 +635,15 @@ export default function SettingsScreen({ navigation }: Props) {
             </Pressable>
           </View>
         ))}
+        <View style={styles.rowDivider} />
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+          onPress={() => navigation.navigate('Licenses')}
+        >
+          <Text style={[type.body, styles.rowText]}>Open-source licences</Text>
+          <ChevronRightIcon size={16} color={colors.inkMuted} />
+        </Pressable>
       </View>
 
       {/* Reminder toggles live in their own slide-up sheet, one per group. */}

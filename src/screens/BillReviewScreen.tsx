@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CurrencyPicker from '../components/CurrencyPicker';
+import RatesCredit from '../components/RatesCredit';
 import { CloseIcon, PlusIcon } from '../components/icons';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
@@ -488,6 +489,12 @@ export default function BillReviewScreen({ navigation, route }: Props) {
               : rates === undefined
                 ? 'Getting today’s exchange rate…'
                 : `Can’t get today’s exchange rate, so this bill will be shared in ${currency}.`}
+            {rate !== null ? (
+              <>
+                {' '}
+                <RatesCredit />
+              </>
+            ) : null}
           </Text>
         )}
 

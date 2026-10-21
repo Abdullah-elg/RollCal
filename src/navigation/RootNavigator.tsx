@@ -27,7 +27,9 @@ import { useUnread } from '../context/UnreadContext';
 import { ArrowIcon } from '../components/icons';
 import { CalendarBlank, Gear, Ticket, Users } from 'phosphor-react-native';
 import CreateActionSheet from '../components/CreateActionSheet';
+import AgePrompt, { needsAgeCheck } from '../components/AgePrompt';
 import CurrencyPrompt from '../components/CurrencyPrompt';
+import AgeBlockedScreen from '../screens/AgeBlockedScreen';
 import { hapticLight } from '../lib/haptics';
 import {
   NotificationTarget,
@@ -59,6 +61,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import SupportScreen from '../screens/SupportScreen';
+import LicensesScreen from '../screens/LicensesScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
@@ -301,7 +304,7 @@ function NewTabIcon({ tile, mark }: { tile: string; mark: string }) {
 }
 
 export default function RootNavigator() {
-  const { session, loading, recovering } = useAuth();
+  const { session, loading, recovering, ageBlocked } = useAuth();
   const { mode, colors } = useTheme();
 
   // Paper background everywhere, including during screen transitions.
@@ -389,7 +392,9 @@ export default function RootNavigator() {
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
       {/* Mid password reset there's already a session; stay on the sign-in
           screens until the new password is saved. */}
-      {session && !recovering ? (
+      {session && !recovering && needsAgeCheck(session.user.user_metadata) ? (
+        <AgePrompt />
+      ) : session && !recovering ? (
         <ProPromptProvider
           onSeePro={(reason) => navRef.navigate('Upgrade', { reason })}
         >
@@ -496,6 +501,11 @@ export default function RootNavigator() {
               options={{ title: 'Support' }}
             />
             <AppStack.Screen
+              name="Licenses"
+              component={LicensesScreen}
+              options={{ title: 'Open-source licences' }}
+            />
+            <AppStack.Screen
               name="FindPeople"
               component={FindPeopleScreen}
               options={{ title: 'Search users' }}
@@ -518,6 +528,8 @@ export default function RootNavigator() {
           </AppStack.Navigator>
           <CurrencyPrompt />
         </ProPromptProvider>
+      ) : ageBlocked ? (
+        <AgeBlockedScreen />
       ) : (
         <AuthStack.Navigator screenOptions={{ headerShown: false }}>
           <AuthStack.Screen name="SignIn" component={SignInScreen} />

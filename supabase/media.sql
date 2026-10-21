@@ -1,12 +1,14 @@
 -- ============================================================================
 -- RollCal - Upload limits and videos
 -- Run after policies.sql and bills.sql (it needs profiles.is_pro). Safe to
--- re-run. It owns the upload policy on the event-photos bucket.
+-- re-run, before or after private-schema.sql. It owns the upload policy on
+-- the event-photos bucket.
 --
 -- How it works:
---   * What counts is what's in storage: the files you uploaded to event rolls
---     this calendar month (UTC). Deleting a file gives its space back.
---   * Free: 2 GB a month. Pro: 200 GB a month, and 1 TB stored in total.
+--   * What counts is what's in storage: every file you've uploaded to event
+--     rolls that's still there. Deleting a file, or photos expiring, gives
+--     its space back.
+--   * Free: 2 GB in total. Pro: 200 GB in total.
 --   * Once you're at your limit, storage refuses new uploads. The file that
 --     takes you over is allowed, so nobody loses a half-finished upload.
 --   * Videos are Pro only. A photos row takes its size and type from the
@@ -49,40 +51,35 @@ update storage.buckets
 -- ALLOWANCE
 -- ----------------------------------------------------------------------------
 
--- Everything about one person's uploads in one place: the app shows it,
--- the storage policy enforces it. Sizes in bytes.
-create or replace function public.upload_allowance(uid uuid)
+-- Everything about one person's storage in one place: the app shows it,
+-- the storage policy enforces it. Sizes in bytes. The result's shape changed
+-- from the monthly version, so the old functions are dropped first.
+drop function if exists public.my_upload_allowance();
+drop function if exists public.upload_allowance(uuid);
+
+create function public.upload_allowance(uid uuid)
 returns table (
   is_pro boolean,
-  month_used bigint,
-  month_limit bigint,
   stored bigint,
   stored_limit bigint
 )
 language sql stable security definer set search_path = public, storage as $$
   with me as (
     select coalesce((select p.is_pro from public.profiles p where p.id = uid), false) as pro
-  ), files as (
-    select (o.metadata->>'size')::bigint as size, o.created_at
-      from storage.objects o
-     where o.bucket_id = 'event-photos' and o.owner = uid
   )
   select
     me.pro,
-    coalesce((select sum(size) from files where created_at >= date_trunc('month', now())), 0)::bigint,
-    case when me.pro then 200 * 1024^3 else 2 * 1024^3 end::bigint,
-    coalesce((select sum(size) from files), 0)::bigint,
-    -- Free accounts have no total cap: their photos expire.
-    case when me.pro then 1024^4 else null end::bigint
+    coalesce((select sum((o.metadata->>'size')::bigint)
+                from storage.objects o
+               where o.bucket_id = 'event-photos' and o.owner = uid), 0)::bigint,
+    case when me.pro then 200 * 1024^3 else 2 * 1024^3 end::bigint
   from me;
 $$;
 
 -- The signed-in user's own allowance, for the app. Only ever their own.
-create or replace function public.my_upload_allowance()
+create function public.my_upload_allowance()
 returns table (
   is_pro boolean,
-  month_used bigint,
-  month_limit bigint,
   stored bigint,
   stored_limit bigint
 )
@@ -90,35 +87,46 @@ language sql stable security definer set search_path = public as $$
   select * from public.upload_allowance(auth.uid());
 $$;
 
--- Whether the signed-in user is still under their allowance.
-drop function if exists public.can_upload(uuid);
-create or replace function public.can_upload()
-returns boolean language sql stable security definer set search_path = public as $$
-  select a.month_used < a.month_limit
-     and (a.stored_limit is null or a.stored < a.stored_limit)
-    from public.upload_allowance(auth.uid()) a;
-$$;
-
 revoke execute on function public.upload_allowance(uuid) from public, anon, authenticated;
 revoke execute on function public.my_upload_allowance() from public, anon;
 grant execute on function public.my_upload_allowance() to authenticated;
-revoke execute on function public.can_upload() from public, anon;
-grant execute on function public.can_upload() to authenticated;
 
 
 -- ----------------------------------------------------------------------------
 -- UPLOAD POLICY (replaces the one in policies.sql)
--- Members, into their own events, while they're under their allowance.
--- The 48-hour roll window is app logic.
+-- Members, into their own events, while they have room. The 48-hour roll
+-- window is app logic. The helpers live in public on a fresh setup and in
+-- private once private-schema.sql has run, so this uses whichever is there.
 -- ----------------------------------------------------------------------------
-drop policy if exists "event_photos_upload_member" on storage.objects;
-create policy "event_photos_upload_member" on storage.objects
-  for insert to authenticated
-  with check (
-    bucket_id = 'event-photos'
-    and public.is_member(((storage.foldername(name))[1])::uuid, (select auth.uid()))
-    and (select public.can_upload())
-  );
+do $$
+declare
+  sch text := case when to_regprocedure('private.is_member(uuid, uuid)') is not null
+                   then 'private' else 'public' end;
+begin
+  if sch = 'public' then
+    drop function if exists public.can_upload(uuid);
+  end if;
+  -- Whether the signed-in user still has room.
+  execute format($f$
+    create or replace function %I.can_upload()
+    returns boolean language sql stable security definer set search_path = public as $b$
+      select a.stored < a.stored_limit
+        from public.upload_allowance(auth.uid()) a;
+    $b$
+  $f$, sch);
+  execute format('revoke execute on function %I.can_upload() from public, anon', sch);
+  execute format('grant execute on function %I.can_upload() to authenticated', sch);
+
+  drop policy if exists "event_photos_upload_member" on storage.objects;
+  execute format($p$
+    create policy "event_photos_upload_member" on storage.objects
+      for insert to authenticated
+      with check (
+        bucket_id = 'event-photos'
+        and %1$I.is_member(((storage.foldername(name))[1])::uuid, (select auth.uid()))
+        and (select %1$I.can_upload())
+      )$p$, sch);
+end $$;
 
 
 -- ----------------------------------------------------------------------------
