@@ -724,6 +724,27 @@ export default function EventAlbum({
 
   const viewerList = displayPhotos;
   const viewerPhoto = viewerIndex !== null ? viewerList[viewerIndex] : null;
+
+  // The viewer follows a photo, not a position: setting or removing the
+  // event photo reorders the list (the event photo goes first), and without
+  // this the viewer stayed at the same position and showed a different
+  // photo, with "Set as the event photo" under it.
+  const viewerPhotoIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    viewerPhotoIdRef.current = viewerIndex !== null ? (viewerList[viewerIndex]?.id ?? null) : null;
+    // Only when the person moves; a reorder is handled below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewerIndex]);
+  useEffect(() => {
+    const id = viewerPhotoIdRef.current;
+    if (viewerIndex === null || !id) return;
+    const index = displayPhotos.findIndex((p) => p.id === id);
+    if (index >= 0 && index !== viewerIndex) {
+      setViewerIndex(index);
+      flatListRef.current?.scrollToIndex({ index, animated: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayPhotos]);
   const viewerIsVideo = viewerPhoto?.kind === 'video';
   const canDeleteViewer =
     viewerPhoto != null && (isLeader || viewerPhoto.uploader_id === userId);
@@ -1698,11 +1719,16 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       textAlign: 'center',
       overflow: 'hidden',
     },
+    // Side by side; wraps to a second line only if they don't fit.
     viewerBottom: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: spacing.md,
-      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      columnGap: spacing.lg,
+      rowGap: spacing.sm,
     },
     viewerCoverAction: {
       paddingVertical: 8,

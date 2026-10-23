@@ -18,14 +18,9 @@ export async function pickAndUploadAvatar(
   userId: string
 ): Promise<{ url: string | null; error: string | null; canceled?: boolean }> {
   try {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      return {
-        url: null,
-        error: 'Permission to access photos is needed to set a profile photo.',
-      };
-    }
-
+    // No photo-library permission needed: the system picker hands over only
+    // the photo they choose. (Android builds don't include READ_MEDIA_* at
+    // all, per Google Play's photo picker policy.)
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: 'images',
       allowsEditing: true,

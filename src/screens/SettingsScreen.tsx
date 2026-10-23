@@ -326,7 +326,112 @@ export default function SettingsScreen({ navigation }: Props) {
           { paddingBottom: bottomInset + spacing.xxl },
         ]}
       >
-        <Text style={[styles.sectionLabel, styles.firstSectionLabel]}>Appearance</Text>
+        {/* Your profile first: it's what people come to Settings for most. */}
+        <Text style={[styles.sectionLabel, styles.firstSectionLabel]}>Account</Text>
+        <View style={styles.card}>
+          <View style={styles.profileHeaderRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Change profile photo"
+              onPress={handleAvatarPress}
+              style={({ pressed }) => [
+                styles.avatarPressable,
+                pressed && { opacity: 0.8, transform: [{ scale: 0.96 }] },
+              ]}
+            >
+              <Avatar
+                userId={profile?.id}
+                name={profile?.display_name}
+                avatarUrl={profile?.avatar_url}
+                size={64}
+              />
+              {uploadingAvatar ? (
+                <View style={styles.avatarLoadingOverlay}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                </View>
+              ) : (
+                <View style={styles.cameraBadge}>
+                  <CameraIcon size={12} color="#FFFFFF" />
+                </View>
+              )}
+            </Pressable>
+
+            <View style={styles.profileInfoCol}>
+              <Text style={styles.profileDisplayName} numberOfLines={1}>
+                {profile?.display_name}
+              </Text>
+              {profile?.username ? (
+                <Text style={styles.profileUsername} numberOfLines={1}>
+                  @{profile.username}
+                </Text>
+              ) : null}
+              <Text style={styles.profileEmail} numberOfLines={1}>
+                {session?.user.email}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.rowDivider} />
+          {profile?.is_pro ? (
+            <Pressable
+              style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+              onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
+            >
+              <View style={styles.rowText}>
+                <Text style={type.body}>RollCal Pro</Text>
+                <Text style={type.caption}>You’re on Pro</Text>
+              </View>
+              <ChevronRightIcon size={16} color={colors.inkMuted} />
+            </Pressable>
+          ) : (
+            <View style={styles.planRow}>
+              <Text style={type.body}>You’re on the free plan.</Text>
+              <Text style={type.caption}>
+                Pro adds unlimited receipt scans, videos, photos kept for good and more.
+              </Text>
+              <Button
+                title="See Pro features"
+                onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
+                style={styles.planButton}
+              />
+            </View>
+          )}
+
+          <View style={styles.accountActions}>
+            <Button
+              title="Edit profile"
+              variant="secondary"
+              onPress={() => navigation.navigate('EditProfile')}
+              style={{ flex: 1 }}
+            />
+            <Button
+              title="Log out"
+              variant="secondary"
+              onPress={() => setConfirmLogout(true)}
+              style={{ flex: 1 }}
+              textStyle={{ color: colors.danger }}
+            />
+          </View>
+
+          {/* Plain text rather than a button, so it's clearly the rarer action. */}
+          <View style={styles.deleteSection}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={deleting}
+              onPress={() => setConfirmDelete(true)}
+              hitSlop={8}
+              style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.7 }]}
+            >
+              {deleting ? (
+                <ActivityIndicator size="small" color={colors.danger} />
+              ) : (
+                <Text style={styles.deleteText}>Delete account</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+
+        <Text style={styles.sectionLabel}>Appearance</Text>
         <View style={styles.card}>
           <Text style={type.body}>Theme</Text>
           <Text style={[type.caption, { marginTop: 2, marginBottom: spacing.md }]}>
@@ -501,110 +606,6 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
           <ChevronRightIcon size={16} color={colors.inkMuted} />
         </Pressable>
-      </View>
-
-      <Text style={styles.sectionLabel}>Account</Text>
-      <View style={styles.card}>
-        <View style={styles.profileHeaderRow}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Change profile photo"
-            onPress={handleAvatarPress}
-            style={({ pressed }) => [
-              styles.avatarPressable,
-              pressed && { opacity: 0.8, transform: [{ scale: 0.96 }] },
-            ]}
-          >
-            <Avatar
-              userId={profile?.id}
-              name={profile?.display_name}
-              avatarUrl={profile?.avatar_url}
-              size={64}
-            />
-            {uploadingAvatar ? (
-              <View style={styles.avatarLoadingOverlay}>
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              </View>
-            ) : (
-              <View style={styles.cameraBadge}>
-                <CameraIcon size={12} color="#FFFFFF" />
-              </View>
-            )}
-          </Pressable>
-
-          <View style={styles.profileInfoCol}>
-            <Text style={styles.profileDisplayName} numberOfLines={1}>
-              {profile?.display_name}
-            </Text>
-            {profile?.username ? (
-              <Text style={styles.profileUsername} numberOfLines={1}>
-                @{profile.username}
-              </Text>
-            ) : null}
-            <Text style={styles.profileEmail} numberOfLines={1}>
-              {session?.user.email}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.rowDivider} />
-        {profile?.is_pro ? (
-          <Pressable
-            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
-            onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
-          >
-            <View style={styles.rowText}>
-              <Text style={type.body}>RollCal Pro</Text>
-              <Text style={type.caption}>You’re on Pro</Text>
-            </View>
-            <ChevronRightIcon size={16} color={colors.inkMuted} />
-          </Pressable>
-        ) : (
-          <View style={styles.planRow}>
-            <Text style={type.body}>You’re on the free plan.</Text>
-            <Text style={type.caption}>
-              Pro adds unlimited receipt scans, videos, photos kept for good and more.
-            </Text>
-            <Button
-              title="See Pro features"
-              onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
-              style={styles.planButton}
-            />
-          </View>
-        )}
-
-        <View style={styles.accountActions}>
-          <Button
-            title="Edit profile"
-            variant="secondary"
-            onPress={() => navigation.navigate('EditProfile')}
-            style={{ flex: 1 }}
-          />
-          <Button
-            title="Log out"
-            variant="secondary"
-            onPress={() => setConfirmLogout(true)}
-            style={{ flex: 1 }}
-            textStyle={{ color: colors.danger }}
-          />
-        </View>
-
-        {/* Plain text rather than a button, so it's clearly the rarer action. */}
-        <View style={styles.deleteSection}>
-          <Pressable
-            accessibilityRole="button"
-            disabled={deleting}
-            onPress={() => setConfirmDelete(true)}
-            hitSlop={8}
-            style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.7 }]}
-          >
-            {deleting ? (
-              <ActivityIndicator size="small" color={colors.danger} />
-            ) : (
-              <Text style={styles.deleteText}>Delete account</Text>
-            )}
-          </Pressable>
-        </View>
       </View>
 
       <Text style={styles.sectionLabel}>About</Text>
