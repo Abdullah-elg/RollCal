@@ -20,36 +20,6 @@ import { rollState } from './roll';
 
 const BUCKET = 'event-photos';
 
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const chars =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const lookup = new Uint8Array(256);
-  for (let i = 0; i < chars.length; i++) lookup[chars.charCodeAt(i)] = i;
-
-  let bufferLength = base64.length * 0.75;
-  if (base64[base64.length - 1] === '=') {
-    bufferLength--;
-    if (base64[base64.length - 2] === '=') bufferLength--;
-  }
-
-  const arrayBuffer = new ArrayBuffer(bufferLength);
-  const bytes = new Uint8Array(arrayBuffer);
-
-  let p = 0;
-  for (let i = 0; i < base64.length; i += 4) {
-    const encoded1 = lookup[base64.charCodeAt(i)];
-    const encoded2 = lookup[base64.charCodeAt(i + 1)];
-    const encoded3 = lookup[base64.charCodeAt(i + 2)];
-    const encoded4 = lookup[base64.charCodeAt(i + 3)];
-
-    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
-    bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
-    bytes[p++] = ((encoded3 & 3) << 6) | (encoded4 & 63);
-  }
-
-  return arrayBuffer;
-}
-
 // Events the user is part of whose 48-hour upload window is open right now.
 // Being able to see an event isn't enough: a pending or declined invite shows
 // it too, but only members can add to its roll (private.is_member: the host,
@@ -90,14 +60,14 @@ export async function uploadPhotoAsset(
   let ext: string;
   let contentType: string;
   if (isVideo) {
-    // Videos never come as base64; read the file straight from disk.
+    // Read the video straight from disk.
     body = await new File(asset.uri).arrayBuffer();
     ext = (asset.uri.split('.').pop() ?? 'mp4').toLowerCase();
     contentType = asset.mimeType ?? 'video/mp4';
   } else {
     // Strips location and other hidden details; see cleanPhoto.
     const photo = await cleanPhoto(asset.uri, quality);
-    body = base64ToArrayBuffer(photo.base64);
+    body = photo.body;
     ext = photo.ext;
     contentType = photo.mimeType;
   }

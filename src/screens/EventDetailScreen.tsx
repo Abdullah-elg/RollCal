@@ -36,6 +36,7 @@ import {
   EditIcon,
   MapPinIcon,
   PlusIcon,
+  ShareIcon,
 } from '../components/icons';
 import InviteFriendsPanel from '../components/InviteFriendsPanel';
 import JoinModePicker from '../components/JoinModePicker';
@@ -204,6 +205,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
   // The sheet has three pages: the event's details, inviting friends, and the event QR pass.
   const [infoPage, setInfoPage] = useState<'info' | 'invite' | 'share'>('info');
+  // Opened from the share icon, so the share page has no way back to info.
+  const [shareOnly, setShareOnly] = useState(false);
   const [refreshSeq, setRefreshSeq] = useState(0);
   const hasLoadedRef = useRef(false);
   const screenAnim = useRef(new Animated.Value(0)).current;
@@ -361,9 +364,17 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   };
 
   const openInfo = () => {
+    setShareOnly(false);
     setInfoPage('info');
     setShowInfo(true);
     load();
+  };
+
+  // Straight to the share page (link, QR code and invite code).
+  const openShare = () => {
+    setShareOnly(true);
+    setInfoPage('share');
+    setShowInfo(true);
   };
 
   const coverPhoto = useMemo(() => {
@@ -637,6 +648,17 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               </Pressable>
             )}
             <View style={{ flex: 1 }} />
+            {event.is_link_enabled && (
+              <Pressable
+                style={({ pressed }) => [styles.shareIconButton, pressed && { opacity: 0.6 }]}
+                onPress={openShare}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Share event"
+              >
+                <ShareIcon size={20} color={colors.inkMuted} />
+              </Pressable>
+            )}
             <Pressable style={styles.infoButton} onPress={openInfo} hitSlop={12}>
               <Text style={styles.infoGlyph}>i</Text>
             </Pressable>
@@ -902,6 +924,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                   <ArrowIcon size={20} color={colors.ink} direction="left" />
                   <Text style={type.h2}>Invite friends</Text>
                 </Pressable>
+              ) : infoPage === 'share' && shareOnly ? (
+                <Text style={type.h2}>Share</Text>
               ) : infoPage === 'share' ? (
                 <Pressable
                   style={styles.modalBack}
@@ -1058,7 +1082,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                                 <Text
                                   style={[
                                     styles.statusTag,
-                                    { color: colors.inkMuted },
+                                    { color: colors.inkMuted, marginRight: spacing.md },
                                   ]}
                                 >
                                   {STATUS_LABEL.host}
@@ -1326,6 +1350,13 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       justifyContent: 'center',
       marginTop: 2,
     },
+    shareIconButton: {
+      width: 24,
+      height: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.lg,
+    },
     infoButton: {
       width: 22,
       height: 22,
@@ -1542,10 +1573,6 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       fontSize: 28,
       color: c.ink,
       letterSpacing: 4,
-    },
-    shareButton: {
-      height: 40,
-      paddingHorizontal: spacing.lg,
     },
     rsvpGroup: {
       marginTop: spacing.xs,

@@ -84,7 +84,7 @@ export default function UpgradeScreen({ navigation, route }: Props) {
 
   const headline =
     reason === 'scan'
-      ? 'You’ve used this month’s free scan.'
+      ? 'You’ve used this month’s free scans.'
       : reason === 'video'
         ? 'Share videos with Pro.'
         : reason === 'storage'

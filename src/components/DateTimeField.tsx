@@ -1,6 +1,7 @@
 // A labeled date and time field. The date comes from CalendarPicker, the
 // time from scroll wheels (5-minute steps) and an AM/PM toggle. The wheels
-// are plain ScrollViews, so they behave the same on iOS and Android.
+// are plain ScrollViews, so they behave the same on iOS and Android. On the
+// first allowed day, times before minDate are greyed out and can't be chosen.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -27,11 +28,14 @@ type WheelProps = {
   items: string[];
   index: number;
   onChange: (index: number) => void;
+  // Items that can't be chosen (times already gone). They're greyed out, and
+  // a wheel that stops on one springs to the nearest one that can be.
+  isDisabled?: (index: number) => boolean;
 };
 
 // A snap-scrolling wheel column. Pure ScrollView - no native picker, so it
 // scrolls seamlessly on both platforms and matches the design language.
-function Wheel({ items, index, onChange }: WheelProps) {
+function Wheel({ items, index, onChange, isDisabled }: WheelProps) {
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const scrollRef = useRef<ScrollView>(null);
@@ -56,12 +60,34 @@ function Wheel({ items, index, onChange }: WheelProps) {
     setLiveIndex(clampIndex(e.nativeEvent.contentOffset.y));
   };
 
+  const nearestAllowed = (idx: number) => {
+    if (!isDisabled?.(idx)) return idx;
+    for (let step = 1; step < items.length; step++) {
+      for (const i of [idx + step, idx - step]) {
+        if (i >= 0 && i < items.length && !isDisabled(i)) return i;
+      }
+    }
+    return idx;
+  };
+
   const settle = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const idx = clampIndex(e.nativeEvent.contentOffset.y);
+    const landed = clampIndex(e.nativeEvent.contentOffset.y);
+    const idx = nearestAllowed(landed);
+    if (idx !== landed) {
+      setLiveIndex(idx);
+      scrollRef.current?.scrollTo({ y: idx * ITEM_H, animated: true });
+    }
     if (idx !== reportedRef.current) {
       reportedRef.current = idx;
       onChange(idx);
     }
+  };
+
+  // A flick keeps the wheel coasting, and onMomentumScrollEnd settles it
+  // when it stops. Settling here as well would race the coast and could
+  // leave the wheel resting between two numbers.
+  const endDrag = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (Math.abs(e.nativeEvent.velocity?.y ?? 0) < 0.05) settle(e);
   };
 
   return (
@@ -78,7 +104,7 @@ function Wheel({ items, index, onChange }: WheelProps) {
         onScroll={onScroll}
         scrollEventThrottle={16}
         onMomentumScrollEnd={settle}
-        onScrollEndDrag={settle}
+        onScrollEndDrag={endDrag}
         onLayout={() =>
           scrollRef.current?.scrollTo({ y: index * ITEM_H, animated: false })
         }
@@ -89,6 +115,7 @@ function Wheel({ items, index, onChange }: WheelProps) {
               style={[
                 styles.wheelText,
                 i === liveIndex && styles.wheelTextSelected,
+                isDisabled?.(i) && styles.wheelTextDisabled,
               ]}
             >
               {item}
@@ -103,6 +130,11 @@ function Wheel({ items, index, onChange }: WheelProps) {
   );
 }
 
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
 const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1));
 const MINUTES = Array.from({ length: 12 }, (_, i) =>
   String(i * 5).padStart(2, '0')
@@ -112,7 +144,8 @@ type Props = {
   label: string;
   value: Date;
   onChange: (next: Date) => void;
-  // Passed through to the calendar: earlier days can't be picked.
+  // The earliest moment allowed: earlier days can't be picked on the
+  // calendar, and on that day earlier times are greyed out.
   minDate?: Date;
 };
 
@@ -127,17 +160,44 @@ export default function DateTimeField({ label, value, onChange, minDate }: Props
   const isPM = value.getHours() >= 12;
   const minute = (Math.round(value.getMinutes() / 5) * 5) % 60;
 
+  // The earliest time that can be picked, rounded up to the wheels' 5-minute
+  // steps. Only matters on that same day; later days allow any time.
+  const earliest = useMemo(() => {
+    if (!minDate) return null;
+    const e = new Date(minDate);
+    e.setSeconds(0, 0);
+    const over = e.getMinutes() % 5;
+    if (over) e.setMinutes(e.getMinutes() + 5 - over);
+    return e;
+  }, [minDate]);
+  const onEarliestDay = !!earliest && sameDay(value, earliest);
+
+  // Never hand back a time before the earliest one.
+  const atLeastEarliest = (next: Date) =>
+    earliest && next.getTime() < earliest.getTime() ? new Date(earliest) : next;
+
   const setTime = (h12: number, min: number, pm: boolean) => {
     const next = new Date(value);
     next.setHours((h12 % 12) + (pm ? 12 : 0), min, 0, 0);
-    onChange(next);
+    onChange(atLeastEarliest(next));
   };
 
   const setDatePart = (picked: Date) => {
     const next = new Date(picked);
     next.setHours(value.getHours(), value.getMinutes(), 0, 0);
-    onChange(next);
+    onChange(atLeastEarliest(next));
   };
+
+  // What's already gone on the earliest day. An hour is gone once its last
+  // 5-minute step is; a minute once that time in the shown hour is.
+  const hour24 = (h12: number, pm: boolean) => (h12 % 12) + (pm ? 12 : 0);
+  const minutesOf = (h: number, m: number) => h * 60 + m;
+  const earliestMinutes = earliest ? minutesOf(earliest.getHours(), earliest.getMinutes()) : 0;
+  const hourGone = (i: number) =>
+    onEarliestDay && minutesOf(hour24(i + 1, isPM), 55) < earliestMinutes;
+  const minuteGone = (i: number) =>
+    onEarliestDay && minutesOf(hour24(hour12, isPM), i * 5) < earliestMinutes;
+  const amGone = onEarliestDay && earliestMinutes >= 12 * 60;
 
   const dateLabel = value.toLocaleDateString(undefined, {
     weekday: 'short',
@@ -179,19 +239,31 @@ export default function DateTimeField({ label, value, onChange, minDate }: Props
           items={HOURS}
           index={hour12 - 1}
           onChange={(i) => setTime(i + 1, minute, isPM)}
+          isDisabled={hourGone}
         />
         <Text style={styles.colon}>:</Text>
         <Wheel
           items={MINUTES}
           index={minute / 5}
           onChange={(i) => setTime(hour12, i * 5, isPM)}
+          isDisabled={minuteGone}
         />
         <View style={styles.ampmColumn}>
           <Pressable
             style={[styles.ampmSegment, !isPM && styles.ampmActive]}
             onPress={() => setTime(hour12, minute, false)}
+            disabled={amGone}
+            accessibilityState={{ disabled: amGone, selected: !isPM }}
           >
-            <Text style={[styles.ampmText, !isPM && styles.ampmTextActive]}>AM</Text>
+            <Text
+              style={[
+                styles.ampmText,
+                !isPM && styles.ampmTextActive,
+                amGone && styles.wheelTextDisabled,
+              ]}
+            >
+              AM
+            </Text>
           </Pressable>
           <Pressable
             style={[styles.ampmSegment, isPM && styles.ampmActive]}
@@ -270,6 +342,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       fontSize: 20,
       color: c.ink,
       opacity: 1,
+    },
+    // Gone times: faint, and skipped over when a wheel stops on them.
+    wheelTextDisabled: {
+      opacity: 0.18,
     },
     wheelBand: {
       position: 'absolute',

@@ -14,7 +14,7 @@ import { useTheme } from '../context/ThemeContext';
 import { createAndShareBill, itemsTotal } from '../lib/bills';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { formatCents } from '../lib/money';
-import { formatHandle, listPaymentMethods, PAYMENT_TYPES, PaymentMethod } from '../lib/paymentMethods';
+import { formatHandle, listPaymentMethods, methodName, PaymentMethod } from '../lib/paymentMethods';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, spacing, TypeTokens } from '../theme';
 
@@ -126,7 +126,7 @@ export default function BillShareScreen({ navigation, route }: Props) {
                   onPress={() => toggle(m.id)}
                 >
                   <View style={styles.rowText}>
-                    <Text style={type.body}>{PAYMENT_TYPES[m.type].label}</Text>
+                    <Text style={type.body}>{methodName(m)}</Text>
                     <Text style={type.caption}>{formatHandle(m.type, m.handle)}</Text>
                   </View>
                   <View style={styles.checkSlot}>

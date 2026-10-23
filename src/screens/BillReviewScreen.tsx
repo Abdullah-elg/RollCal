@@ -231,7 +231,11 @@ export default function BillReviewScreen({ navigation, route }: Props) {
     }
     const result = await scanReceipt(eventId, source, () => setScanning(true), preferred);
     setScanning(false);
-    if ('error' in result) setScanError(result.error);
+    if ('error' in result) {
+      setScanError(result.error);
+      // A photo that wasn't a receipt still used a free scan.
+      if (result.scansLeft !== undefined) setScansLeft(result.scansLeft);
+    }
     if ('limitReached' in result) {
       setScansLeft(0);
       showProPrompt('scan');
@@ -246,7 +250,7 @@ export default function BillReviewScreen({ navigation, route }: Props) {
       ? 'Scan the receipt and the lines fill in, or type them below.'
       : scansLeft > 0
         ? `${scansLeft} free ${scansLeft === 1 ? 'scan' : 'scans'} left this month. Or type the lines below.`
-        : 'You’ve used this month’s free scan. Type the lines below, or get Pro to keep scanning.';
+        : 'You’ve used this month’s free scans. Type the lines below, or get Pro to keep scanning.';
 
   const lineError = (l: Line, i: number): string | null => {
     if (!submitted) return null;

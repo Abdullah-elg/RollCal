@@ -44,7 +44,7 @@ export function ProPromptProvider({
   return (
     <ProPromptContext.Provider value={value}>
       {children}
-      <Modal visible={!!prompt} transparent animationType="slide" onRequestClose={close}>
+      <Modal visible={!!prompt} transparent animationType="fade" onRequestClose={close}>
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={close} accessibilityLabel="Close" />
           {prompt && (
@@ -86,8 +86,9 @@ export function useProPrompt(): ProPromptValue {
 
 const makeStyles = (c: Palette, t: TypeTokens) =>
   StyleSheet.create({
-    // A light scrim: the screen stays readable behind the card.
-    overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.25)' },
+    // The same backdrop as the people and map sheets: faded in place, in the
+    // app's scrim, so it doesn't slide up with the card.
+    overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: c.scrim },
     card: {
       marginHorizontal: spacing.md,
       backgroundColor: c.paper,

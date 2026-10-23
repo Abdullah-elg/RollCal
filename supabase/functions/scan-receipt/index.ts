@@ -6,9 +6,11 @@
 // Gemini, the answer is checked and turned into whole cents, and the draft
 // comes back for the person to check before they share it.
 //
-// Pro users scan as much as they like; everyone else gets one free scan a
-// month (receipt_scans_left() in bills.sql sets the number). A scan that
-// fails or finds no receipt isn't counted.
+// Pro users scan as much as they like; everyone else gets two free scans a
+// month (receipt_scans_left() in scan-allowance.sql sets the number). Every
+// photo the model reads counts, receipt or not, so the allowance can't be
+// used to read other things for free. A scan that fails on our side (the
+// model is down or its answer can't be read) isn't counted.
 //
 // Secrets: GEMINI_API_KEY (required), GEMINI_MODEL (optional, to switch
 // the first-choice model without a code change).
@@ -118,7 +120,7 @@ Deno.serve(async (req: Request) => {
   if (allowanceError) return json(401, { error: 'Not signed in' });
   if (scansLeft === 0) {
     return json(403, {
-      error: 'You’ve used your free scan this month. Get Pro to scan as many as you like.',
+      error: 'You’ve used your free scans this month. Get Pro to scan as many as you like.',
       code: 'scan_limit',
     });
   }
@@ -188,14 +190,21 @@ Deno.serve(async (req: Request) => {
   }
 
   const draft = toDraft(scan);
-  if (!scan.is_receipt || draft.items.length === 0) {
-    return json(422, { error: 'That doesn’t look like a receipt. Try a clearer photo, flat and in good light.' });
-  }
-  // People can't write receipt_scans themselves, so the scan is counted here.
+  // The photo was read, so it counts, receipt or not. People can't write
+  // receipt_scans themselves, so the scan is counted here.
+  const left = scansLeft === null ? null : scansLeft - 1;
   if (scansLeft !== null) {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     const { error: countError } = await admin.from('receipt_scans').insert({ user_id: userId });
     if (countError) console.error('Could not count the scan', countError.message);
   }
-  return json(200, { draft, scansLeft: scansLeft === null ? null : scansLeft - 1 });
+  if (!scan.is_receipt || draft.items.length === 0) {
+    const allowance =
+      left === null ? '' : left === 0 ? ' That was your last free scan this month.' : ` ${left} free ${left === 1 ? 'scan' : 'scans'} left this month.`;
+    return json(422, {
+      error: `That doesn’t look like a receipt. Try a clearer photo, flat and in good light.${allowance}`,
+      scansLeft: left,
+    });
+  }
+  return json(200, { draft, scansLeft: left });
 });

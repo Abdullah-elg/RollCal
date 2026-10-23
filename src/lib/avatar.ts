@@ -7,13 +7,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { cleanPhoto } from './cleanPhoto';
 import { supabase } from './supabase';
 
-function base64ToArrayBuffer(b64: string): ArrayBuffer {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
 export async function pickAndUploadAvatar(
   userId: string
 ): Promise<{ url: string | null; error: string | null; canceled?: boolean }> {
@@ -32,13 +25,14 @@ export async function pickAndUploadAvatar(
       return { url: null, error: null, canceled: true };
     }
 
-    // Friends can see it, so strip location and other hidden details.
-    const photo = await cleanPhoto(result.assets[0].uri, 0.85);
+    // Friends can see it, so strip location and other hidden details. It's
+    // only ever shown small, so 1024 px across is plenty.
+    const photo = await cleanPhoto(result.assets[0].uri, 0.85, 1024);
     const path = `${userId}/${Date.now()}.${photo.ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from('avatars')
-      .upload(path, base64ToArrayBuffer(photo.base64), {
+      .upload(path, photo.body, {
         contentType: photo.mimeType,
         upsert: true,
       });

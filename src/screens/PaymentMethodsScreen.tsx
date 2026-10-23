@@ -2,6 +2,7 @@
 // Bills show these to the people who owe money.
 
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { getLocales } from 'expo-localization';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -23,15 +24,18 @@ import {
   addPaymentMethod,
   formatHandle,
   listPaymentMethods,
+  methodName,
   normalizeHandle,
-  PAYMENT_TYPE_ORDER,
+  normalizeMethodName,
   PAYMENT_TYPES,
   PaymentMethod,
   PaymentMethodType,
+  paymentTypesFor,
   removePaymentMethod,
   setDefaultPaymentMethod,
   updatePaymentMethod,
 } from '../lib/paymentMethods';
+import { PAYMENT_NAME_MAX } from '../lib/limits';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 
@@ -39,6 +43,10 @@ type Props = NativeStackScreenProps<AppStackParamList, 'PaymentMethods'>;
 
 // null = sheet closed, 'new' = adding, otherwise the method being edited.
 type SheetTarget = 'new' | PaymentMethod | null;
+
+// The phone's region setting stands in for where they are, so the usual
+// ways to pay there come first without asking for location.
+const TYPE_CHOICES = paymentTypesFor(getLocales()[0]?.regionCode);
 
 export default function PaymentMethodsScreen(_props: Props) {
   const { session } = useAuth();
@@ -50,8 +58,11 @@ export default function PaymentMethodsScreen(_props: Props) {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [target, setTarget] = useState<SheetTarget>(null);
-  const [methodType, setMethodType] = useState<PaymentMethodType>('interac');
+  const [methodType, setMethodType] = useState<PaymentMethodType>(TYPE_CHOICES.main[0]);
+  const [showAllTypes, setShowAllTypes] = useState(false);
   const [handle, setHandle] = useState('');
+  // The name for an "Other" method, like "Wise".
+  const [name, setName] = useState('');
   const [makeDefault, setMakeDefault] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -73,8 +84,10 @@ export default function PaymentMethodsScreen(_props: Props) {
   const info = PAYMENT_TYPES[editing ? editing.type : methodType];
 
   const openAdd = () => {
-    setMethodType('interac');
+    setMethodType(TYPE_CHOICES.main[0]);
+    setShowAllTypes(false);
     setHandle('');
+    setName('');
     setMakeDefault(false);
     setError(null);
     setTarget('new');
@@ -83,6 +96,7 @@ export default function PaymentMethodsScreen(_props: Props) {
   const openEdit = (m: PaymentMethod) => {
     setMethodType(m.type);
     setHandle(m.handle);
+    setName(m.label ?? '');
     setMakeDefault(m.is_default);
     setError(null);
     setTarget(m);
@@ -95,7 +109,9 @@ export default function PaymentMethodsScreen(_props: Props) {
 
   const save = async () => {
     if (!userId || !target) return;
-    const result = normalizeHandle(editing ? editing.type : methodType, handle);
+    const chosenType = editing ? editing.type : methodType;
+    const result = normalizeHandle(chosenType, handle);
+    const label = chosenType === 'other' ? normalizeMethodName(name) : null;
     if ('error' in result) {
       setError(result.error);
       return;
@@ -105,14 +121,14 @@ export default function PaymentMethodsScreen(_props: Props) {
     let res: { error: string | null };
     if (editing) {
       res =
-        result.handle === editing.handle
+        result.handle === editing.handle && label === editing.label
           ? { error: null }
-          : await updatePaymentMethod(editing.id, result.handle);
+          : await updatePaymentMethod(editing.id, result.handle, label);
       if (!res.error && makeDefault && !editing.is_default) {
         res = await setDefaultPaymentMethod(userId, editing.id);
       }
     } else {
-      res = await addPaymentMethod(userId, methodType, result.handle, makeDefault);
+      res = await addPaymentMethod(userId, methodType, result.handle, makeDefault, label);
     }
     setBusy(false);
     if (res.error) {
@@ -123,6 +139,43 @@ export default function PaymentMethodsScreen(_props: Props) {
     setTarget(null);
     reload();
   };
+
+  const toggleAllTypes = () => {
+    // Hiding the extra row takes away a choice that was on it.
+    if (showAllTypes && !TYPE_CHOICES.main.includes(methodType)) {
+      setMethodType(TYPE_CHOICES.main[0]);
+      setError(null);
+    }
+    setShowAllTypes((v) => !v);
+  };
+
+  const renderChips = (types: PaymentMethodType[]) => (
+    <View style={styles.typeChips}>
+      {types.map((t) => (
+        <Pressable
+          key={t}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: methodType === t }}
+          onPress={() => {
+            setMethodType(t);
+            setError(null);
+          }}
+          style={({ pressed }) => [
+            styles.typeChip,
+            methodType === t && styles.typeChipActive,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <Text
+            numberOfLines={1}
+            style={[styles.typeChipText, methodType === t && { color: colors.paper }]}
+          >
+            {PAYMENT_TYPES[t].shortLabel}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
 
   const remove = async () => {
     if (!userId || !editing) return;
@@ -159,7 +212,7 @@ export default function PaymentMethodsScreen(_props: Props) {
                 onPress={() => openEdit(m)}
               >
                 <View style={styles.rowText}>
-                  <Text style={type.body}>{PAYMENT_TYPES[m.type].label}</Text>
+                  <Text style={type.body}>{methodName(m)}</Text>
                   <Text style={type.caption}>{formatHandle(m.type, m.handle)}</Text>
                 </View>
                 {m.is_default && <Text style={type.caption}>Default</Text>}
@@ -207,32 +260,39 @@ export default function PaymentMethodsScreen(_props: Props) {
                 {editing ? (
                   <Text style={[type.body, { marginBottom: spacing.md }]}>{info.label}</Text>
                 ) : (
-                  <View style={styles.segmented}>
-                    {PAYMENT_TYPE_ORDER.map((t) => (
+                  <>
+                    {/* The usual ways to pay here; the rest go on their own
+                        row underneath once "Show more" is pressed. */}
+                    {renderChips(TYPE_CHOICES.main)}
+                    {showAllTypes && renderChips(TYPE_CHOICES.more)}
+                    {TYPE_CHOICES.more.length > 0 && (
                       <Pressable
-                        key={t}
-                        accessibilityRole="button"
-                        onPress={() => {
-                          setMethodType(t);
-                          setError(null);
-                        }}
-                        style={[
-                          styles.segment,
-                          methodType === t && styles.segmentActive,
-                        ]}
+                        onPress={toggleAllTypes}
+                        hitSlop={8}
+                        style={({ pressed }) => [styles.showMore, pressed && { opacity: 0.6 }]}
                       >
-                        <Text
-                          numberOfLines={1}
-                          style={[
-                            styles.segmentText,
-                            methodType === t && { color: colors.paper },
-                          ]}
-                        >
-                          {PAYMENT_TYPES[t].shortLabel}
+                        <Text style={styles.showMoreText}>
+                          {showAllTypes ? 'Show less' : 'Show more'}
                         </Text>
                       </Pressable>
-                    ))}
-                  </View>
+                    )}
+                  </>
+                )}
+                {(editing ? editing.type : methodType) === 'other' && (
+                  <Field
+                    label="Name (optional)"
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="For example, Wise"
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    maxLength={PAYMENT_NAME_MAX}
+                  />
+                )}
+                {(editing ? editing.type : methodType) === 'other' && (
+                  <Text style={styles.counter}>
+                    {name.length} / {PAYMENT_NAME_MAX}
+                  </Text>
                 )}
                 <Field
                   label={info.fieldLabel}
@@ -240,8 +300,9 @@ export default function PaymentMethodsScreen(_props: Props) {
                   onChangeText={setHandle}
                   placeholder={info.placeholder}
                   keyboardType={info.keyboard}
-                  autoCapitalize="none"
+                  autoCapitalize={info.capitalize ? 'sentences' : 'none'}
                   autoCorrect={false}
+                  maxLength={100}
                 />
                 {!isFirst && (
                   <View style={styles.switchRow}>
@@ -312,29 +373,48 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.sm,
     },
-    segmented: {
+    typeChips: {
       flexDirection: 'row',
-      backgroundColor: c.paper,
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    typeChip: {
+      paddingVertical: 8,
+      paddingHorizontal: spacing.md,
       borderRadius: radii.sm,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      overflow: 'hidden',
-      marginBottom: spacing.md,
-    },
-    segment: {
-      flex: 1,
-      paddingVertical: 8,
-      alignItems: 'center',
-      justifyContent: 'center',
+      backgroundColor: c.paper,
     },
     // Ink, not accent: Save is the one accent-coloured action on the sheet.
-    segmentActive: {
+    typeChipActive: {
       backgroundColor: c.ink,
+      borderColor: c.ink,
     },
-    segmentText: {
+    typeChipText: {
       ...t.caption,
       fontFamily: fonts.bodySemiBold,
       color: c.ink,
+    },
+    // Same as the description counter on the event form.
+    counter: {
+      ...t.caption,
+      color: c.inkMuted,
+      textAlign: 'right',
+      marginTop: -spacing.sm,
+      marginBottom: spacing.md,
+    },
+    showMore: {
+      alignSelf: 'flex-start',
+      paddingVertical: spacing.xs,
+      marginBottom: spacing.md,
+    },
+    showMoreText: {
+      ...t.caption,
+      fontFamily: fonts.bodySemiBold,
+      color: c.inkMuted,
+      textDecorationLine: 'underline',
     },
     switchRow: {
       flexDirection: 'row',

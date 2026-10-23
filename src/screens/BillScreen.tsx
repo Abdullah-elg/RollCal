@@ -42,7 +42,7 @@ import { describeRate } from '../lib/currency';
 import { setStringAsync } from '../lib/clipboard';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
-import { copyableHandle, formatHandle, PaymentMethod, PAYMENT_TYPES } from '../lib/paymentMethods';
+import { copyableHandle, formatHandle, methodName, PaymentMethod } from '../lib/paymentMethods';
 import {
   countGoing,
   leftToPay,
@@ -852,7 +852,11 @@ function SendDialog({
   const copiedMessage = (m: PaymentMethod) =>
     m.type === 'interac'
       ? `Copied. Open your bank app and ${send} by e-Transfer.`
-      : `Copied. Open ${PAYMENT_TYPES[m.type].label} and ${send}.`;
+      : m.type === 'zelle'
+        ? `Copied. Open your bank app and ${send} with Zelle.`
+        : m.type === 'other'
+          ? `Copied. ${send[0].toUpperCase()}${send.slice(1)} the way they asked.`
+          : `Copied. Open ${methodName(m)} and ${send}.`;
 
   const submit = async () => {
     const cents = parseCents(text);
@@ -890,7 +894,7 @@ function SendDialog({
                   {i > 0 && <View style={styles.rowDivider} />}
                   <View style={styles.methodRow}>
                     <View style={styles.rowText}>
-                      <Text style={type.body}>{PAYMENT_TYPES[m.type].label}</Text>
+                      <Text style={type.body}>{methodName(m)}</Text>
                       <Text style={type.caption} selectable>
                         {formatHandle(m.type, m.handle)}
                       </Text>

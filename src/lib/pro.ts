@@ -73,7 +73,7 @@ export const PRO_PROMPTS: Record<ProPromptReason, { title: string; body: string 
     body: 'Stop friend requests from people you don’t know. You can still add anyone yourself.',
   },
   scan: {
-    title: 'You’ve used this month’s free scan.',
+    title: 'You’ve used this month’s free scans.',
     body: 'Type the lines in yourself, or get Pro to scan every receipt.',
   },
 };
@@ -81,7 +81,7 @@ export const PRO_PROMPTS: Record<ProPromptReason, { title: string; body: string 
 export type ProPerk = { title: string; detail: string };
 
 export const PRO_PERKS: ProPerk[] = [
-  { title: 'Scan every receipt', detail: 'Free accounts get 1 scan a month.' },
+  { title: 'Scan every receipt', detail: 'Free accounts get 2 scans a month.' },
   { title: 'Keep your events’ photos for good', detail: 'On free accounts they’re kept for 30 days.' },
   { title: 'Upload videos', detail: 'Up to 1 minute each.' },
   { title: '200 GB of storage', detail: 'For photos and videos across all your events. Free accounts get 2 GB.' },

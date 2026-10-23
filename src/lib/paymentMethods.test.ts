@@ -4,7 +4,10 @@ import { describe, test } from 'node:test';
 import {
   copyableHandle,
   formatHandle,
+  methodName,
   normalizeHandle,
+  normalizeMethodName,
+  paymentTypesFor,
   type PaymentMethodType,
 } from './paymentHandles.ts';
 
@@ -136,5 +139,69 @@ describe('copyableHandle', () => {
     assert.equal(copyableHandle('venmo', 'sara-k'), '@sara-k');
     assert.equal(copyableHandle('cashapp', '$sara'), '$sara');
     assert.equal(copyableHandle('paypal', 'sarak'), 'sarak');
+  });
+});
+
+describe('zelle', () => {
+  test('takes an email or a phone, like Interac', () => {
+    ok('zelle', ' Sam@Example.com ', 'sam@example.com');
+    ok('zelle', '(212) 555-0199', '+12125550199');
+    bad('zelle', 'sam', INTERAC_ERROR);
+  });
+
+  test('copies and shows phones the same way as Interac', () => {
+    assert.equal(copyableHandle('zelle', '+12125550199'), '2125550199');
+    assert.equal(formatHandle('zelle', '+12125550199'), '(212) 555-0199');
+  });
+});
+
+describe('other', () => {
+  test('keeps their words, with spaces tidied', () => {
+    ok('other', '  Wise:   alex@example.com ', 'Wise: alex@example.com');
+    assert.equal(formatHandle('other', 'Cash at the door'), 'Cash at the door');
+    assert.equal(copyableHandle('other', 'Cash at the door'), 'Cash at the door');
+  });
+
+  test('needs 2 to 100 characters', () => {
+    const error = 'Say how to pay you, in up to 100 characters.';
+    bad('other', 'x', error);
+    bad('other', 'x'.repeat(101), error);
+  });
+});
+
+describe('payment types by country', () => {
+  test('Canada leads with Interac', () => {
+    const { main, more } = paymentTypesFor('CA');
+    assert.deepEqual(main, ['interac', 'paypal', 'other']);
+    assert.deepEqual(more, ['venmo', 'zelle', 'cashapp']);
+  });
+
+  test('the US leads with Venmo, Zelle and Cash App', () => {
+    assert.deepEqual(paymentTypesFor('us').main, ['venmo', 'zelle', 'cashapp', 'paypal', 'other']);
+  });
+
+  test('anywhere else, or unknown, shows PayPal and Other with the rest behind more', () => {
+    for (const region of ['GB', null, undefined, '']) {
+      const { main, more } = paymentTypesFor(region);
+      assert.deepEqual(main, ['paypal', 'other']);
+      assert.equal(main.length + more.length, 6);
+    }
+  });
+});
+
+describe('names for Other methods', () => {
+  test('a named Other shows its name, an unnamed one says Other', () => {
+    assert.equal(methodName({ type: 'other', label: 'Wise' }), 'Wise');
+    assert.equal(methodName({ type: 'other', label: null }), 'Other');
+    assert.equal(methodName({ type: 'other', label: '   ' }), 'Other');
+  });
+
+  test('other types always use the service name', () => {
+    assert.equal(methodName({ type: 'interac', label: null }), 'Interac e-Transfer');
+  });
+
+  test('names are tidied, and blank means none', () => {
+    assert.equal(normalizeMethodName('  Bank   transfer '), 'Bank transfer');
+    assert.equal(normalizeMethodName('   '), null);
   });
 });

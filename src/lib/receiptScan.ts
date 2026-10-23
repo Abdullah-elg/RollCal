@@ -12,7 +12,9 @@ export type ScanSource = 'camera' | 'library';
 export type ScanResult =
   // scansLeft is the free scans still left this month, or null for Pro.
   | { draft: BillDraft; scansLeft: number | null }
-  | { error: string }
+  // scansLeft is set when the photo was read but wasn't a receipt: that
+  // still used a free scan.
+  | { error: string; scansLeft?: number | null }
   // The free scans for this month are used up; time to show Pro.
   | { limitReached: true }
   // They closed the camera or picker without choosing a photo.
@@ -62,7 +64,9 @@ export async function scanReceipt(
     if (error instanceof FunctionsHttpError) {
       const body = await error.context.json().catch(() => null);
       if (body?.code === 'scan_limit') return { limitReached: true };
-      if (typeof body?.error === 'string') return { error: body.error };
+      if (typeof body?.error === 'string') {
+        return 'scansLeft' in body ? { error: body.error, scansLeft: body.scansLeft } : { error: body.error };
+      }
     }
     return { error: 'Couldn’t read the receipt right now. Try again, or type it in.' };
   }

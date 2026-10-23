@@ -1096,6 +1096,33 @@ export default function EventAlbum({
               </View>
             </View>
 
+            {/* The host's action on the photo itself, centered under the top
+                bar. Report and delete sit at the bottom. */}
+            {isLeader && !viewerIsVideo && (
+              <View style={styles.viewerCoverRow}>
+                <Pressable
+                  onPress={() => toggleCoverPhoto(viewerPhoto.id)}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.viewerCoverAction,
+                    viewerPhoto.id === coverPhotoId && styles.viewerCoverActionActiveWrap,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.viewerCoverActionText,
+                      viewerPhoto.id === coverPhotoId && styles.viewerCoverActionActive,
+                    ]}
+                  >
+                    {viewerPhoto.id === coverPhotoId
+                      ? '✓ Event photo · tap to remove'
+                      : 'Set as event photo'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
             <View style={styles.viewerCenterArea}>
               <FlatList
                 ref={flatListRef}
@@ -1230,30 +1257,16 @@ export default function EventAlbum({
 
             {notice && <Text style={styles.viewerNotice}>{notice}</Text>}
 
-            {((isLeader && !viewerIsVideo) || canDeleteViewer || canReportViewer) && (
+            {(canDeleteViewer || canReportViewer) && (
               <View style={styles.viewerBottom}>
-                {isLeader && !viewerIsVideo && (
+                {canReportViewer && (
                   <Pressable
-                    onPress={() => toggleCoverPhoto(viewerPhoto.id)}
+                    onPress={() => setReporting(true)}
                     hitSlop={8}
-                    style={({ pressed }) => [
-                      styles.viewerCoverAction,
-                      viewerPhoto.id === coverPhotoId &&
-                        styles.viewerCoverActionActiveWrap,
-                      pressed && { opacity: 0.7 },
-                    ]}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [pressed && { opacity: 0.7 }]}
                   >
-                    <Text
-                      style={[
-                        styles.viewerCoverActionText,
-                        viewerPhoto.id === coverPhotoId &&
-                          styles.viewerCoverActionActive,
-                      ]}
-                    >
-                      {viewerPhoto.id === coverPhotoId
-                        ? '✓ Event photo · tap to remove'
-                        : 'Set as event photo'}
-                    </Text>
+                    <Text style={styles.viewerReport}>Report</Text>
                   </Pressable>
                 )}
                 {canDeleteViewer && (
@@ -1265,16 +1278,6 @@ export default function EventAlbum({
                     <Text style={styles.viewerDelete}>
                       {viewerIsVideo ? 'Delete video' : 'Delete photo'}
                     </Text>
-                  </Pressable>
-                )}
-                {canReportViewer && (
-                  <Pressable
-                    onPress={() => setReporting(true)}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-                  >
-                    <Text style={styles.viewerReport}>Report</Text>
                   </Pressable>
                 )}
               </View>
@@ -1719,16 +1722,18 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       textAlign: 'center',
       overflow: 'hidden',
     },
-    // Side by side; wraps to a second line only if they don't fit.
+    viewerCoverRow: {
+      alignItems: 'center',
+      paddingBottom: spacing.sm,
+    },
+    // Report on the left, delete on the right, side by side.
     viewerBottom: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: spacing.md,
       paddingHorizontal: spacing.md,
-      columnGap: spacing.lg,
-      rowGap: spacing.sm,
+      gap: spacing.xl,
     },
     viewerCoverAction: {
       paddingVertical: 8,

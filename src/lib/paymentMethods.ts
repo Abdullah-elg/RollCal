@@ -46,7 +46,9 @@ export async function addPaymentMethod(
   userId: string,
   type: PaymentMethodType,
   handle: string,
-  makeDefault: boolean
+  makeDefault: boolean,
+  // The name for an "Other" method; null otherwise.
+  label: string | null = null
 ): Promise<Result> {
   if (await hasDuplicate(userId, type, handle)) return { error: DUPLICATE_ERROR };
 
@@ -60,7 +62,7 @@ export async function addPaymentMethod(
   // while another default exists, so a wanted default goes through the swap.
   const { data, error } = await supabase
     .from('payment_methods')
-    .insert({ user_id: userId, type, handle, is_default: isFirst })
+    .insert({ user_id: userId, type, handle, label, is_default: isFirst })
     .select('id')
     .single();
   if (error || !data) {
@@ -70,7 +72,11 @@ export async function addPaymentMethod(
   return { error: null };
 }
 
-export async function updatePaymentMethod(id: string, handle: string): Promise<Result> {
+export async function updatePaymentMethod(
+  id: string,
+  handle: string,
+  label: string | null = null
+): Promise<Result> {
   const { data: row } = await supabase
     .from('payment_methods')
     .select('user_id, type')
@@ -80,7 +86,7 @@ export async function updatePaymentMethod(id: string, handle: string): Promise<R
   if (await hasDuplicate(row.user_id, row.type, handle, id)) {
     return { error: DUPLICATE_ERROR };
   }
-  const { error } = await supabase.from('payment_methods').update({ handle }).eq('id', id);
+  const { error } = await supabase.from('payment_methods').update({ handle, label }).eq('id', id);
   if (error) return { error: error.code === '23505' ? DUPLICATE_ERROR : GENERIC_ERROR };
   return { error: null };
 }
