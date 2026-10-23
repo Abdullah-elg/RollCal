@@ -55,3 +55,4 @@ platform-tools/
 
 # editors
 .idea/
+store/builds/

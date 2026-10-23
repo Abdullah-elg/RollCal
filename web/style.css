@@ -49,3 +49,19 @@ p { margin: 0 0 12px; }
 .stores { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 8px; }
 footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 15px; }
 footer a { color: var(--muted); margin-right: 16px; }
+
+/* Beta install steps (/ios, /android). */
+.steps { list-style: none; counter-reset: step; padding: 0; margin: 32px 0 8px; }
+.steps li { counter-increment: step; position: relative; padding: 0 0 20px 48px; }
+.steps li::before {
+  content: counter(step); position: absolute; left: 0; top: 0;
+  width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card); font-weight: 700; text-align: center; line-height: 30px;
+}
+.steps h2 { margin: 2px 0 6px; line-height: 1.4; }
+.steps .button { margin-top: 4px; }
+/* A link that isn't set up yet. */
+.button[href=""] { opacity: 0.4; pointer-events: none; }
+
+ul { margin: 0 0 12px; padding-left: 22px; }
+li { margin-bottom: 6px; }

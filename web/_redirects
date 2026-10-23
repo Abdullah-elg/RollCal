@@ -1,2 +1,9 @@
 # Cloudflare Pages: every invite link is served by the one join page.
 /join/*  /join/index.html  200
+
+# Beta install pages, whatever the capitalisation people type. No rules with a
+# trailing slash: those could send /ios/ back to itself.
+/iOS      /ios/      301
+/IOS      /ios/      301
+/Android  /android/  301
+/ANDROID  /android/  301
