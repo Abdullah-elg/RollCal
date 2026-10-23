@@ -35,6 +35,7 @@ import { cleanUsername, USERNAME_MAX, usernameProblem } from '../lib/username';
 import { isUsernameAvailable } from '../lib/usernameCheck';
 import { AuthStackParamList } from '../navigation/types';
 import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { NAME_MAX } from '../lib/limits';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
 
@@ -156,6 +157,7 @@ export default function SignUpScreen({ navigation }: Props) {
               onChangeText={setFirstName}
               placeholder="Sam"
               autoComplete="given-name"
+              maxLength={NAME_MAX}
             />
           </View>
           <View style={{ flex: 1 }}>
@@ -165,6 +167,7 @@ export default function SignUpScreen({ navigation }: Props) {
               onChangeText={setLastName}
               placeholder="Rivera"
               autoComplete="family-name"
+              maxLength={NAME_MAX}
             />
           </View>
         </View>

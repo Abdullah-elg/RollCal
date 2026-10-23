@@ -19,6 +19,7 @@ import { supabase } from '../lib/supabase';
 import { isSupportedCurrency } from '../lib/currency';
 import { cleanUsername, usernameFallbacks, usernameFromName, usernameProblem } from '../lib/username';
 import { Profile } from '../types';
+import { clearSignedUrls } from '../lib/signedUrls';
 
 type AuthContextValue = {
   session: Session | null;
@@ -94,7 +95,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(data.session);
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      // Photo links were issued for this person; the next one on this phone
+      // may not be allowed to see the same photos.
+      if (event === 'SIGNED_OUT') clearSignedUrls();
       setSession(s);
     });
     return () => sub.subscription.unsubscribe();

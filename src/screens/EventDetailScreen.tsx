@@ -38,6 +38,7 @@ import {
   PlusIcon,
 } from '../components/icons';
 import InviteFriendsPanel from '../components/InviteFriendsPanel';
+import JoinModePicker from '../components/JoinModePicker';
 import NavAppSheet from '../components/NavAppSheet';
 import PersonActionsSheet, { ActionsPerson } from '../components/PersonActionsSheet';
 import { MoreAction } from '../components/PersonRow';
@@ -62,6 +63,13 @@ import {
 import { pickAndUploadCover, setCoverPhoto } from '../lib/coverPhoto';
 import { removeEventFiles } from '../lib/photos';
 import { reopenRoll, rollState } from '../lib/roll';
+import {
+  answerJoinRequest,
+  JoinMode,
+  JoinRequest,
+  loadJoinRequests,
+  setJoinMode,
+} from '../lib/joinRequests';
 import { setRsvp } from '../lib/rsvp';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
@@ -182,6 +190,9 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   const [actingOn, setActingOn] = useState<ActionsPerson | null>(null);
   const [reportingEvent, setReportingEvent] = useState(false);
   const [bills, setBills] = useState<BillSummary[]>([]);
+  // Only loaded for the host, on events that need approval.
+  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
+  const [answeringRequest, setAnsweringRequest] = useState<string | null>(null);
   const [invitations, setInvitations] = useState<EventInvitation[]>([]);
   const [albumPhotos, setAlbumPhotos] = useState<LoadedPhoto[]>([]);
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
@@ -238,6 +249,9 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       loadEventActivity(eventId, session?.user.id ?? ''),
       listEventBills(eventId),
     ]);
+    setJoinRequests(
+      ev.creator_id === session?.user.id ? await loadJoinRequests(eventId) : []
+    );
 
     const ids = [
       ev.creator_id,
@@ -315,6 +329,35 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     setRefreshing(true);
     await load();
     setRefreshing(false);
+  };
+
+  // The host lets someone in (they become a guest) or turns them down.
+  const answerRequest = async (requestId: string, approve: boolean) => {
+    hapticLight();
+    setAnsweringRequest(requestId);
+    const error = await answerJoinRequest(requestId, approve);
+    setAnsweringRequest(null);
+    if (error) {
+      Alert.alert(approve ? 'Could not approve' : 'Could not decline', error);
+      return;
+    }
+    setJoinRequests((prev) => prev.filter((r) => r.id !== requestId));
+    if (approve) load();
+  };
+
+  const changeJoinMode = async (mode: JoinMode) => {
+    if (!event || event.join_mode === mode) return;
+    hapticLight();
+    const before = event;
+    setEvent({ ...event, join_mode: mode, is_link_enabled: mode !== 'invite' });
+    const error = await setJoinMode(event.id, mode);
+    if (error) {
+      setEvent(before);
+      Alert.alert('Could not change who can join', error);
+      return;
+    }
+    // Requests only show for approval events; load them when switching to it.
+    if (mode === 'approval') setJoinRequests(await loadJoinRequests(event.id));
   };
 
   const openInfo = () => {
@@ -678,6 +721,45 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             </>
           )}
 
+          {isLeader && joinRequests.length > 0 && (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.sectionHeader}>Requests to join</Text>
+              {joinRequests.map((r) => (
+                <View key={r.id} style={styles.requestRow}>
+                  <Avatar name={r.name} userId={r.userId} avatarUrl={r.avatarUrl} size={36} />
+                  <View style={styles.requestText}>
+                    <Text style={type.body} numberOfLines={1}>
+                      {r.name}
+                    </Text>
+                    {r.username ? (
+                      <Text style={type.caption} numberOfLines={1}>
+                        @{r.username}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Pressable
+                    onPress={() => answerRequest(r.id, false)}
+                    disabled={answeringRequest !== null}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Decline ${r.name}`}
+                    style={({ pressed }) => [styles.requestDecline, pressed && { opacity: 0.6 }]}
+                  >
+                    <Text style={styles.withdrawText}>Decline</Text>
+                  </Pressable>
+                  <Button
+                    title="Approve"
+                    onPress={() => answerRequest(r.id, true)}
+                    loading={answeringRequest === r.id}
+                    disabled={answeringRequest !== null}
+                    style={styles.requestApprove}
+                  />
+                </View>
+              ))}
+            </>
+          )}
+
           {!isLeader && (
             <>
               <View style={styles.divider} />
@@ -1030,7 +1112,18 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     </>
                   )}
 
-                  {(isMember || isLeader || event.is_link_enabled) && (
+                  {isLeader && (
+                    <>
+                      <View style={styles.divider} />
+                      <Text style={styles.sectionHeader}>Who can join</Text>
+                      <JoinModePicker
+                        value={event.join_mode ?? (event.is_link_enabled ? 'open' : 'invite')}
+                        onChange={changeJoinMode}
+                      />
+                    </>
+                  )}
+
+                  {(isMember || event.is_link_enabled) && (
                     <>
                       <View style={styles.divider} />
                       {isMember && (
@@ -1040,7 +1133,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                           onPress={() => setInfoPage('invite')}
                         />
                       )}
-                      {(isLeader || event.is_link_enabled) && (
+                      {event.is_link_enabled && (
                         <Button
                           title="Share"
                           variant="secondary"
@@ -1343,6 +1436,15 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       fontSize: 15,
       marginLeft: spacing.sm,
     },
+    requestRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.xs,
+    },
+    requestText: { flex: 1, minWidth: 0 },
+    requestDecline: { paddingHorizontal: spacing.xs, paddingVertical: spacing.sm },
+    requestApprove: { height: 36, paddingHorizontal: spacing.md },
     sectionHeader: {
       fontSize: 15,
       fontFamily: fonts.body,

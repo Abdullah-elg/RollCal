@@ -88,7 +88,7 @@ export default function PersonActionsSheet({ person, report, extra, onClose, onB
       <Modal
         visible={!!person && stage === 'menu'}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={onClose}
       >
         <View style={styles.overlay}>
@@ -165,7 +165,8 @@ export default function PersonActionsSheet({ person, report, extra, onClose, onB
 
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
-    overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.25)' },
+    // The same backdrop as NavAppSheet: faded in place, in the app's scrim.
+    overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: c.scrim },
     card: {
       marginHorizontal: spacing.md,
       backgroundColor: c.paper,

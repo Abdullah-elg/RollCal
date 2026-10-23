@@ -63,6 +63,9 @@ export type Event = {
   ends_at: string;
   invite_code: string;
   is_link_enabled: boolean;
+  // Who can join from the link: see lib/joinRequests. Missing on rows read
+  // before join-modes.sql ran, which behave as 'open' or 'invite'.
+  join_mode?: 'open' | 'approval' | 'invite';
   uploads_closed: boolean;
   uploads_reopened_until?: string | null;
   cover_photo_id?: string | null;

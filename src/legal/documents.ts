@@ -235,7 +235,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Who can see it',
         paragraphs: [
-          'People in an event can see that event’s details, members, chat, photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name, username and profile photo, so friends can add you. Your email address is never shown to other people.',
+          'People in an event can see that event’s details, members, chat, photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name and username, so friends can add you. Only you and your friends can see your profile photo. Your email address is never shown to other people.',
         ],
       },
       {

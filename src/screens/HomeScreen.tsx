@@ -50,6 +50,7 @@ import { supabase } from '../lib/supabase';
 import { TabScreenProps } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Event } from '../types';
+import { signedUrls } from '../lib/signedUrls';
 
 type Props = TabScreenProps<'HomeTab'>;
 
@@ -163,15 +164,12 @@ export default function HomeScreen({ navigation }: Props) {
             }
           });
 
-          let signedUrlMap = new Map<string, string>();
-          if (chosenCoverPaths.length > 0) {
-            const { data: signed } = await supabase.storage
-              .from('event-photos')
-              .createSignedUrls(chosenCoverPaths, 3600);
-            signed?.forEach((s) => {
-              if (s.signedUrl && s.path) signedUrlMap.set(s.path, s.signedUrl);
-            });
-          }
+          // Reused links (lib/signedUrls), so a cover downloaded once comes
+          // from the phone's cache after that instead of downloading again.
+          const signedUrlMap = await signedUrls('event-photos', chosenCoverPaths);
+          signedUrlMap.forEach((url) => {
+            Image.prefetch(url).catch(() => {});
+          });
 
           const newMeta: Record<string, EventMeta> = {};
           data.forEach((e) => {
@@ -345,10 +343,14 @@ export default function HomeScreen({ navigation }: Props) {
     const meta = metaMap[event.id];
     const hasUnread = unreadSet.has(event.id);
     const isPast = section.type === 'past';
-    // Past events with a chosen cover get a wide photo card.
+    // Past events with a chosen cover get a wide photo card. The two kinds of
+    // card have different keys so switching builds a new view: Android can
+    // keep the old shape's clipping when a view gains overflow: hidden in
+    // place, which hid the whole photo card, leaving a blank box.
     if (meta?.coverUrl && isPhotoCard(event, section)) {
       return (
         <Pressable
+          key={`photo-${event.id}`}
           style={({ pressed }) => [
             styles.photoCard,
             pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
@@ -356,14 +358,17 @@ export default function HomeScreen({ navigation }: Props) {
           onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
         >
           <Image source={{ uri: meta.coverUrl }} style={styles.photoCardImage} />
-          <Svg height={90} width="100%" style={styles.cardGradient}>
+          {/* Drawn over the whole card (clear on the top half) rather than as a
+              strip pinned to the bottom, which could leave a sliver of photo
+              showing under it after pixel rounding. */}
+          <Svg height="100%" width="100%" style={StyleSheet.absoluteFill}>
             <Defs>
               <SvgLinearGradient id={`grad-${event.id}`} x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor="#000000" stopOpacity="0" />
+                <Stop offset="0.5" stopColor="#000000" stopOpacity="0" />
                 <Stop offset="1" stopColor="#000000" stopOpacity="0.75" />
               </SvgLinearGradient>
             </Defs>
-            <Rect x="0" y="0" width="100%" height={90} fill={`url(#grad-${event.id})`} />
+            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#grad-${event.id})`} />
           </Svg>
 
           <View style={styles.photoCardContent}>
@@ -387,6 +392,7 @@ export default function HomeScreen({ navigation }: Props) {
 
     return (
       <Pressable
+        key={`row-${event.id}`}
         style={({ pressed }) => [
           styles.row,
           pressed && { opacity: 0.7, transform: [{ scale: 0.98 }] },
@@ -591,7 +597,11 @@ function NextUpHero({
 
   if (hasCover && meta?.coverUrl) {
     return (
+      // Keyed apart from the text card below, for the same reason as the
+      // past-event photo cards: switching in place left this card blank on
+      // Android.
       <Pressable
+        key="photo"
         accessibilityRole="button"
         accessibilityLabel={`Next up: ${event.title}`}
         onPress={onPress}
@@ -662,6 +672,7 @@ function NextUpHero({
 
   return (
     <Pressable
+      key="text"
       accessibilityRole="button"
       accessibilityLabel={`Next up: ${event.title}`}
       onPress={onPress}
@@ -1019,12 +1030,6 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       width: '100%',
       height: '100%',
       resizeMode: 'cover',
-    },
-    cardGradient: {
-      position: 'absolute',
-      bottom: 0,
-      left: 0,
-      right: 0,
     },
     photoCardContent: {
       position: 'absolute',

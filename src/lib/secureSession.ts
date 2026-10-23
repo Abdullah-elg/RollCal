@@ -16,9 +16,19 @@ const PREFIX = 'enc1:';
 
 let keyPromise: Promise<AESEncryptionKey> | null = null;
 
+// Making a new key replaces the old one for good, and the saved session can
+// never be read again. So a missing key is checked twice before that happens:
+// the Keystore can come back empty for a moment on a busy phone.
+async function readStoredKey(): Promise<string | null> {
+  const first = await SecureStore.getItemAsync(KEY_NAME);
+  if (first) return first;
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return SecureStore.getItemAsync(KEY_NAME);
+}
+
 function sessionKey(): Promise<AESEncryptionKey> {
   keyPromise ??= (async () => {
-    const stored = await SecureStore.getItemAsync(KEY_NAME);
+    const stored = await readStoredKey();
     if (stored) return AESEncryptionKey.import(stored, 'hex');
     const key = await AESEncryptionKey.generate();
     await SecureStore.setItemAsync(KEY_NAME, await key.encoded('hex'), {
@@ -59,9 +69,11 @@ export const secureSessionStorage = {
       })) as Uint8Array;
       return utf8Decode(bytes);
     } catch {
-      // The key is gone (say, a restored backup on a new phone) or the data
-      // was tampered with: treat it as signed out.
-      await AsyncStorage.removeItem(name);
+      // Unreadable right now: the Keystore can fail for a moment on a busy
+      // phone, as well as for good (a backup restored on a new phone, or
+      // tampered data). Treat it as signed out for now, but keep the data:
+      // deleting it here signed people out for good over a passing error.
+      // If it really can't be read, the next sign-in overwrites it.
       return null;
     }
   },

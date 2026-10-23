@@ -1,6 +1,10 @@
 // Round profile picture. Falls back to initials on a muted background color
 // picked from the user's id, so the same person always gets the same color.
 // Tappable when given onPress.
+//
+// Profile photos are private: the server only hands out a link to your own
+// and your friends' (supabase/join-modes.sql), so for anyone else this shows
+// initials.
 
 import { useRef } from 'react';
 import {
@@ -16,6 +20,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { hapticLight } from '../lib/haptics';
+import { avatarPath, useSignedUrl } from '../lib/signedUrls';
 import { fonts } from '../theme';
 
 // Curated palette of muted, earthy tones that pair naturally with the paper and darkroom surfaces
@@ -84,6 +89,7 @@ export default function Avatar({
   const bgColor = getAvatarBgColor(userId, mode);
   const initials = getInitials(name);
   const fontSize = Math.round(size * 0.4);
+  const photoUrl = useSignedUrl('avatars', avatarPath(avatarUrl));
 
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -118,9 +124,9 @@ export default function Avatar({
         style,
       ]}
     >
-      {avatarUrl ? (
+      {photoUrl ? (
         <Image
-          source={{ uri: avatarUrl }}
+          source={{ uri: photoUrl }}
           style={{ width: size, height: size, borderRadius: size / 2 }}
         />
       ) : (

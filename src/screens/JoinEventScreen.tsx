@@ -28,7 +28,7 @@ import { useTheme } from '../context/ThemeContext';
 import { formatSpan } from '../lib/dates';
 import { hapticLight } from '../lib/haptics';
 import { syncEventReminders } from '../lib/notifications';
-import { setRsvp } from '../lib/rsvp';
+import { cancelJoinRequest, hasPendingRequest, joinEvent } from '../lib/joinRequests';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
@@ -47,6 +47,8 @@ export default function JoinEventScreen({ navigation, route }: Props) {
   const [preview, setPreview] = useState<Event | null>(null);
   const [hostName, setHostName] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+  // On an approval event: they've asked and are waiting for the host.
+  const [requested, setRequested] = useState(false);
   const [showScanner, setShowScanner] = useState(Boolean(route.params?.openScanner));
   const [isFocused, setIsFocused] = useState(false);
 
@@ -95,6 +97,11 @@ export default function JoinEventScreen({ navigation, route }: Props) {
       return;
     }
     setPreview(event);
+    setRequested(
+      event.join_mode === 'approval' && !!session
+        ? await hasPendingRequest(event.id, session.user.id)
+        : false
+    );
     const { data: host } = await supabase
       .from('profiles')
       .select('display_name')
@@ -112,11 +119,20 @@ export default function JoinEventScreen({ navigation, route }: Props) {
   const choose = async (status: RsvpStatus) => {
     if (!preview || !session) return;
     hapticLight();
+    // Saying no to an event you'd have to ask to join: nothing to send.
+    if (status === 'not_going' && preview.join_mode === 'approval') {
+      navigation.goBack();
+      return;
+    }
     setJoining(true);
-    const err = await setRsvp(preview.id, session.user.id, status);
+    const res = await joinEvent(preview.id, status);
     setJoining(false);
-    if (err) {
-      setError(err);
+    if ('error' in res) {
+      setError(res.error);
+      return;
+    }
+    if (res.result === 'requested') {
+      setRequested(true);
       return;
     }
     syncEventReminders();
@@ -202,8 +218,37 @@ export default function JoinEventScreen({ navigation, route }: Props) {
                 </Text>
               ) : null}
             </View>
-            <SectionLabel>Are you in?</SectionLabel>
-            <RsvpSelector value={null} onSelect={choose} disabled={joining} />
+            {requested ? (
+              <View style={styles.requestedCard}>
+                <Text style={type.h3}>Request sent</Text>
+                <Text style={[type.bodyMuted, { marginTop: spacing.xs }]}>
+                  The host approves everyone who joins this event. You’ll get a
+                  notification when they let you in.
+                </Text>
+                <Pressable
+                  onPress={async () => {
+                    if (!session) return;
+                    await cancelJoinRequest(preview.id, session.user.id);
+                    setRequested(false);
+                  }}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [{ marginTop: spacing.md }, pressed && { opacity: 0.6 }]}
+                >
+                  <Text style={styles.cancelRequest}>Cancel request</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                <SectionLabel>Are you in?</SectionLabel>
+                {preview.join_mode === 'approval' && (
+                  <Text style={[type.caption, { marginBottom: spacing.sm }]}>
+                    The host approves everyone who joins. Pick an answer to ask.
+                  </Text>
+                )}
+                <RsvpSelector value={null} onSelect={choose} disabled={joining} />
+              </>
+            )}
           </>
         )}
       </ScrollView>
@@ -285,5 +330,17 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       borderRadius: 16,
       padding: spacing.md,
       marginBottom: spacing.lg,
+    },
+    requestedCard: {
+      backgroundColor: c.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.line,
+      borderRadius: 16,
+      padding: spacing.md,
+    },
+    cancelRequest: {
+      ...t.body,
+      fontFamily: fonts.bodySemiBold,
+      color: c.danger,
     },
   });

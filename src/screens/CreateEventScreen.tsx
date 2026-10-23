@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   ScrollView,
   StyleSheet,
+  Text,
   View,
 } from 'react-native';
 import DateTimeField from '../components/DateTimeField';
@@ -20,7 +21,10 @@ import { hapticSuccess } from '../lib/haptics';
 import { syncEventReminders } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
-import { Palette, spacing } from '../theme';
+import { fonts, Palette, spacing } from '../theme';
+import { EVENT_DESCRIPTION_MAX, EVENT_LOCATION_MAX, EVENT_TITLE_MAX } from '../lib/limits';
+import JoinModePicker from '../components/JoinModePicker';
+import { JoinMode } from '../lib/joinRequests';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'CreateEvent'>;
 
@@ -52,6 +56,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [joinMode, setJoinMode] = useState<JoinMode>('open');
   const [location, setLocation] = useState('');
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [showMap, setShowMap] = useState(false);
@@ -86,6 +91,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
       if (data) {
         setTitle(data.title);
         setDescription(data.description ?? '');
+        setJoinMode(data.join_mode ?? (data.is_link_enabled ? 'open' : 'invite'));
         setLocation(data.location ?? '');
         setCoords(
           data.location_lat != null && data.location_lng != null
@@ -131,6 +137,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
       location_lng: coords?.lng ?? null,
       starts_at: startsAt.toISOString(),
       ends_at: endsAt.toISOString(),
+      join_mode: joinMode,
     };
 
     if (editEventId) {
@@ -156,7 +163,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
         creator_id: session!.user.id,
         ...fields,
         invite_code: generateInviteCode(),
-        is_link_enabled: true,
+        is_link_enabled: joinMode !== 'invite',
       })
       .select()
       .single();
@@ -192,7 +199,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
           value={title}
           onChangeText={setTitle}
           placeholder="Rooftop dinner"
-          maxLength={120}
+          maxLength={EVENT_TITLE_MAX}
         />
         <View style={styles.locationRow}>
           <View style={{ flex: 1 }}>
@@ -205,9 +212,9 @@ export default function CreateEventScreen({ navigation, route }: Props) {
                 if (coords) setCoords(null);
               }}
               placeholder="Where is it?"
+              maxLength={EVENT_LOCATION_MAX}
               singleLineEllipsis
               returnKeyType="done"
-              maxLength={300}
             />
           </View>
           <Button
@@ -237,8 +244,17 @@ export default function CreateEventScreen({ navigation, route }: Props) {
           multiline
           numberOfLines={3}
           style={styles.multiline}
-          maxLength={2000}
+          maxLength={EVENT_DESCRIPTION_MAX}
         />
+        {description.length > EVENT_DESCRIPTION_MAX * 0.8 && (
+          <Text style={styles.counter}>
+            {description.length} / {EVENT_DESCRIPTION_MAX}
+          </Text>
+        )}
+        <Text style={styles.sectionLabel}>Who can join</Text>
+        <View style={{ marginBottom: spacing.xl }}>
+          <JoinModePicker value={joinMode} onChange={setJoinMode} />
+        </View>
         <ErrorText message={error} />
         <Button
           title={editEventId ? 'Save changes' : 'Create event'}
@@ -254,7 +270,8 @@ export default function CreateEventScreen({ navigation, route }: Props) {
         onClose={() => setShowMap(false)}
         onPick={(picked: PickedLocation) => {
           setCoords({ lat: picked.lat, lng: picked.lng });
-          setLocation(picked.label);
+          // A full street address can run long; keep it within the limit.
+          setLocation(picked.label.slice(0, EVENT_LOCATION_MAX));
           setShowMap(false);
         }}
       />
@@ -280,6 +297,20 @@ const makeStyles = (c: Palette) =>
       height: 88,
       paddingTop: spacing.sm,
       textAlignVertical: 'top',
+    },
+    sectionLabel: {
+      fontFamily: fonts.body,
+      fontSize: 13,
+      color: c.inkMuted,
+      marginBottom: spacing.xs,
+    },
+    counter: {
+      fontFamily: fonts.body,
+      fontSize: 13,
+      color: c.inkMuted,
+      textAlign: 'right',
+      marginTop: -spacing.sm,
+      marginBottom: spacing.md,
     },
     locationRow: {
       flexDirection: 'row',

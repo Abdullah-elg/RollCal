@@ -2,7 +2,8 @@
 // tabs (the + opens CreateActionSheet instead of a screen). Also handles
 // join links, notification taps, push registration and the loading splash.
 
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { BottomTabBarButtonProps, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { PlatformPressable } from '@react-navigation/elements';
 import {
   DarkTheme,
   DefaultTheme,
@@ -103,6 +104,12 @@ function IconDot({ show, children }: { show: boolean; children: ReactNode }) {
 
 const EmptyTabScreen = () => null;
 
+// The tab buttons without Android's grey ripple, so a tap looks the same as
+// on iOS.
+const TabButton = (props: BottomTabBarButtonProps) => (
+  <PlatformPressable {...props} android_ripple={{ color: 'transparent' }} />
+);
+
 // Five tabs: Events, Calendar, +, Friends, Settings.
 // Tapping + intercepts navigation to open CreateActionSheet without switching tabs.
 function TabsNavigator() {
@@ -121,6 +128,7 @@ function TabsNavigator() {
         screenOptions={{
           headerShown: false,
           animation: 'none',
+          tabBarButton: TabButton,
           tabBarActiveTintColor: colors.ink,
           tabBarInactiveTintColor: colors.inkMuted,
           tabBarStyle: {

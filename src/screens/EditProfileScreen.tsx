@@ -21,10 +21,11 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { pickAndUploadAvatar, removeAvatar } from '../lib/avatar';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
-import { cleanUsername, USERNAME_MAX, usernameProblem } from '../lib/username';
+import { cleanUsername, usernameProblem } from '../lib/username';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
 import { Palette, spacing, TypeTokens } from '../theme';
+import { NAME_MAX } from '../lib/limits';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'EditProfile'>;
 
@@ -174,7 +175,7 @@ export default function EditProfileScreen({ navigation }: Props) {
               value={firstName}
               onChangeText={setFirstName}
               autoComplete="given-name"
-              maxLength={USERNAME_MAX + 1}
+              maxLength={NAME_MAX}
             />
           </View>
           <View style={{ flex: 1 }}>
@@ -183,7 +184,7 @@ export default function EditProfileScreen({ navigation }: Props) {
               value={lastName}
               onChangeText={setLastName}
               autoComplete="family-name"
-              maxLength={40}
+              maxLength={NAME_MAX}
             />
           </View>
         </View>

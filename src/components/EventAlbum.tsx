@@ -56,6 +56,7 @@ import ConfirmDialog from './ConfirmDialog';
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, PlayIcon } from './icons';
 import ReportSheet from './ReportSheet';
 import { Button, EmptyNote } from './ui';
+import { signedUrls } from '../lib/signedUrls';
 
 const BUCKET = 'event-photos';
 const GRID_GAP = 2;
@@ -460,23 +461,16 @@ export default function EventAlbum({
     // Photos and videos from people you've blocked stay out of your roll.
     const rows = allRows.filter((r) => !blockedIds.has(r.uploader_id));
 
-    let urlByPath = new Map<string, string>();
-    // Videos are signed when opened, not for the grid.
+    // Videos are signed when opened, not for the grid. Links are reused
+    // (lib/signedUrls), so photos already seen load from the phone's cache.
     const stills = rows.filter((r) => r.kind !== 'video');
-    if (stills.length > 0) {
-      const { data: signed } = await supabase.storage
-        .from(BUCKET)
-        .createSignedUrls(stills.map((r) => r.storage_path), 3600);
-      signed?.forEach((s) => {
-        if (s.signedUrl && s.path) urlByPath.set(s.path, s.signedUrl);
-      });
-    }
-
     const uploaderIds = [...new Set(rows.map((r) => r.uploader_id))];
-    const { data: profiles } =
+    const [urlByPath, { data: profiles }] = await Promise.all([
+      signedUrls(BUCKET, stills.map((r) => r.storage_path)),
       uploaderIds.length > 0
-        ? await supabase.from('profiles').select('id, display_name').in('id', uploaderIds)
-        : { data: [] };
+        ? supabase.from('profiles').select('id, display_name').in('id', uploaderIds)
+        : Promise.resolve({ data: [] as { id: string; display_name: string }[] }),
+    ]);
 
     const loadedList: LoadedPhoto[] = rows.map((r) => ({
       ...r,
@@ -1713,7 +1707,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     viewerCoverAction: {
       paddingVertical: 8,
       paddingHorizontal: 16,
-      borderRadius: 20,
+      borderRadius: radii.sm,
       backgroundColor: c.card,
       borderWidth: 1,
       borderColor: c.line,
@@ -1825,7 +1819,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     pickerFloatingBtn: {
       height: 48,
       paddingHorizontal: spacing.xl,
-      borderRadius: 24,
+      borderRadius: radii.sm,
       backgroundColor: c.accent,
       alignItems: 'center',
       justifyContent: 'center',
