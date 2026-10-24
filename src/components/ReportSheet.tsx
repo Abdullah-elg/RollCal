@@ -82,7 +82,7 @@ export default function ReportSheet({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -179,7 +179,9 @@ export default function ReportSheet({
 
 const makeStyles = (c: Palette, t: TypeTokens) =>
   StyleSheet.create({
-    overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.25)' },
+    // The same backdrop as the people and map sheets: faded in place, in the
+    // app's scrim, never sliding up with the card.
+    overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: c.scrim },
     card: {
       marginHorizontal: spacing.md,
       backgroundColor: c.paper,

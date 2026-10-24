@@ -1,11 +1,16 @@
 // "Who can join" for an event: anyone with the link, people the host
 // approves, or only people the host invites (see lib/joinRequests). Used on
 // the create/edit form and in the host's event info sheet.
-import { useMemo } from 'react';
+//
+// A dropdown: the field shows the current choice, and tapping it opens the
+// three options right under it. Inline rather than a pop-up, because it also
+// sits inside the event info sheet.
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { JOIN_MODES, JoinMode } from '../lib/joinRequests';
-import { Palette, spacing } from '../theme';
+import { Palette, radii, spacing } from '../theme';
+import { CheckIcon, ChevronRightIcon } from './icons';
 
 export default function JoinModePicker({
   value,
@@ -16,47 +21,86 @@ export default function JoinModePicker({
 }) {
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [open, setOpen] = useState(false);
+  const current = JOIN_MODES.find((m) => m.mode === value) ?? JOIN_MODES[0];
+
   return (
-    <View accessibilityRole="radiogroup">
-      {JOIN_MODES.map((m) => {
-        const selected = value === m.mode;
-        return (
-          <Pressable
-            key={m.mode}
-            onPress={() => onChange(m.mode)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected }}
-            style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
-          >
-            <View style={styles.text}>
-              <Text style={type.body}>{m.label}</Text>
-              <Text style={type.caption}>{m.detail}</Text>
-            </View>
-            <View style={styles.radio}>{selected && <View style={styles.radioFill} />}</View>
-          </Pressable>
-        );
-      })}
+    <View style={[styles.box, open && styles.boxOpen]}>
+      <Pressable
+        onPress={() => setOpen((o) => !o)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`Who can join: ${current.label}`}
+        style={({ pressed }) => [styles.field, pressed && { opacity: 0.7 }]}
+      >
+        <View style={styles.text}>
+          <Text style={type.body}>{current.label}</Text>
+          {!open && <Text style={type.caption}>{current.detail}</Text>}
+        </View>
+        <View style={{ transform: [{ rotate: open ? '270deg' : '90deg' }] }}>
+          <ChevronRightIcon size={18} color={colors.inkMuted} />
+        </View>
+      </Pressable>
+
+      {open && (
+        <View accessibilityRole="radiogroup">
+          {JOIN_MODES.map((m) => {
+            const selected = value === m.mode;
+            return (
+              <Pressable
+                key={m.mode}
+                onPress={() => {
+                  onChange(m.mode);
+                  setOpen(false);
+                }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                style={({ pressed }) => [styles.option, pressed && { opacity: 0.6 }]}
+              >
+                <View style={styles.text}>
+                  <Text style={type.body}>{m.label}</Text>
+                  <Text style={type.caption}>{m.detail}</Text>
+                </View>
+                <View style={styles.check}>
+                  {selected && <CheckIcon size={18} color={colors.ink} />}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
 
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
-    row: {
+    box: {
+      backgroundColor: c.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.line,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    boxOpen: {
+      borderColor: c.ink,
+    },
+    field: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
-      paddingVertical: spacing.sm,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
     },
-    text: { flex: 1 },
-    radio: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      borderWidth: 2,
-      borderColor: c.ink,
+    option: {
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.line,
     },
-    radioFill: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.ink },
+    text: { flex: 1, gap: 2 },
+    check: { width: 22, alignItems: 'center' },
   });

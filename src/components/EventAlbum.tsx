@@ -1309,7 +1309,10 @@ export default function EventAlbum({
 
       <Modal
         visible={showCoverPicker}
-        animationType="slide"
+        // iOS: a native sheet, which dims the screen itself. Android: the
+        // sheet sits on a see-through layer with the scrim, so it fades in
+        // place; sliding would carry the scrim up with it.
+        animationType={Platform.OS === 'ios' ? 'slide' : 'fade'}
         presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : 'overFullScreen'}
         transparent={Platform.OS === 'android'}
         statusBarTranslucent={Platform.OS === 'android'}
@@ -1781,7 +1784,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     sheetOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
+      backgroundColor: c.scrim,
       justifyContent: 'flex-end',
     },
     pickerModalScreen: {

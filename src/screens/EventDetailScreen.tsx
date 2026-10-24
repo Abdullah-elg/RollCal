@@ -894,7 +894,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
       <Modal
         visible={showInfo}
-        animationType="slide"
+        // iOS: a native sheet, which dims the screen itself. Android: the
+        // sheet sits on a see-through layer with the scrim, so it fades in
+        // place; sliding would carry the scrim up with it.
+        animationType={Platform.OS === 'ios' ? 'slide' : 'fade'}
         presentationStyle={Platform.OS === 'ios' ? 'pageSheet' : 'overFullScreen'}
         transparent={Platform.OS === 'android'}
         statusBarTranslucent={Platform.OS === 'android'}

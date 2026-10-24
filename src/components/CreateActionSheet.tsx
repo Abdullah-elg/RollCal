@@ -137,9 +137,10 @@ export default function CreateActionSheet({
     outputRange: [300, 0],
   });
 
+  // Fades in place to the app's scrim, the same dim as every other pop-up.
   const backdropOpacity = anim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 0.5],
+    outputRange: [0, 1],
   });
 
   return (
@@ -304,7 +305,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     backdrop: {
       ...StyleSheet.absoluteFill,
-      backgroundColor: '#000000',
+      backgroundColor: c.scrim,
     },
     sheet: {
       backgroundColor: c.card,
