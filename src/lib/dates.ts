@@ -18,6 +18,15 @@ export function formatDay(iso: string): string {
   });
 }
 
+// Event times move in 5-minute steps (the time picker's minute wheel).
+export const TIME_STEP_MINUTES = 5;
+const STEP_MS = TIME_STEP_MINUTES * 60 * 1000;
+
+// The first step at or after d: 6:55:00 stays 6:55, 6:55:30 becomes 7:00.
+export function nextTimeStep(d: Date): Date {
+  return new Date(Math.ceil(d.getTime() / STEP_MS) * STEP_MS);
+}
+
 // "7:30 PM"
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, {

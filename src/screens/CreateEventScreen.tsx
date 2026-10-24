@@ -16,6 +16,7 @@ import LocationPicker, { PickedLocation } from '../components/LocationPicker';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { nextTimeStep, TIME_STEP_MINUTES } from '../lib/dates';
 import { generateInviteCode } from '../lib/inviteCode';
 import { hapticSuccess } from '../lib/haptics';
 import { syncEventReminders } from '../lib/notifications';
@@ -106,10 +107,27 @@ export default function CreateEventScreen({ navigation, route }: Props) {
     })();
   }, [editEventId]);
 
+  // The clock, so times that pass while the form is open grey out, and a
+  // start time that passes moves on to the next step (6:55 becomes 7:00 at
+  // 6:56).
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 10_000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    // Editing an event that already started leaves its start alone until
+    // someone changes it.
+    if (editEventId && originalStart?.getTime() === startsAt.getTime()) return;
+    const earliest = nextTimeStep(now);
+    if (startsAt.getTime() < earliest.getTime()) changeStart(earliest);
+    // Only the clock moving should trigger this, not every edit.
+  }, [now]);
+
   // Moving the start drags the end along if it would fall before the start.
   const changeStart = (next: Date) => {
     setStartsAt(next);
-    if (endsAt <= next) {
+    if (endsAt.getTime() < next.getTime() + TIME_STEP_MINUTES * 60 * 1000) {
       setEndsAt(new Date(next.getTime() + 2 * 60 * 60 * 1000));
     }
   };
@@ -228,13 +246,14 @@ export default function CreateEventScreen({ navigation, route }: Props) {
           label="Starts"
           value={startsAt}
           onChange={changeStart}
-          minDate={new Date()}
+          minDate={now}
         />
         <DateTimeField
           label="Ends"
           value={endsAt}
           onChange={setEndsAt}
-          minDate={startsAt}
+          // At least one step after the start; the same time is greyed out.
+          minDate={new Date(startsAt.getTime() + TIME_STEP_MINUTES * 60 * 1000)}
         />
         <Field
           label="Description (optional)"

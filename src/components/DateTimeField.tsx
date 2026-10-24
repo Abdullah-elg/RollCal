@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { formatTime } from '../lib/dates';
+import { formatTime, nextTimeStep } from '../lib/dates';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import CalendarPicker from './CalendarPicker';
 
@@ -43,13 +43,23 @@ function Wheel({ items, index, onChange, isDisabled }: WheelProps) {
   // distinguish external value changes from our own scroll reports.
   const reportedRef = useRef(index);
   const [liveIndex, setLiveIndex] = useState(index);
+  // Where the wheel is, from its scroll events.
+  const offsetRef = useRef(index * ITEM_H);
+  // The glide in progress, if any (see glideTo).
+  const glideFrameRef = useRef<number | null>(null);
+  const stopGlide = () => {
+    if (glideFrameRef.current !== null) cancelAnimationFrame(glideFrameRef.current);
+    glideFrameRef.current = null;
+  };
+  useEffect(() => stopGlide, []);
 
-  // External change (e.g. end time dragged along by the start) → re-position.
+  // External change (the end pushed along by the start, or the clock moving
+  // a start that just passed) → glide there.
   useEffect(() => {
     if (index !== reportedRef.current) {
       reportedRef.current = index;
       setLiveIndex(index);
-      scrollRef.current?.scrollTo({ y: index * ITEM_H, animated: false });
+      glideTo(offsetRef.current, index * ITEM_H);
     }
   }, [index]);
 
@@ -57,6 +67,7 @@ function Wheel({ items, index, onChange, isDisabled }: WheelProps) {
     Math.max(0, Math.min(items.length - 1, Math.round(offsetY / ITEM_H)));
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    offsetRef.current = e.nativeEvent.contentOffset.y;
     setLiveIndex(clampIndex(e.nativeEvent.contentOffset.y));
   };
 
@@ -70,12 +81,32 @@ function Wheel({ items, index, onChange, isDisabled }: WheelProps) {
     return idx;
   };
 
+  // Slides the wheel from one offset to another. iOS drops its own animated
+  // scroll when it's started from a stopped drag (it reports it finished on
+  // the spot, which once left the wheel stuck), but it always takes a plain
+  // position change, so the glide is a quick run of those: about a quarter
+  // second, easing out, a little longer for a longer way.
+  const glideTo = (from: number, to: number) => {
+    stopGlide();
+    const duration = Math.min(400, 160 + (Math.abs(to - from) / ITEM_H) * 60);
+    const started = Date.now();
+    const step = () => {
+      const t = Math.min(1, (Date.now() - started) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      scrollRef.current?.scrollTo({ y: from + (to - from) * eased, animated: false });
+      glideFrameRef.current = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    glideFrameRef.current = requestAnimationFrame(step);
+  };
+
   const settle = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const landed = clampIndex(e.nativeEvent.contentOffset.y);
     const idx = nearestAllowed(landed);
-    if (idx !== landed) {
-      setLiveIndex(idx);
-      scrollRef.current?.scrollTo({ y: idx * ITEM_H, animated: true });
+    // Put the wheel exactly on idx: a slow drag can stop between two
+    // numbers (iOS only snaps after a flick), and it may have stopped on a
+    // greyed-out one.
+    if (Math.abs(e.nativeEvent.contentOffset.y - idx * ITEM_H) > 0.5) {
+      glideTo(e.nativeEvent.contentOffset.y, idx * ITEM_H);
     }
     if (idx !== reportedRef.current) {
       reportedRef.current = idx;
@@ -104,6 +135,8 @@ function Wheel({ items, index, onChange, isDisabled }: WheelProps) {
         onScroll={onScroll}
         scrollEventThrottle={16}
         onMomentumScrollEnd={settle}
+        // A finger on the wheel takes over from any glide.
+        onScrollBeginDrag={stopGlide}
         onScrollEndDrag={endDrag}
         onLayout={() =>
           scrollRef.current?.scrollTo({ y: index * ITEM_H, animated: false })
@@ -162,14 +195,11 @@ export default function DateTimeField({ label, value, onChange, minDate }: Props
 
   // The earliest time that can be picked, rounded up to the wheels' 5-minute
   // steps. Only matters on that same day; later days allow any time.
-  const earliest = useMemo(() => {
-    if (!minDate) return null;
-    const e = new Date(minDate);
-    e.setSeconds(0, 0);
-    const over = e.getMinutes() % 5;
-    if (over) e.setMinutes(e.getMinutes() + 5 - over);
-    return e;
-  }, [minDate]);
+  const minTime = minDate?.getTime();
+  const earliest = useMemo(
+    () => (minTime === undefined ? null : nextTimeStep(new Date(minTime))),
+    [minTime]
+  );
   const onEarliestDay = !!earliest && sameDay(value, earliest);
 
   // Never hand back a time before the earliest one.

@@ -1291,6 +1291,18 @@ export default function EventAlbum({
               subject={viewerIsVideo ? 'this video' : 'this photo'}
               onClose={() => setReporting(false)}
             />
+            {/* Inside the viewer, like the report sheet: iOS shows a pop-up
+                over the viewer only if it belongs to it, so out here it
+                waited until the viewer closed. */}
+            <ConfirmDialog
+              visible={confirmDeleteId !== null}
+              title={viewerIsVideo ? 'Delete this video?' : 'Delete this photo?'}
+              message="It comes out of the roll for everyone."
+              confirmLabel="Delete"
+              destructive
+              onConfirm={deletePhoto}
+              onCancel={() => setConfirmDeleteId(null)}
+            />
           </SafeAreaView>
         )}
       </Modal>
@@ -1412,19 +1424,6 @@ export default function EventAlbum({
         </View>
       </Modal>
 
-      <ConfirmDialog
-        visible={confirmDeleteId !== null}
-        title={
-          photos.find((p) => p.id === confirmDeleteId)?.kind === 'video'
-            ? 'Delete this video?'
-            : 'Delete this photo?'
-        }
-        message="It comes out of the roll for everyone."
-        confirmLabel="Delete"
-        destructive
-        onConfirm={deletePhoto}
-        onCancel={() => setConfirmDeleteId(null)}
-      />
     </View>
   );
 }
