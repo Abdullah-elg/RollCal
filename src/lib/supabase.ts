@@ -1,5 +1,6 @@
 import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
+import { patientFetch } from './patientFetch';
 import { secureSessionStorage } from './secureSession';
 
 // Credentials come from .env (EXPO_PUBLIC_* vars are inlined by Expo at build time).
@@ -24,4 +25,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     // No browser URL to parse on native.
     detectSessionInUrl: false,
   },
+  // Reads give up and retry instead of hanging on a dead connection.
+  global: { fetch: patientFetch },
 });

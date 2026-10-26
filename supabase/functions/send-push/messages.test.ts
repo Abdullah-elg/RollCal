@@ -85,3 +85,19 @@ describe('deadTokens', () => {
     assert.deepEqual(dead, ['b']);
   });
 });
+
+describe('badge', () => {
+  test('carries the person’s count, and leaves it off when unknown', () => {
+    const rows = [
+      { id: 1, user_id: 'a', kind: 'chatMessage', event_id: 'e', title: 't', body: 'b', data: {} },
+      { id: 2, user_id: 'b', kind: 'chatMessage', event_id: 'e', title: 't', body: 'b', data: {} },
+    ];
+    const tokens = [
+      { token: 'ta', user_id: 'a', platform: 'ios', prefs: {}, muted_events: [] },
+      { token: 'tb', user_id: 'b', platform: 'ios', prefs: {}, muted_events: [] },
+    ];
+    const sent = buildMessages(rows, tokens, { a: 3 });
+    assert.equal(sent.find((m) => m.to === 'ta')?.badge, 3);
+    assert.equal(sent.find((m) => m.to === 'tb')?.badge, undefined);
+  });
+});

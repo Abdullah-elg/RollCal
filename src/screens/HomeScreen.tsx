@@ -67,6 +67,12 @@ type EventSection = {
   data: Event[];
 };
 
+// Whether an event runs into a later day. The date beside a row is when it
+// starts, so the row adds where it ends ("10:00 PM → Oct 25"), only then.
+function endsOnLaterDay(event: { starts_at: string; ends_at: string }): boolean {
+  return new Date(event.starts_at).toDateString() !== new Date(event.ends_at).toDateString();
+}
+
 export default function HomeScreen({ navigation }: Props) {
   const { profile, session } = useAuth();
   const userId = session!.user.id;
@@ -285,7 +291,8 @@ export default function HomeScreen({ navigation }: Props) {
     () =>
       visible
         .filter((e) => new Date(e.ends_at).getTime() < now)
-        .sort((a, b) => new Date(b.ends_at).getTime() - new Date(a.ends_at).getTime()),
+        // By start, newest first: the date beside each one is its start.
+        .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime()),
     [visible, now]
   );
 
@@ -416,7 +423,12 @@ export default function HomeScreen({ navigation }: Props) {
             {event.title}
           </Text>
           <Text style={styles.rowSubtitle} numberOfLines={1}>
-            {formatTime(event.starts_at)} · {meta?.goingCount ?? 1} going
+            {formatTime(event.starts_at)}
+            {endsOnLaterDay(event)
+              ? ` → ${new Date(event.ends_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+              : ''}
+            {' · '}
+            {meta?.goingCount ?? 1} {isPast ? 'went' : 'going'}
           </Text>
         </View>
 

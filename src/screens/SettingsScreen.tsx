@@ -9,6 +9,7 @@ import {
   ActionSheetIOS,
   ActivityIndicator,
   Alert,
+  AppState,
   Modal,
   Platform,
   Pressable,
@@ -34,13 +35,14 @@ import { hapticLight, hapticSuccess } from '../lib/haptics';
 import {
   ALBUM_PREF_KEYS,
   CHAT_PREF_KEYS,
-  ensureNotificationPermission,
+  notificationsAllowed,
   EVENT_PREF_KEYS,
   FRIEND_PREF_KEYS,
   getReminderPrefs,
   notificationsAvailable,
   ReminderPrefs,
   setReminderPrefs,
+  turnOnNotifications,
   syncEventReminders,
 } from '../lib/notifications';
 import { setQuietMode } from '../lib/safety';
@@ -79,7 +81,7 @@ const ALBUM_ROWS: ToggleRow[] = [
   {
     key: 'albumOpen',
     label: 'When the roll opens',
-    caption: 'When the event ends and photo uploads begin',
+    caption: 'When the event starts and photo uploads begin',
   },
   { key: 'albumDayLeft', label: '1 day till it closes' },
   { key: 'albumHourLeft', label: '1 hour till it closes' },
@@ -179,6 +181,14 @@ export default function SettingsScreen({ navigation }: Props) {
     'event' | 'album' | 'friend' | 'chat' | null
   >(null);
 
+  // The switch moves the moment it's tapped, like the other toggles, and
+  // goes back only if saving fails. Waiting for the save made it slide over,
+  // snap back and slide again on Android.
+  const [quietOn, setQuietOn] = useState(!!profile?.quiet_mode);
+  useEffect(() => {
+    setQuietOn(!!profile?.quiet_mode);
+  }, [profile?.quiet_mode]);
+
   const toggleQuiet = async (next: boolean) => {
     if (!profile) return;
     // Quiet mode is Pro; a free account sees the pop-up and the switch stays put.
@@ -187,9 +197,12 @@ export default function SettingsScreen({ navigation }: Props) {
       return;
     }
     setQuietError(null);
+    setQuietOn(next);
     const err = await setQuietMode(profile.id, next);
-    if (err) setQuietError(err);
-    else await refreshProfile();
+    if (err) {
+      setQuietOn(!next);
+      setQuietError(err);
+    } else await refreshProfile();
   };
 
   // Server side lives in supabase/functions/delete-account: it removes the
@@ -274,14 +287,46 @@ export default function SettingsScreen({ navigation }: Props) {
     }, [userId])
   );
 
+  // Whether the phone allows RollCal's notifications. Checked again whenever
+  // the app comes back, since people turn them on in the phone's settings.
+  const [osAllowed, setOsAllowed] = useState<boolean | null>(null);
+  useEffect(() => {
+    const check = () =>
+      notificationsAllowed().then((allowed) => {
+        setOsAllowed(allowed);
+        if (allowed) setPermissionDenied(false);
+      });
+    check();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') check();
+    });
+    return () => sub.remove();
+  }, []);
+
+  // The "Allow notifications" prompt, or the phone's settings when it won't
+  // show it any more.
+  const enableNotifications = async () => {
+    const result = await turnOnNotifications(userId);
+    if (result === 'allowed') {
+      setOsAllowed(true);
+      setPermissionDenied(false);
+    } else if (result === 'settings') {
+      setPermissionDenied(true);
+    }
+  };
+
   const toggleReminder = async (key: keyof ReminderPrefs, next: boolean) => {
     if (!prefs) return;
     // Where notifications can't run at all (Expo Go on Android), still save
     // the choice - it takes effect in a development build.
-    if (next && notificationsAvailable) {
-      const granted = await ensureNotificationPermission();
-      setPermissionDenied(!granted);
-      if (!granted) return;
+    if (next && notificationsAvailable && osAllowed !== true) {
+      const result = await turnOnNotifications(userId);
+      if (result !== 'allowed') {
+        setPermissionDenied(result === 'settings');
+        return;
+      }
+      setOsAllowed(true);
+      setPermissionDenied(false);
     }
     const updated = { ...prefs, [key]: next };
     setPrefsState(updated);
@@ -342,6 +387,7 @@ export default function SettingsScreen({ navigation }: Props) {
               <Avatar
                 userId={profile?.id}
                 name={profile?.display_name}
+                username={profile?.username}
                 avatarUrl={profile?.avatar_url}
                 size={64}
               />
@@ -466,6 +512,20 @@ export default function SettingsScreen({ navigation }: Props) {
 
         <Text style={styles.sectionLabel}>Notifications</Text>
         <View style={styles.card}>
+          {osAllowed === false && (
+            <>
+              <View style={styles.notifOffRow}>
+                <View style={styles.rowText}>
+                  <Text style={type.body}>Notifications are off</Text>
+                  <Text style={type.caption}>
+                    Turn them on to hear about invites, messages and when the roll opens.
+                  </Text>
+                </View>
+                <Button title="Turn on" variant="secondary" onPress={enableNotifications} style={styles.notifOffButton} />
+              </View>
+              <View style={styles.rowDivider} />
+            </>
+          )}
           <Pressable
             style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
             onPress={() => setOpenSheet('event')}
@@ -519,8 +579,8 @@ export default function SettingsScreen({ navigation }: Props) {
         </View>
       {permissionDenied && (
         <Text style={styles.permissionHint}>
-          Notifications are blocked for this app. Allow them in your phone's
-          system settings, then try again.
+          Allow notifications for RollCal in your phone's settings, then come
+          back here.
         </Text>
       )}
       <Text style={[type.caption, { marginTop: spacing.sm }]}>
@@ -536,7 +596,7 @@ export default function SettingsScreen({ navigation }: Props) {
           onPress={() => navigation.navigate('PaymentMethods')}
         >
           <View style={styles.rowText}>
-            <Text style={type.body}>Payment methods</Text>
+            <Text style={type.body}>Receiving methods</Text>
             <Text style={type.caption}>
               {paymentCount > 0
                 ? `${paymentCount} saved`
@@ -568,7 +628,7 @@ export default function SettingsScreen({ navigation }: Props) {
           <SettingRow
             label="Quiet mode"
             caption={QUIET_CAPTION}
-            value={!!profile.quiet_mode}
+            value={quietOn}
             onToggle={toggleQuiet}
           />
         ) : (
@@ -725,8 +785,8 @@ export default function SettingsScreen({ navigation }: Props) {
             </View>
             {permissionDenied && (
               <Text style={styles.permissionHint}>
-                Notifications are blocked for this app. Allow them in your
-                phone's system settings, then try again.
+                Allow notifications for RollCal in your phone's settings, then
+                come back here.
               </Text>
             )}
           </ScrollView>
@@ -946,6 +1006,16 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       height: StyleSheet.hairlineWidth,
       backgroundColor: c.line,
       marginVertical: spacing.sm,
+    },
+    notifOffRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingVertical: spacing.md,
+    },
+    notifOffButton: {
+      minWidth: 0,
+      paddingHorizontal: spacing.md,
     },
     permissionHint: {
       ...t.caption,

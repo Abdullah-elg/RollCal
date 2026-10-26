@@ -10,6 +10,8 @@ import {
   useEffect,
   useState,
 } from 'react';
+import { AppState } from 'react-native';
+import { setAppBadge } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import {
   loadUnreadChats,
@@ -83,7 +85,19 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refresh();
+    // Things change while the app is in the background; catch up on return.
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => sub.remove();
   }, [refresh]);
+
+  // The app-icon number: unread chats, friend requests and invites, the same
+  // things the server counts for notifications. Zero when signed out.
+  const badge = userId ? unreadChats.length + friendRequests + pendingInvites : 0;
+  useEffect(() => {
+    setAppBadge(badge);
+  }, [badge]);
 
   const markRead = useCallback(
     async (eventId: string, timestamp: string) => {

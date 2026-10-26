@@ -76,7 +76,7 @@ Pro includes 100 GB of storage and files up to 500 GB, then charges for usage. A
 
 1. Register the App ID `app.rollcal` with **Sign in with Apple** and **Associated Domains** turned on. EAS can do this on the first build if you let it manage credentials.
 2. App Store Connect → create the app with that bundle ID.
-3. Before Pro goes live: create one subscription group, "RollCal Pro", with `rollcal_pro_monthly` ($6.99) and `rollcal_pro_yearly` ($49.99), and a 7-day free trial. **Product IDs are permanent,** so use these exact names.
+3. Before Pro goes live: create one subscription group, "RollCal Pro", with `rollcal_pro_monthly` ($4.99) and `rollcal_pro_yearly` ($49.99), and a 7-day free trial. **Product IDs are permanent,** so use these exact names.
 
 ## 5. Google Play and Google Cloud
 

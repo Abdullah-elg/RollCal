@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { formatCents } from './money';
 import { loadPhotoExpiry } from './expiry';
 import { rollClosesAt } from './roll';
@@ -65,7 +65,7 @@ export type ReminderPrefs = {
   thirtyMin: boolean;
   fiveMin: boolean;
   atStart: boolean;
-  // Album reminders, relative to the upload window (ends_at → +48h).
+  // Album reminders, relative to the upload window (starts_at → ends_at + 48h).
   albumOpen: boolean;
   albumDayLeft: boolean;
   albumHourLeft: boolean;
@@ -147,16 +147,46 @@ export async function setReminderPrefs(prefs: ReminderPrefs): Promise<void> {
   syncPushSettings();
 }
 
-export async function ensureNotificationPermission(): Promise<boolean> {
+// The number on the app icon. Notifications from the server carry it while
+// the app is closed (supabase/badge.sql); while it's open, the app keeps it
+// in step with what's waiting. Silently skipped where notifications can't run.
+export async function setAppBadge(count: number): Promise<void> {
   const Notifications = getNotifications();
-  if (!Notifications) return false;
-  const current = await Notifications.getPermissionsAsync();
-  if (current.granted) return true;
-  if (current.canAskAgain) {
-    const requested = await Notifications.requestPermissionsAsync();
-    return requested.granted;
+  if (!Notifications) return;
+  try {
+    await Notifications.setBadgeCountAsync(Math.max(0, count));
+  } catch {
+    // Some Android launchers don't show badges; nothing to do there.
   }
-  return false;
+}
+
+// Whether the phone lets RollCal show notifications at all. null where they
+// can't run (Expo Go on Android).
+export async function notificationsAllowed(): Promise<boolean | null> {
+  const Notifications = getNotifications();
+  if (!Notifications) return null;
+  return (await Notifications.getPermissionsAsync()).granted;
+}
+
+// Turns notifications on from Settings. Shows Apple's or Google's "Allow
+// notifications" prompt while the phone still will; once someone has said no
+// (iOS asks only once, Android twice), the phone won't show it again, so this
+// opens RollCal's page in the phone's settings instead. When they're allowed,
+// push and the scheduled reminders start right away.
+export async function turnOnNotifications(
+  userId: string | undefined
+): Promise<'allowed' | 'settings' | 'unavailable'> {
+  const Notifications = getNotifications();
+  if (!Notifications) return 'unavailable';
+  let perm = await Notifications.getPermissionsAsync();
+  if (!perm.granted && perm.canAskAgain) perm = await Notifications.requestPermissionsAsync();
+  if (perm.granted) {
+    if (userId) await registerForPush(userId);
+    syncEventReminders();
+    return 'allowed';
+  }
+  await Linking.openSettings();
+  return 'settings';
 }
 
 async function ensureAndroidChannel(Notifications: NotificationsModule) {
@@ -206,17 +236,20 @@ export async function syncEventReminders(): Promise<void> {
 
     for (const e of events) {
       const starts = new Date(e.starts_at).getTime();
-      const ends = new Date(e.ends_at).getTime();
       const closes = rollClosesAt(e);
 
       if (prefs.dayBefore) plan(starts - DAY, e.title, 'Happening tomorrow.');
       if (prefs.hourBefore) plan(starts - HOUR, e.title, 'Starts in an hour.');
       if (prefs.thirtyMin) plan(starts - 30 * MIN, e.title, 'Starts in 30 minutes.');
       if (prefs.fiveMin) plan(starts - 5 * MIN, e.title, 'Starts in 5 minutes.');
-      if (prefs.atStart) plan(starts, e.title, 'Starting now.');
-
-      if (prefs.albumOpen && !pushed) {
-        plan(ends, e.title, 'The roll is open - add your photos.');
+      // The roll opens at the start too, so the two share one notification.
+      const rollOpening = prefs.albumOpen && !pushed;
+      if (prefs.atStart && rollOpening) {
+        plan(starts, e.title, 'Starting now. The roll is open - add your photos.');
+      } else if (prefs.atStart) {
+        plan(starts, e.title, 'Starting now.');
+      } else if (rollOpening) {
+        plan(starts, e.title, 'The roll is open - add your photos.');
       }
       if (prefs.albumDayLeft) {
         plan(closes - DAY, e.title, 'One day left to add photos to the roll.');

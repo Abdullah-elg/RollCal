@@ -6,7 +6,7 @@
 // and your friends' (supabase/join-modes.sql), so for anyone else this shows
 // initials.
 
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
@@ -20,7 +20,9 @@ import {
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { hapticLight } from '../lib/haptics';
+import { avatarInitials, needsUsernameInitial } from '../lib/initials';
 import { avatarPath, useSignedUrl } from '../lib/signedUrls';
+import { supabase } from '../lib/supabase';
 import { fonts } from '../theme';
 
 // Curated palette of muted, earthy tones that pair naturally with the paper and darkroom surfaces
@@ -57,18 +59,48 @@ function getAvatarBgColor(userId: string | undefined | null, mode: 'light' | 'da
   return mode === 'dark' ? DARK_BG[idx] : LIGHT_BG[idx];
 }
 
-function getInitials(name: string | undefined | null): string {
-  if (!name || !name.trim()) return '?';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) {
-    return parts[0].substring(0, 2).toUpperCase();
+// Usernames looked up for names with no letters in them (rare), kept so each
+// person is only asked for once.
+const usernames = new Map<string, Promise<string | null>>();
+function lookUpUsername(userId: string): Promise<string | null> {
+  let found = usernames.get(userId);
+  if (!found) {
+    found = Promise.resolve(
+      supabase.from('profiles').select('username').eq('id', userId).maybeSingle()
+    ).then(({ data }) => data?.username ?? null, () => null);
+    usernames.set(userId, found);
   }
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return found;
+}
+
+// The username, when the name alone gives no initials: the one passed in,
+// or looked up.
+function useFallbackUsername(
+  name: string | null | undefined,
+  userId: string | null | undefined,
+  username: string | null | undefined
+): string | null {
+  const needed = !username && !!userId && needsUsernameInitial(name);
+  const [found, setFound] = useState<string | null>(null);
+  useEffect(() => {
+    if (!needed || !userId) return;
+    let live = true;
+    lookUpUsername(userId).then((u) => {
+      if (live) setFound(u);
+    });
+    return () => {
+      live = false;
+    };
+  }, [needed, userId]);
+  return username ?? found;
 }
 
 type AvatarProps = {
   userId?: string | null;
   name?: string | null;
+  // Stands in for initials when the name has no letters (see lib/initials).
+  // Looked up from userId when not given.
+  username?: string | null;
   avatarUrl?: string | null;
   size?: number;
   style?: StyleProp<ViewStyle>;
@@ -79,6 +111,7 @@ type AvatarProps = {
 export default function Avatar({
   userId,
   name,
+  username,
   avatarUrl,
   size = 32,
   style,
@@ -87,7 +120,7 @@ export default function Avatar({
 }: AvatarProps) {
   const { colors, mode } = useTheme();
   const bgColor = getAvatarBgColor(userId, mode);
-  const initials = getInitials(name);
+  const initials = avatarInitials(name, useFallbackUsername(name, userId, username));
   const fontSize = Math.round(size * 0.4);
   const photoUrl = useSignedUrl('avatars', avatarPath(avatarUrl));
 

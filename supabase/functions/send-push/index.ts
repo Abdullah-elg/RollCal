@@ -90,7 +90,16 @@ Deno.serve(async (req: Request) => {
       .in('user_id', userIds);
     if (tokensError) return json(500, { error: tokensError.message, rowsSent, messagesSent });
 
-    const messages = buildMessages(rows, (tokens ?? []) as TokenRow[]);
+    // The app-icon number for each person. A failure here only means no
+    // badge change, never no notification.
+    const { data: badgeRows, error: badgeError } = await admin.rpc('badge_counts', {
+      p_users: userIds,
+    });
+    if (badgeError) console.warn('Badge counts failed', badgeError.message);
+    const badges: Record<string, number> = {};
+    for (const b of (badgeRows ?? []) as { user_id: string; n: number }[]) badges[b.user_id] = b.n;
+
+    const messages = buildMessages(rows, (tokens ?? []) as TokenRow[], badges);
     const dead: string[] = [];
     for (const batch of chunk(messages, EXPO_BATCH)) {
       const tickets = await sendBatch(batch);

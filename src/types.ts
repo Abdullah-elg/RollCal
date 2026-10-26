@@ -37,6 +37,8 @@ export type Message = {
   sender_id: string;
   body: string;
   created_at: string;
+  // Set when the sender edited it (within 10 minutes of sending).
+  edited_at?: string | null;
 };
 
 export type InvitationStatus = 'pending' | 'accepted' | 'declined';

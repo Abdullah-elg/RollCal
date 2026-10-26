@@ -467,7 +467,7 @@ export default function RootNavigator() {
             <AppStack.Screen
               name="PaymentMethods"
               component={PaymentMethodsScreen}
-              options={{ title: 'Payment methods' }}
+              options={{ title: 'Receiving methods' }}
             />
             <AppStack.Screen
               name="Upgrade"

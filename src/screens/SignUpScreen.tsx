@@ -29,6 +29,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { LEGAL, LegalDoc } from '../legal/documents';
 import { checkAge } from '../lib/age';
+import { isReservedEmail, RESERVED_EMAIL_ERROR } from '../lib/reservedEmails';
 import { currencyLabel } from '../lib/currency';
 import { deviceCurrency } from '../lib/fx';
 import { cleanUsername, USERNAME_MAX, usernameProblem } from '../lib/username';
@@ -116,6 +117,10 @@ export default function SignUpScreen({ navigation }: Props) {
     if (ageResult !== 'ok') return;
     if (!passwordsMatch) {
       setConfirmTouched(true);
+      return;
+    }
+    if (isReservedEmail(email)) {
+      setError(RESERVED_EMAIL_ERROR);
       return;
     }
     setBusy(true);

@@ -8,7 +8,7 @@
 const OPERATOR = 'RollCal';
 const CONTACT = 'support@rollcal.app';
 const PROVINCE = 'Ontario';
-const UPDATED = 'October 20, 2026';
+const UPDATED = 'October 24, 2026';
 
 export type LegalDoc = 'terms' | 'pro' | 'privacy';
 
@@ -80,7 +80,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         heading: 'Other services',
         paragraphs: [
           'RollCal works with services run by others, such as Sign in with Apple, Google sign-in, maps and payment apps. Their own terms and privacy policies apply when you use them, and we are not responsible for them.',
-          'Apple, Google, Interac, Venmo, PayPal, Cash App and other names of services mentioned in the app are trademarks of their owners. RollCal is not affiliated with or endorsed by them; their names are used only to say which service you use.',
+          'Apple, Google, Interac, Venmo, PayPal, Cash App, Zelle and other names of services mentioned in the app are trademarks of their owners. RollCal is not affiliated with or endorsed by them; their names are used only to say which service you use.',
           'Parts of RollCal are open-source software and open data, used under their own licences. They are listed in Settings → Open-source licences. Place names come from OpenStreetMap (© OpenStreetMap contributors) and exchange rates from ExchangeRate-API.',
         ],
       },
@@ -161,7 +161,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Price and payment',
         paragraphs: [
-          'Pro is priced at 6.99 US dollars a month or 49.99 US dollars a year. The app also shows these prices converted into your chosen currency at a recent exchange rate, as a guide only.',
+          'Pro is priced at 4.99 US dollars a month or 49.99 US dollars a year. The app also shows these prices converted into your chosen currency at a recent exchange rate, as a guide only.',
           'Apple or Google charge you in the currency of your App Store or Google Play account, at the local price shown before you confirm. That price is set through the store and can differ from the converted guide. Taxes may be added where they apply.',
           'Payment is taken by Apple or Google from the account you use in their store when you confirm the purchase.',
         ],
@@ -218,7 +218,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         heading: 'What we collect',
         paragraphs: [
           'Account details: your name, email address, username, profile photo, preferred currency, and, if you sign in with Apple or Google, the details they share with us.',
-          'What you add: events, RSVPs, invitations, friend connections, chat messages, photos and videos, bills and their items, and the payment handles you choose to add (such as an email or phone number for Interac e-Transfer, or a Venmo, PayPal or Cash App username).',
+          'What you add: events, RSVPs, invitations, friend connections, chat messages and when you last read each event’s chat, photos and videos, bills and their items, and the payment handles you choose to add (such as an email or phone number for Interac e-Transfer or Zelle, a Venmo, PayPal or Cash App username, or details you write in yourself).',
           'Locations you choose: an event’s address or map pin. If you use “current location” when picking a place, your device’s location is used once for that and is not stored separately.',
           'When you contact support or report something: what you write, your account email (so we can reply), your phone type and app version, and for reports, what you reported. The person you report is not told who reported them.',
           'If you allow notifications: a notification token for your phone and your notification settings.',
@@ -235,7 +235,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Who can see it',
         paragraphs: [
-          'People in an event can see that event’s details, members, chat, photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name and username, so friends can add you. Only you and your friends can see your profile photo. Your email address is never shown to other people.',
+          'People in an event can see that event’s details, members, chat (including who has seen the latest message), photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name and username, so friends can add you. Only you and your friends can see your profile photo. Your email address is never shown to other people.',
         ],
       },
       {

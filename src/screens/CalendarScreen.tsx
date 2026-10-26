@@ -173,8 +173,14 @@ export default function CalendarScreen({ navigation }: Props) {
         style={({ pressed }) => [styles.eventRow, pressed && { opacity: 0.7 }]}
       >
         <View style={styles.timeCol}>
-          <Text style={styles.timeText}>{formatTime(event.starts_at)}</Text>
-          <Text style={styles.timeEnd}>{formatTime(event.ends_at)}</Text>
+          {/* One line each: "10:30 PM" fits the column, and shrinks a little
+              rather than wrapping if the text is set larger. */}
+          <Text style={styles.timeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+            {formatTime(event.starts_at)}
+          </Text>
+          <Text style={styles.timeEnd} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+            {formatTime(event.ends_at)}
+          </Text>
         </View>
         <View style={styles.eventBody}>
           <Text style={type.h3} numberOfLines={1}>
@@ -193,6 +199,26 @@ export default function CalendarScreen({ navigation }: Props) {
 
   const dayEvents = eventsByDay.get(selectedDay) ?? [];
   const isToday = selectedDay === todayKey;
+  // Day keys are YYYY-MM-DD, so they compare as dates.
+  const isPastDay = selectedDay < todayKey;
+
+  // A day with nothing on it. Past days can't be planned any more, so they
+  // just say so.
+  const renderEmptyDay = () => (
+    <View style={styles.emptyDayWrap}>
+      <Text style={styles.emptyText}>
+        {isPastDay ? 'Nothing was planned this day.' : 'Nothing planned this day.'}
+      </Text>
+      {!isPastDay && (
+        <Button
+          title="Plan something"
+          variant="secondary"
+          onPress={() => navigation.navigate('CreateEvent', { initialDate: selectedDay })}
+          style={styles.emptyDayBtn}
+        />
+      )}
+    </View>
+  );
 
   const refreshControl = (
     <RefreshControl
@@ -278,17 +304,7 @@ export default function CalendarScreen({ navigation }: Props) {
                 ))}
               </View>
             ) : (
-              <View style={styles.emptyDayWrap}>
-                <Text style={styles.emptyText}>Nothing planned this day.</Text>
-                <Button
-                  title="Plan something"
-                  variant="secondary"
-                  onPress={() =>
-                    navigation.navigate('CreateEvent', { initialDate: selectedDay })
-                  }
-                  style={styles.emptyDayBtn}
-                />
-              </View>
+              renderEmptyDay()
             )}
           </View>
         </ScrollView>
@@ -346,17 +362,7 @@ export default function CalendarScreen({ navigation }: Props) {
                 ))}
               </View>
             ) : (
-              <View style={styles.emptyDayWrap}>
-                <Text style={styles.emptyText}>Nothing planned this day.</Text>
-                <Button
-                  title="Plan something"
-                  variant="secondary"
-                  onPress={() =>
-                    navigation.navigate('CreateEvent', { initialDate: selectedDay })
-                  }
-                  style={styles.emptyDayBtn}
-                />
-              </View>
+              renderEmptyDay()
             )}
           </View>
         </ScrollView>
@@ -505,10 +511,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     rowDivider: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: c.line,
-      marginLeft: 80,
+      marginLeft: 96, // the time column plus the row gap
     },
     timeCol: {
-      width: 68,
+      width: 84,
     },
     timeText: {
       ...t.body,

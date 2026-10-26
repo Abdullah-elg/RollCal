@@ -201,7 +201,7 @@ export default function PaymentMethodsScreen(_props: Props) {
           through RollCal.
         </Text>
         {loaded && methods.length === 0 ? (
-          <EmptyNote>No payment methods yet.</EmptyNote>
+          <EmptyNote>No receiving methods yet.</EmptyNote>
         ) : (
           methods.map((m, i) => (
             <View key={m.id}>
@@ -222,7 +222,7 @@ export default function PaymentMethodsScreen(_props: Props) {
         )}
       </ScrollView>
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
-        <Button title="Add a payment method" onPress={openAdd} />
+        <Button title="Add a receiving method" onPress={openAdd} />
       </View>
 
       <Modal
@@ -248,7 +248,7 @@ export default function PaymentMethodsScreen(_props: Props) {
             )}
             <View style={styles.sheetHeader}>
               <Text style={type.h2}>
-                {editing ? 'Edit payment method' : 'Add a payment method'}
+                {editing ? 'Edit receiving method' : 'Add a receiving method'}
               </Text>
               <Pressable onPress={closeSheet} hitSlop={8}>
                 <Text style={styles.sheetDone}>Cancel</Text>
@@ -335,7 +335,7 @@ export default function PaymentMethodsScreen(_props: Props) {
         </View>
         <ConfirmDialog
           visible={confirmRemove}
-          title="Remove this payment method?"
+          title="Remove this receiving method?"
           message="People won't see it on new bills."
           confirmLabel="Remove"
           destructive

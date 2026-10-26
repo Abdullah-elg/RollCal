@@ -350,28 +350,24 @@ export default function EventAlbum({
   }, [notice]);
 
   const now = Date.now();
-  const endsAt = new Date(event.ends_at).getTime();
-  const { beforeEnd, withinWindow, uploadOpen, msLeft } = rollState(event, uploadsClosed, now);
+  const { beforeOpen, withinWindow, uploadOpen, msLeft } = rollState(event, uploadsClosed, now);
   const hoursLeft = Math.max(1, Math.round(msLeft / (60 * 60 * 1000)));
 
+  // Shown while the roll is sealed: how long until it opens at the start.
   const countdownText = useMemo(() => {
-    const startsAt = new Date(event.starts_at).getTime();
-    if (now < startsAt) {
-      return 'Opens when event ends';
-    }
-    const diffMs = endsAt - now;
+    const diffMs = new Date(event.starts_at).getTime() - now;
     if (diffMs <= 0) return 'Opens shortly';
     const diffHours = Math.round(diffMs / (60 * 60 * 1000));
     if (diffHours < 1) {
       const diffMins = Math.max(1, Math.round(diffMs / (60 * 1000)));
-      return `Unlocks in ${diffMins}m`;
+      return `Opens in ${diffMins}m`;
     }
     if (diffHours < 24) {
-      return `Unlocks in ${diffHours}h`;
+      return `Opens in ${diffHours}h`;
     }
     const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-    return `Unlocks in ${diffDays}d`;
-  }, [event.starts_at, endsAt, now]);
+    return `Opens in ${diffDays}d`;
+  }, [event.starts_at, now]);
 
   const panY = useRef(new Animated.Value(0)).current;
 
@@ -671,8 +667,8 @@ export default function EventAlbum({
   let statusLine = '';
   let mutedSummaryLine: string | null = null;
 
-  if (beforeEnd) {
-    statusLine = 'The roll opens when the event ends.';
+  if (beforeOpen) {
+    statusLine = 'The roll opens when the event starts.';
   } else if (uploadOpen) {
     statusLine = `The roll is open. ${timeLeftText} left.`;
   } else if (withinWindow && uploadsClosed) {
@@ -698,7 +694,7 @@ export default function EventAlbum({
     statusLine = 'Roll closed.';
     mutedSummaryLine = null;
     expiryLine = 'This event’s photos were deleted 30 days after it ended.';
-  } else if (expiresAt && !beforeEnd) {
+  } else if (expiresAt && !beforeOpen) {
     const days = daysLeft(expiresAt);
     expiryLine = expiringSoon
       ? `Photos are deleted ${days <= 1 ? 'tomorrow' : `in ${days} days`}. Save the ones you want.`
@@ -766,9 +762,9 @@ export default function EventAlbum({
       <View style={styles.headerRow}>
         <View style={styles.titleWrap}>
           <Text style={styles.sectionTitle}>Photos</Text>
-          {photos.length > 0 && !beforeEnd && <ExposureCounter count={photos.length} />}
+          {photos.length > 0 && !beforeOpen && <ExposureCounter count={photos.length} />}
         </View>
-        {photos.length > 0 && !beforeEnd && (
+        {photos.length > 0 && !beforeOpen && (
           <Pressable
             onPress={saveAll}
             disabled={savingAll !== null}
@@ -782,7 +778,7 @@ export default function EventAlbum({
         )}
       </View>
 
-      {beforeEnd ? (
+      {beforeOpen ? (
         <View style={styles.canisterCard}>
           <View style={styles.canisterHeader}>
             <View style={styles.canisterExposureBadge}>
@@ -794,7 +790,7 @@ export default function EventAlbum({
             </View>
           </View>
           <Text style={styles.canisterSubtext}>
-            The shared roll is sealed until the event ends. Once it wraps up, everyone can drop in their shots.
+            The shared roll is sealed until the event starts. From then until two days after it ends, everyone can drop in their shots.
           </Text>
         </View>
       ) : (
@@ -828,7 +824,7 @@ export default function EventAlbum({
       )}
 
       {/* Before the roll opens, the host sets the cover from the event info sheet. */}
-      {(uploadOpen || (isLeader && !beforeEnd && !photosExpired)) && (
+      {(uploadOpen || (isLeader && !beforeOpen && !photosExpired)) && (
         <View style={styles.actionRow}>
           {uploadOpen && (
             <Button
@@ -838,14 +834,14 @@ export default function EventAlbum({
               style={styles.actionButton}
             />
           )}
-          {isLeader && !beforeEnd && !uploadOpen && !photosExpired && onReopenRoll && (
+          {isLeader && !beforeOpen && !uploadOpen && !photosExpired && onReopenRoll && (
             <Button
               title="Reopen for 24 hours"
               onPress={onReopenRoll}
               style={styles.actionButton}
             />
           )}
-          {isLeader && photos.length > 0 && !beforeEnd && (
+          {isLeader && photos.length > 0 && !beforeOpen && (
             <Button
               title={hasCover ? 'Change event photo' : 'Set event photo'}
               variant="secondary"
@@ -873,9 +869,9 @@ export default function EventAlbum({
 
       {notice && <Text style={styles.notice}>{notice}</Text>}
 
-      {/* Edge-to-edge photo grid. Sealed until the event ends, even if the
+      {/* Edge-to-edge photo grid. Sealed until the event starts, even if the
           host has already added a cover. */}
-      {beforeEnd ? null : !loaded ? (
+      {beforeOpen ? null : !loaded ? (
         <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.lg }} />
       ) : displayPhotos.length > 0 ? (
         <View style={[styles.gridWrap, { width: screenWidth }]}>

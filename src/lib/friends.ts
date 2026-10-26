@@ -79,6 +79,31 @@ export async function searchProfiles(
   return ((data ?? []) as Profile[]).filter((p) => !hidden.has(p.id));
 }
 
+// Where two people stand: 'none', 'friends', 'sent' (I asked, waiting on
+// them) or 'received' (they asked me), with the row's id for accepting.
+export type FriendStatus =
+  | { status: 'none' | 'friends' | 'sent' }
+  | { status: 'received'; friendshipId: string };
+
+export async function friendStatusWith(
+  myId: string,
+  otherId: string
+): Promise<FriendStatus> {
+  const { data } = await supabase
+    .from('friendships')
+    .select('id, status, requester_id')
+    .or(
+      `and(requester_id.eq.${myId},addressee_id.eq.${otherId}),` +
+        `and(requester_id.eq.${otherId},addressee_id.eq.${myId})`
+    )
+    .maybeSingle();
+  if (!data) return { status: 'none' };
+  if (data.status === 'accepted') return { status: 'friends' };
+  return data.requester_id === myId
+    ? { status: 'sent' }
+    : { status: 'received', friendshipId: data.id };
+}
+
 // 'friends' when they had already asked you: their request is accepted
 // instead (how two people in Quiet mode add each other).
 export type FriendRequestResult = { result: 'requested' | 'friends' } | { error: string };

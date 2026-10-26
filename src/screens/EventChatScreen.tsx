@@ -8,6 +8,7 @@ import {
   Animated,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -16,26 +17,37 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useFocusEffect } from '@react-navigation/native';
 import Avatar from '../components/Avatar';
+import ConfirmDialog from '../components/ConfirmDialog';
 import PersonActionsSheet, { ActionsPerson } from '../components/PersonActionsSheet';
-import { AlertCircleIcon, BellIcon, BellOffIcon, SendIcon } from '../components/icons';
+import { AlertCircleIcon, BellIcon, BellOffIcon, CloseIcon, SendIcon } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useUnread } from '../context/UnreadContext';
 import { useKeyboardShift } from '../hooks/useKeyboardShift';
 import {
-  ChatMember,
   ChatRoster,
   loadChatRoster,
   loadMessages,
   loadSenderNames,
   sendMessage,
   subscribeToMessages,
+  canStillEdit,
+  deleteMessage,
+  editMessage,
 } from '../lib/chat';
+import {
+  ChatReads,
+  loadChatReads,
+  markChatReadShared,
+  seenPositions,
+  subscribeToChatReads,
+} from '../lib/chatReads';
 import { formatMessageTime } from '../lib/dates';
+import { rsvpLabel } from '../lib/rsvpLabels';
 import { hapticLight } from '../lib/haptics';
 import { loadBlockedIds } from '../lib/safety';
 import { getMutedChats, markChatSeen, setActiveChat, setChatMuted } from '../lib/notifications';
@@ -47,14 +59,6 @@ type Props = NativeStackScreenProps<AppStackParamList, 'EventChat'>;
 
 // A pause this long starts a new run, so the time shows again.
 const GROUP_GAP_MS = 10 * 60 * 1000;
-
-// How the sender answered, shown beside their name.
-const RSVP_LABEL: Record<NonNullable<ChatMember['status']>, string> = {
-  host: 'Host',
-  going: 'Going',
-  maybe: 'Maybe',
-  not_going: "Can't go",
-};
 
 export default function EventChatScreen({ navigation, route }: Props) {
   const { eventId } = route.params;
@@ -68,6 +72,8 @@ export default function EventChatScreen({ navigation, route }: Props) {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [roster, setRoster] = useState<ChatRoster>({});
+  // The event is over, so answers read "Went" and "Didn't go".
+  const [ended, setEnded] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -75,8 +81,17 @@ export default function EventChatScreen({ navigation, route }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  // When each member last read this chat, for "Seen by".
+  const [reads, setReads] = useState<ChatReads>({});
   // The message being acted on (long-press), with its sender.
   const [acting, setActing] = useState<{ message: Message; person: ActionsPerson } | null>(null);
+  const insets = useSafeAreaInsets();
+  // Long-press menu on your own message (Edit, Delete).
+  const [ownMenu, setOwnMenu] = useState<Message | null>(null);
+  // The message whose text is in the box being edited, if any.
+  const [editing, setEditing] = useState<Message | null>(null);
+  // Waiting on "Delete this message?".
+  const [confirmDeleteMsg, setConfirmDeleteMsg] = useState<Message | null>(null);
   // Read inside the realtime handler, which is created once.
   const rosterRef = useRef<ChatRoster>({});
 
@@ -143,19 +158,24 @@ export default function EventChatScreen({ navigation, route }: Props) {
   }, []);
 
   const loadData = useCallback(async () => {
-    const [rows, members] = await Promise.all([
+    const [rows, { members, ended: over }, readTimes] = await Promise.all([
       loadMessages(eventId),
       loadChatRoster(eventId),
+      loadChatReads(eventId),
     ]);
     rosterRef.current = members;
     setRoster(members);
+    setEnded(over);
     setMessages(rows);
+    setReads(readTimes);
     setLoaded(true);
+    // Tell the others this person has read up to now.
+    markChatReadShared(eventId);
     if (rows.length > 0) {
       markChatSeen(rows[rows.length - 1].created_at);
       markRead(eventId, rows[rows.length - 1].created_at);
     }
-    await learnSenders(rows.map((m) => m.sender_id));
+    await learnSenders([...rows.map((m) => m.sender_id), ...Object.keys(readTimes)]);
   }, [eventId, learnSenders, markRead]);
 
   useEffect(() => {
@@ -179,13 +199,28 @@ export default function EventChatScreen({ navigation, route }: Props) {
       });
       markChatSeen(message.created_at);
       markRead(eventId, message.created_at);
+      if (message.sender_id !== userId) markChatReadShared(eventId);
       learnSenders([message.sender_id]);
+    },
+    // An edit: new text, same place.
+    (updated) =>
+      setMessages((prev) => prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m))),
+    // A deletion, by its sender or the host.
+    (deletedId) => setMessages((prev) => prev.filter((m) => m.id !== deletedId))
+    );
+
+    const readsChannel = subscribeToChatReads(eventId, (readerId, lastReadAt) => {
+      setReads((prev) =>
+        prev[readerId] && prev[readerId] >= lastReadAt ? prev : { ...prev, [readerId]: lastReadAt }
+      );
+      learnSenders([readerId]);
     });
 
     return () => {
       channel.unsubscribe();
+      readsChannel.unsubscribe();
     };
-  }, [eventId, loadData, learnSenders, markRead]);
+  }, [eventId, userId, loadData, learnSenders, markRead]);
 
   const handleRefresh = useCallback(async () => {
     hapticLight();
@@ -197,9 +232,61 @@ export default function EventChatScreen({ navigation, route }: Props) {
     }
   }, [loadData]);
 
+  // The host can delete anyone's message (the server checks it too).
+  const isHost = roster[userId]?.status === 'host';
+
+  const startEdit = (message: Message) => {
+    setEditing(message);
+    setDraft(message.body);
+    setError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setDraft('');
+  };
+
+  const saveEdit = async (message: Message, body: string) => {
+    if (body === message.body) {
+      cancelEdit();
+      return;
+    }
+    setSending(true);
+    setError(null);
+    const result = await editMessage(message.id, body);
+    setSending(false);
+    if ('error' in result) {
+      setError(result.error);
+      return;
+    }
+    hapticLight();
+    setMessages((prev) =>
+      prev.map((m) => (m.id === message.id ? { ...m, body, edited_at: result.editedAt } : m))
+    );
+    cancelEdit();
+  };
+
+  const confirmDelete = async () => {
+    const message = confirmDeleteMsg;
+    setConfirmDeleteMsg(null);
+    if (!message) return;
+    const err = await deleteMessage(message.id);
+    if (err) {
+      setError(err);
+      return;
+    }
+    hapticLight();
+    setMessages((prev) => prev.filter((m) => m.id !== message.id));
+    if (editing?.id === message.id) cancelEdit();
+  };
+
   const submit = async () => {
     const body = draft.trim();
     if (!body || sending) return;
+    if (editing) {
+      await saveEdit(editing, body);
+      return;
+    }
 
     // Optimistic message creation
     const tempId = `temp-${Date.now()}`;
@@ -233,6 +320,67 @@ export default function EventChatScreen({ navigation, route }: Props) {
     [messages, blockedIds]
   );
 
+  // Each person's "seen" mark sits under the last message they've read
+  // (lib/seenBy). Blocked people don't show.
+  const seenAt = useMemo(() => {
+    const visible: ChatReads = {};
+    for (const [id, at] of Object.entries(reads)) if (!blockedIds.has(id)) visible[id] = at;
+    return seenPositions(visible, rows, userId);
+  }, [reads, rows, userId, blockedIds]);
+  // Which messages' seen rows are opened up to show everyone.
+  const [openSeen, setOpenSeen] = useState<Set<string>>(new Set());
+  const toggleSeen = (messageId: string) =>
+    setOpenSeen((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+
+  // Up to three faces show as they are; more fold into two faces and "+N".
+  // Tapping any seen row opens it up: every face, with their names on the
+  // line under. Tapping again folds it back.
+  const renderSeen = (item: Message, mine: boolean) => {
+    const ids = seenAt.get(item.id);
+    if (!ids || ids.length === 0) return null;
+    const open = openSeen.has(item.id);
+    const folded = ids.length > 3 && !open;
+    const shown = folded ? ids.slice(0, 2) : ids;
+    const names = ids.map((id) => roster[id]?.name ?? 'Someone');
+    return (
+      <Pressable
+        onPress={() => toggleSeen(item.id)}
+        hitSlop={8}
+        style={[styles.seenBlock, mine ? styles.seenMine : styles.seenTheirs]}
+        accessibilityRole="button"
+        accessibilityLabel={`Seen by ${names.join(', ')}`}
+        accessibilityState={{ expanded: open }}
+      >
+        <View style={[styles.seenRow, mine && styles.seenRowMine]}>
+          {shown.map((id) => (
+            <Avatar
+              key={id}
+              userId={id}
+              name={roster[id]?.name}
+              avatarUrl={roster[id]?.avatarUrl}
+              size={18}
+            />
+          ))}
+          {folded && (
+            <View style={styles.seenMore}>
+              <Text style={styles.seenMoreText}>+{ids.length - 2}</Text>
+            </View>
+          )}
+        </View>
+        {open && (
+          <Text style={[styles.seenNames, mine && { textAlign: 'right' }]}>
+            {names.join(', ')}
+          </Text>
+        )}
+      </Pressable>
+    );
+  };
+
   const renderItem = ({ item, index }: { item: Message; index: number }) => {
     const mine = item.sender_id === userId;
     // In an inverted list the earlier message is index + 1 and the later one is index - 1
@@ -252,12 +400,27 @@ export default function EventChatScreen({ navigation, route }: Props) {
     if (mine) {
       return (
         <View style={styles.mineGroup}>
-          <View style={styles.bubbleMine}>
+          <Pressable
+            style={[styles.bubbleMine, editing?.id === item.id && styles.bubbleEditing]}
+            delayLongPress={350}
+            onLongPress={() => {
+              // Not until the server has it (it has no real id yet).
+              if (item.id.startsWith('temp-')) return;
+              hapticLight();
+              setOwnMenu(item);
+            }}
+            accessibilityHint="Long press to edit or delete"
+          >
             <Text style={[type.body, styles.bubbleMineText]}>{item.body}</Text>
-          </View>
-          {endsGroup && (
-            <Text style={styles.timeMine}>{formatMessageTime(item.created_at)}</Text>
+          </Pressable>
+          {(endsGroup || item.edited_at) && (
+            <Text style={styles.timeMine}>
+              {item.edited_at ? 'Edited' : ''}
+              {item.edited_at && endsGroup ? ' · ' : ''}
+              {endsGroup ? formatMessageTime(item.created_at) : ''}
+            </Text>
           )}
+          {renderSeen(item, true)}
         </View>
       );
     }
@@ -271,7 +434,7 @@ export default function EventChatScreen({ navigation, route }: Props) {
           <View style={styles.senderHeader}>
             <Text style={styles.senderName}>{sender?.name ?? 'Someone'}</Text>
             {status && (
-              <Text style={styles.senderStatus}> · {RSVP_LABEL[status]}</Text>
+              <Text style={styles.senderStatus}> · {rsvpLabel(status, ended)}</Text>
             )}
           </View>
         )}
@@ -304,11 +467,16 @@ export default function EventChatScreen({ navigation, route }: Props) {
             >
               <Text style={[type.body, styles.bubbleTheirsText]}>{item.body}</Text>
             </Pressable>
-            {endsGroup && (
-              <Text style={styles.timeTheirs}>{formatMessageTime(item.created_at)}</Text>
+            {(endsGroup || item.edited_at) && (
+              <Text style={styles.timeTheirs}>
+                {item.edited_at ? 'Edited' : ''}
+                {item.edited_at && endsGroup ? ' · ' : ''}
+                {endsGroup ? formatMessageTime(item.created_at) : ''}
+              </Text>
             )}
           </View>
         </View>
+        {renderSeen(item, false)}
       </View>
     );
   };
@@ -337,6 +505,7 @@ export default function EventChatScreen({ navigation, route }: Props) {
           inverted
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
+          extraData={seenAt}
           contentContainerStyle={styles.list}
           keyboardDismissMode="interactive"
           refreshControl={
@@ -358,6 +527,14 @@ export default function EventChatScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {editing && (
+        <View style={styles.editBar}>
+          <Text style={styles.editBarText}>Editing message</Text>
+          <Pressable onPress={cancelEdit} hitSlop={10} accessibilityRole="button" accessibilityLabel="Cancel editing">
+            <CloseIcon size={16} color={colors.inkMuted} />
+          </Pressable>
+        </View>
+      )}
       <View style={styles.composer}>
         <TextInput
           style={styles.input}
@@ -419,8 +596,70 @@ export default function EventChatScreen({ navigation, route }: Props) {
               }
             : undefined
         }
+        // The host can take anyone's message down.
+        extra={
+          acting && isHost
+            ? { label: 'Delete message', onPress: () => setConfirmDeleteMsg(acting.message) }
+            : undefined
+        }
         onClose={() => setActing(null)}
         onBlocked={refreshBlocked}
+      />
+
+      {/* Your own message: edit (for 10 minutes) or delete. Faded in over the
+          scrim, like every other menu. */}
+      <Modal visible={!!ownMenu} transparent animationType="fade" onRequestClose={() => setOwnMenu(null)}>
+        <View style={styles.menuOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOwnMenu(null)} accessibilityLabel="Close" />
+          <View style={[styles.menuCard, { marginBottom: insets.bottom + spacing.xl }]} accessibilityViewIsModal>
+            {ownMenu && canStillEdit(ownMenu) && (
+              <>
+                <Pressable
+                  style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}
+                  onPress={() => {
+                    const m = ownMenu;
+                    setOwnMenu(null);
+                    startEdit(m);
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={type.body}>Edit message</Text>
+                </Pressable>
+                <View style={styles.menuDivider} />
+              </>
+            )}
+            <Pressable
+              style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}
+              onPress={() => {
+                const m = ownMenu;
+                setOwnMenu(null);
+                // After the menu has faded; iOS drops a dialog opened mid-close.
+                setTimeout(() => setConfirmDeleteMsg(m), 350);
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={[type.body, { color: colors.danger }]}>Delete message</Text>
+            </Pressable>
+            <View style={styles.menuDivider} />
+            <Pressable
+              style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}
+              onPress={() => setOwnMenu(null)}
+              accessibilityRole="button"
+            >
+              <Text style={[type.body, { color: colors.inkMuted }]}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <ConfirmDialog
+        visible={!!confirmDeleteMsg}
+        title="Delete this message?"
+        message="It’s removed for everyone in the chat."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmDeleteMsg(null)}
       />
     </SafeAreaView>
   );
@@ -481,6 +720,52 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     bubbleMineText: {
       color: c.onAccent,
+    },
+    // The whole seen mark: faces, and names under them when opened.
+    seenBlock: {
+      marginTop: 2,
+      marginBottom: spacing.xs,
+      maxWidth: '80%',
+    },
+    // Under my bubbles on the right; under theirs, in line with the bubbles.
+    seenMine: {
+      alignSelf: 'flex-end',
+      alignItems: 'flex-end',
+    },
+    seenTheirs: {
+      alignSelf: 'flex-start',
+      alignItems: 'flex-start',
+      marginLeft: 34,
+    },
+    seenRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      gap: 3,
+    },
+    seenRowMine: {
+      justifyContent: 'flex-end',
+    },
+    seenNames: {
+      ...t.caption,
+      fontSize: 11,
+      color: c.inkMuted,
+      marginTop: 3,
+    },
+    seenMore: {
+      height: 18,
+      minWidth: 18,
+      paddingHorizontal: 5,
+      borderRadius: 9,
+      backgroundColor: c.line,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    seenMoreText: {
+      ...t.caption,
+      fontSize: 10,
+      fontFamily: fonts.bodySemiBold,
+      color: c.ink,
     },
     timeMine: {
       ...t.caption,
@@ -562,6 +847,41 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       ...t.caption,
       color: c.danger,
       flex: 1,
+    },
+    // Your bubble while its text is in the box being edited.
+    bubbleEditing: {
+      opacity: 0.6,
+    },
+    editBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.line,
+      backgroundColor: c.paper,
+    },
+    editBarText: {
+      ...t.caption,
+      color: c.inkMuted,
+    },
+    menuOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: c.scrim },
+    menuCard: {
+      marginHorizontal: spacing.md,
+      backgroundColor: c.paper,
+      borderRadius: radii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.line,
+      paddingHorizontal: spacing.lg,
+    },
+    menuRow: {
+      paddingVertical: spacing.md,
+      alignItems: 'center',
+    },
+    menuDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: c.line,
     },
     composer: {
       flexDirection: 'row',

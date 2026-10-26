@@ -1,4 +1,4 @@
-import { eventEndsAt, isRollOpen } from './coverPhoto';
+import { eventStartsAt, isRollOpen } from './coverPhoto';
 import { supabase } from './supabase';
 import { getChatReadMap, getPhotoReadMap } from './unread';
 
@@ -37,14 +37,14 @@ export async function loadEventActivity(
 
     const { data: photos } = await supabase
       .from('photos')
-      .select('id, uploader_id, created_at, events!inner(ends_at)')
+      .select('id, uploader_id, created_at, events!inner(starts_at)')
       .eq('event_id', eventId)
       .neq('uploader_id', userId)
       .order('created_at', { ascending: false })
       .limit(30);
 
     // Nothing to report until the roll opens (a host may add a cover early).
-    const rollOpen = photos?.[0] ? isRollOpen(eventEndsAt(photos[0].events)) : false;
+    const rollOpen = photos?.[0] ? isRollOpen(eventStartsAt(photos[0].events)) : false;
 
     if (photos && photos.length > 0 && rollOpen) {
       const now = Date.now();

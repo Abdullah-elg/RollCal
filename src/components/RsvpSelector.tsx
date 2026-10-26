@@ -1,29 +1,30 @@
 // The Going, Maybe and Can't go buttons. Shows the current answer and calls
 // onSelect for a new one. Saving the answer is up to the screen using it.
+// Once the event is over (ended) the answer is final: the buttons read in the
+// past tense and can't be pressed, but aren't dimmed, so the answer stays clear.
 
 import { useEffect, useMemo, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { hapticLight, hapticMedium } from '../lib/haptics';
 import { fonts, Palette, radii, spacing } from '../theme';
+import { rsvpLabel } from '../lib/rsvpLabels';
 import { RsvpStatus } from '../types';
 
-const OPTIONS: { value: RsvpStatus; label: string }[] = [
-  { value: 'going', label: 'Going' },
-  { value: 'maybe', label: 'Maybe' },
-  { value: 'not_going', label: "Can't go" },
-];
+const OPTIONS: RsvpStatus[] = ['going', 'maybe', 'not_going'];
 
 type Props = {
   value: RsvpStatus | null;
   onSelect: (status: RsvpStatus) => void;
   disabled?: boolean;
+  ended?: boolean;
 };
 
 function RsvpOption({
   opt,
   selected,
   disabled,
+  ended,
   onPress,
   styles,
   colors,
@@ -31,6 +32,7 @@ function RsvpOption({
   opt: { value: RsvpStatus; label: string };
   selected: boolean;
   disabled?: boolean;
+  ended?: boolean;
   onPress: () => void;
   styles: ReturnType<typeof makeStyles>;
   colors: Palette;
@@ -82,7 +84,9 @@ function RsvpOption({
   return (
     <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
       <Pressable
-        disabled={disabled}
+        disabled={disabled || ended}
+        accessibilityRole="button"
+        accessibilityState={{ selected, disabled: disabled || ended }}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         onPress={() => {
@@ -111,18 +115,19 @@ function RsvpOption({
   );
 }
 
-export default function RsvpSelector({ value, onSelect, disabled }: Props) {
+export default function RsvpSelector({ value, onSelect, disabled, ended }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.row}>
-      {OPTIONS.map((opt) => (
+      {OPTIONS.map((status) => (
         <RsvpOption
-          key={opt.value}
-          opt={opt}
-          selected={value === opt.value}
+          key={status}
+          opt={{ value: status, label: rsvpLabel(status, !!ended) }}
+          selected={value === status}
           disabled={disabled}
-          onPress={() => onSelect(opt.value)}
+          ended={ended}
+          onPress={() => onSelect(status)}
           styles={styles}
           colors={colors}
         />

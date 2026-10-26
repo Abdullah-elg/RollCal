@@ -1,14 +1,14 @@
 import { supabase } from './supabase';
 
-// The shared roll opens when an event ends and takes uploads for 48 hours.
-// The host can close it early, and reopen it for 24 hours at a time, as many
-// times as they like, even after the 48 hours are up.
+// The shared roll opens when an event starts and takes uploads until 48
+// hours after it ends. The host can close it early, and reopen it for 24
+// hours at a time, as many times as they like, even after that.
 
 const HOUR = 60 * 60 * 1000;
 const UPLOAD_WINDOW_MS = 48 * HOUR;
 const REOPEN_MS = 24 * HOUR;
 
-type RollEvent = { ends_at: string; uploads_reopened_until?: string | null };
+type RollEvent = { starts_at: string; ends_at: string; uploads_reopened_until?: string | null };
 
 export function rollClosesAt(event: RollEvent): number {
   const window = new Date(event.ends_at).getTime() + UPLOAD_WINDOW_MS;
@@ -19,13 +19,13 @@ export function rollClosesAt(event: RollEvent): number {
 }
 
 export function rollState(event: RollEvent, uploadsClosed: boolean, now = Date.now()) {
-  const endsAt = new Date(event.ends_at).getTime();
+  const opensAt = new Date(event.starts_at).getTime();
   const closesAt = rollClosesAt(event);
-  const beforeEnd = now < endsAt;
+  const beforeOpen = now < opensAt;
   // Inside the window the host can still toggle uploads off and on.
-  const withinWindow = !beforeEnd && now <= closesAt;
+  const withinWindow = !beforeOpen && now <= closesAt;
   return {
-    beforeEnd,
+    beforeOpen,
     withinWindow,
     uploadOpen: withinWindow && !uploadsClosed,
     closesAt,

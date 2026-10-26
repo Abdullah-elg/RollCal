@@ -1,5 +1,8 @@
-# Cloudflare Pages: every invite link is served by the one join page.
-/join/*  /join/index.html  200
+# Cloudflare Pages: every invite link is served by the one join page. The
+# target is /join/, not /join/index.html: Pages redirects that address to
+# /join/, and a rewrite to an address that redirects quietly falls back to
+# the home page, which is what invite links showed before.
+/join/*  /join/  200
 
 # Beta install pages, whatever the capitalisation people type. No rules with a
 # trailing slash: those could send /ios/ back to itself.

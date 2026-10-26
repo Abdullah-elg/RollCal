@@ -30,12 +30,20 @@ export type ExpoMessage = {
   priority: 'high' | 'default';
   // Groups one event's chat messages together on iOS.
   threadId?: string;
+  // The number on the app icon: what's waiting for this person.
+  badge?: number;
 };
 
 // Expo takes at most 100 messages per request.
 export const EXPO_BATCH = 100;
 
-export function buildMessages(rows: OutboxRow[], tokens: TokenRow[]): ExpoMessage[] {
+// badges: user id -> the count for their app icon (see badge_counts in
+// supabase/badge.sql). People missing from it get no badge change.
+export function buildMessages(
+  rows: OutboxRow[],
+  tokens: TokenRow[],
+  badges: Record<string, number> = {}
+): ExpoMessage[] {
   const byUser = new Map<string, TokenRow[]>();
   for (const t of tokens) {
     const list = byUser.get(t.user_id) ?? [];
@@ -59,6 +67,7 @@ export function buildMessages(rows: OutboxRow[], tokens: TokenRow[]): ExpoMessag
         channelId: 'default',
         priority: row.kind === 'chatMessage' ? 'high' : 'default',
         ...(row.event_id ? { threadId: row.event_id } : {}),
+        ...(row.user_id in badges ? { badge: badges[row.user_id] } : {}),
       });
     }
   }

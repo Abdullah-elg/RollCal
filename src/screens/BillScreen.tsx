@@ -35,6 +35,7 @@ import {
   billTotal,
   deleteBill,
   draftFromBill,
+  listEventBills,
   loadBill,
 } from '../lib/bills';
 import { itemCoverage, ItemPick, MAX_SPLIT, Quote, quotePicks } from '../lib/billSplit';
@@ -94,6 +95,48 @@ function quoteOf(bill: Bill, items: BillItem[], picks: Record<string, ItemPick>,
   }
 }
 
+// Another bill you could pay in the same go: same person paid, same event,
+// same currency, and you've picked what you had so the amount is known.
+type OtherOwed = {
+  billId: string;
+  title: string;
+  cents: number;
+  picks: Record<string, ItemPick>;
+};
+
+// The other bills on this event you owe the same person on. Left out: bills
+// you haven't picked your items on yet, ones already paid up, and ones where
+// a payment of yours is still waiting to be marked received.
+async function loadOtherOwed(current: Bill, myId: string, going: number): Promise<OtherOwed[]> {
+  const summaries = await listEventBills(current.event_id);
+  const candidates = summaries.filter(
+    (s) =>
+      s.bill.id !== current.id &&
+      s.bill.created_by === current.created_by &&
+      s.bill.status !== 'draft' &&
+      s.bill.currency === current.currency &&
+      s.totalCents > s.paidCents
+  );
+  const found = await Promise.all(
+    candidates.map(async (s): Promise<OtherOwed | null> => {
+      const [detail, picks, payments] = await Promise.all([
+        loadBill(s.bill.id),
+        loadPicks(myId, s.bill.id),
+        loadPayments(s.bill.id),
+      ]);
+      if (!detail) return null;
+      if (payments.some((p) => p.user_id === myId && p.status === 'sent')) return null;
+      const quote = quoteOf(detail.bill, detail.items, picks, going);
+      const left = leftToPay(billTotal(detail.bill, detail.items), payments);
+      const cents = Math.min(quote.totalCents, left);
+      return cents > 0
+        ? { billId: s.bill.id, title: detail.bill.title || 'Bill', cents, picks }
+        : null;
+    })
+  );
+  return found.filter((o): o is OtherOwed => o !== null);
+}
+
 export default function BillScreen({ navigation, route }: Props) {
   const { billId } = route.params;
   const { session } = useAuth();
@@ -114,6 +157,11 @@ export default function BillScreen({ navigation, route }: Props) {
   // other chips on that item stop looking selected meanwhile.
   const [editingChip, setEditingChip] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // Other bills from the same person, offered when sending ("Pay together?").
+  const [offer, setOffer] = useState<OtherOwed[] | null>(null);
+  // Set once they chose to pay those too: the send dialog then covers them all.
+  const [bundle, setBundle] = useState<OtherOwed[] | null>(null);
+  const [checkingOthers, setCheckingOthers] = useState(false);
   const [takeBack, setTakeBack] = useState<Payment | null>(null);
   const [turnDown, setTurnDown] = useState<Payment | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -293,6 +341,52 @@ export default function BillScreen({ navigation, route }: Props) {
       },
       true
     );
+
+  // This bill's part plus each other bill's, sent as one payment per bill
+  // (so each bill keeps its own record), stopping at the first that fails.
+  const submitBundle = (others: OtherOwed[], thisCents: number) =>
+    run(
+      'send',
+      async () => {
+        const first = await sendPayment(bill.id, thisCents, picks, goingCount);
+        if (first) return first;
+        for (const o of others) {
+          const failed = await sendPayment(o.billId, o.cents, o.picks, goingCount);
+          if (failed) return `${o.title}: ${failed}`;
+          await savePicks(myId, o.billId, {});
+        }
+        return null;
+      },
+      () => {
+        hapticSuccess();
+        setSending(false);
+        setBundle(null);
+        changePicks({});
+      },
+      true
+    );
+
+  // Before sending, see whether there are other bills from the same person
+  // to pay in the same go. Only when this bill's own amount is known.
+  const startSending = async () => {
+    setBundle(null);
+    if (isCreator || quote.totalCents <= 0) {
+      setSending(true);
+      return;
+    }
+    setCheckingOthers(true);
+    const others = await loadOtherOwed(bill, myId, goingCount).catch(() => []);
+    setCheckingOthers(false);
+    if (others.length > 0) setOffer(others);
+    else setSending(true);
+  };
+
+  // iOS drops a modal opened while another is still closing.
+  const afterOffer = (others: OtherOwed[] | null) => {
+    setOffer(null);
+    setBundle(others);
+    setTimeout(() => setSending(true), 350);
+  };
 
   // The success haptic is saved for the payment that settles the bill.
   const receive = (p: Payment, isReceived: boolean) =>
@@ -716,7 +810,7 @@ export default function BillScreen({ navigation, route }: Props) {
       />
       <SendDialog
         visible={sending}
-        title={isCreator ? 'Add your part' : 'Send a payment'}
+        title={isCreator ? 'Add your part' : bundle ? `Pay ${creatorName} for ${bundle.length + 1} bills` : 'Send a payment'}
         helper={
           isCreator
             ? 'This counts toward the bill straight away.'
@@ -730,8 +824,39 @@ export default function BillScreen({ navigation, route }: Props) {
         left={left}
         fmt={fmt}
         working={busy.includes('send')}
-        onSubmit={submitPayment}
-        onCancel={() => setSending(false)}
+        breakdown={
+          bundle
+            ? [
+                { label: bill.title || 'This bill', cents: Math.min(quote.totalCents, left) },
+                ...bundle.map((o) => ({ label: o.title, cents: o.cents })),
+              ]
+            : undefined
+        }
+        onSubmit={(cents) =>
+          bundle ? submitBundle(bundle, Math.min(quote.totalCents, left)) : submitPayment(cents)
+        }
+        onCancel={() => {
+          setSending(false);
+          setBundle(null);
+        }}
+        styles={styles}
+      />
+
+      <OfferDialog
+        visible={!!offer}
+        payee={creatorName}
+        lines={
+          offer
+            ? [
+                { label: bill.title || 'This bill', cents: Math.min(quote.totalCents, left) },
+                ...offer.map((o) => ({ label: o.title, cents: o.cents })),
+              ]
+            : []
+        }
+        fmt={fmt}
+        onTogether={() => afterOffer(offer)}
+        onJustThis={() => afterOffer(null)}
+        onClose={() => setOffer(null)}
         styles={styles}
       />
 
@@ -765,8 +890,9 @@ export default function BillScreen({ navigation, route }: Props) {
                   ? `Send ${fmt(quote.totalCents)} to ${creatorName}`
                   : 'Send a payment'
               }
-              disabled={busy.includes('send')}
-              onPress={() => setSending(true)}
+              disabled={busy.includes('send') || checkingOthers}
+              loading={checkingOthers}
+              onPress={startSending}
             />
           </View>
           {isCreator && (
@@ -802,6 +928,7 @@ function SendDialog({
   working,
   methods,
   payee,
+  breakdown,
   onSubmit,
   onCancel,
   styles,
@@ -817,11 +944,15 @@ function SendDialog({
   // Where the money can go, each with a Pay button that copies the handle.
   methods: PaymentMethod[];
   payee: string;
+  // Paying several bills in one go: each bill's part, shown instead of the
+  // amount field, and their total is what gets sent.
+  breakdown?: { label: string; cents: number }[];
   onSubmit: (cents: number) => Promise<string | null>;
   onCancel: () => void;
   styles: Styles;
 }) {
   const { type } = useTheme();
+  const bundleTotal = breakdown?.reduce((sum, b) => sum + b.cents, 0) ?? null;
   const [text, setText] = useState(initial);
   const [problem, setProblem] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -847,7 +978,7 @@ function SendDialog({
     setCopiedId(m.id);
   };
 
-  const typed = parseCents(text);
+  const typed = bundleTotal ?? parseCents(text);
   const send = typed && typed > 0 ? `send ${fmt(typed)}` : 'send it';
   const copiedMessage = (m: PaymentMethod) =>
     m.type === 'interac'
@@ -859,6 +990,11 @@ function SendDialog({
           : `Copied. Open ${methodName(m)} and ${send}.`;
 
   const submit = async () => {
+    if (bundleTotal !== null) {
+      setProblem(null);
+      setProblem(await onSubmit(bundleTotal));
+      return;
+    }
     const cents = parseCents(text);
     if (cents === null || cents <= 0 || cents > left) {
       setProblem(`Enter an amount up to ${fmt(left)}.`);
@@ -876,15 +1012,32 @@ function SendDialog({
       >
         <View style={styles.dialog}>
           <Text style={type.h2}>{title}</Text>
-          <TextInput
-            value={text}
-            onChangeText={(t) => setText(t.replace(/[^\d.]/g, '').slice(0, 9))}
-            keyboardType="decimal-pad"
-            placeholder="0.00"
-            placeholderTextColor={styles.splitPlaceholder.color}
-            style={styles.dialogInput}
-            accessibilityLabel="Amount"
-          />
+          {breakdown ? (
+            <View style={styles.bundleList}>
+              {breakdown.map((b, i) => (
+                <View key={i} style={styles.summaryRow}>
+                  <Text style={[type.bodyMuted, { flex: 1 }]} numberOfLines={1}>
+                    {b.label}
+                  </Text>
+                  <Text style={type.bodyMuted}>{fmt(b.cents)}</Text>
+                </View>
+              ))}
+              <View style={styles.yourTotal}>
+                <Text style={type.body}>Total</Text>
+                <Text style={styles.barTotal}>{fmt(bundleTotal ?? 0)}</Text>
+              </View>
+            </View>
+          ) : (
+            <TextInput
+              value={text}
+              onChangeText={(t) => setText(t.replace(/[^\d.]/g, '').slice(0, 9))}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor={styles.splitPlaceholder.color}
+              style={styles.dialogInput}
+              accessibilityLabel="Amount"
+            />
+          )}
           {problem ? <ErrorText message={problem} /> : null}
           {methods.length > 0 && (
             <View style={styles.dialogMethods}>
@@ -934,6 +1087,77 @@ function SendDialog({
           </View>
         </View>
       </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// "You also owe Amr on 2 other bills": pay them all in one go, or just this
+// one. Closing it (back, or tapping outside) does neither.
+function OfferDialog({
+  visible,
+  payee,
+  lines,
+  fmt,
+  onTogether,
+  onJustThis,
+  onClose,
+  styles,
+}: {
+  visible: boolean;
+  payee: string;
+  lines: { label: string; cents: number }[];
+  fmt: (cents: number) => string;
+  onTogether: () => void;
+  onJustThis: () => void;
+  onClose: () => void;
+  styles: Styles;
+}) {
+  const { type } = useTheme();
+  const others = lines.length - 1;
+  const total = lines.reduce((sum, l) => sum + l.cents, 0);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
+        <View style={styles.dialog}>
+          <Text style={type.h2}>
+            You also owe {payee} on {others} other {others === 1 ? 'bill' : 'bills'}
+          </Text>
+          <Text style={[type.bodyMuted, { marginTop: spacing.xs }]}>
+            Pay them together in one payment?
+          </Text>
+          <View style={styles.bundleList}>
+            {lines.map((l, i) => (
+              <View key={i} style={styles.summaryRow}>
+                <Text style={[type.bodyMuted, { flex: 1 }]} numberOfLines={1}>
+                  {l.label}
+                </Text>
+                <Text style={type.bodyMuted}>{fmt(l.cents)}</Text>
+              </View>
+            ))}
+            <View style={styles.yourTotal}>
+              <Text style={type.body}>Together</Text>
+              <Text style={styles.barTotal}>{fmt(total)}</Text>
+            </View>
+          </View>
+          <View style={styles.dialogButtons}>
+            <Pressable
+              style={({ pressed }) => [styles.dialogCancel, pressed && { opacity: 0.7 }]}
+              onPress={onJustThis}
+              accessibilityRole="button"
+            >
+              <Text style={styles.dialogCancelText}>Just this bill</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.dialogConfirm, pressed && { opacity: 0.7 }]}
+              onPress={onTogether}
+              accessibilityRole="button"
+            >
+              <Text style={styles.dialogConfirmText}>Pay together</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -1207,6 +1431,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       marginTop: spacing.sm,
     },
     dialogButtons: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+    bundleList: { marginTop: spacing.md, gap: spacing.xs },
     dialogCancel: {
       flex: 1,
       height: 44,

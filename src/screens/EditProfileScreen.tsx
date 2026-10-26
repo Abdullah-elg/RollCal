@@ -148,6 +148,7 @@ export default function EditProfileScreen({ navigation }: Props) {
             <Avatar
               userId={profile?.id}
               name={profile?.display_name}
+              username={profile?.username}
               avatarUrl={profile?.avatar_url}
               size={84}
             />

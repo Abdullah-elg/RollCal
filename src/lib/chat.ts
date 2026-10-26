@@ -1,5 +1,6 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Message, RsvpStatus } from '../types';
+import { eventEnded } from './rsvpLabels';
 import { supabase } from './supabase';
 
 // Event chat. RLS does the gatekeeping on both ends: only members can read
@@ -33,29 +34,77 @@ export async function sendMessage(
   return error ? error.message : null;
 }
 
-// Live inserts for one event. Returns the channel so the caller can
-// unsubscribe on unmount.
+// How long after sending a message its sender can still edit it. The server
+// enforces it (edit_message in supabase/message-edits.sql); the app uses it
+// to decide whether to offer Edit.
+export const EDIT_WINDOW_MS = 10 * 60 * 1000;
+
+export const canStillEdit = (message: Message, now = Date.now()) =>
+  now - new Date(message.created_at).getTime() < EDIT_WINDOW_MS;
+
+// Changes the text of your own message. Returns when it was edited.
+export async function editMessage(
+  messageId: string,
+  body: string
+): Promise<{ editedAt: string } | { error: string }> {
+  const { data, error } = await supabase.rpc('edit_message', {
+    p_message: messageId,
+    p_body: body.trim(),
+  });
+  if (error) {
+    return {
+      error:
+        error.code === '42501'
+          ? 'Messages can only be edited for 10 minutes after sending.'
+          : 'Could not save that. Please try again.',
+    };
+  }
+  return { editedAt: data as string };
+}
+
+// Deletes a message for everyone. Allowed for its sender and the host.
+export async function deleteMessage(messageId: string): Promise<string | null> {
+  const { error } = await supabase.from('messages').delete().eq('id', messageId);
+  return error ? 'Could not delete that. Please try again.' : null;
+}
+
+// Live changes for one event: new messages, edits and deletions. Returns the
+// channel so the caller can unsubscribe on unmount. Deletions can't be
+// filtered by event (they only carry the message id), so the caller ignores
+// ids it doesn't have.
 export function subscribeToMessages(
   eventId: string,
-  onInsert: (message: Message) => void
+  onInsert: (message: Message) => void,
+  onUpdate?: (message: Message) => void,
+  onDelete?: (messageId: string) => void
 ): RealtimeChannel {
+  const filter = `event_id=eq.${eventId}`;
   return supabase
     .channel(`event-chat-${eventId}`)
     .on(
       'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `event_id=eq.${eventId}`,
-      },
+      { event: 'INSERT', schema: 'public', table: 'messages', filter },
       (payload) => onInsert(payload.new as Message)
+    )
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter },
+      (payload) => onUpdate?.(payload.new as Message)
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'messages' },
+      (payload) => {
+        const id = (payload.old as { id?: string })?.id;
+        if (id) onDelete?.(id);
+      }
     )
     .subscribe();
 }
 
 // Who's in the event, with how they answered - so the chat can show whether
-// the person talking is actually coming.
+// the person talking is actually coming. ended says the event is over, so the
+// answers read in the past tense.
 export type ChatMember = {
   name: string;
   avatarUrl?: string | null;
@@ -64,9 +113,11 @@ export type ChatMember = {
 
 export type ChatRoster = Record<string, ChatMember>;
 
-export async function loadChatRoster(eventId: string): Promise<ChatRoster> {
+export async function loadChatRoster(
+  eventId: string
+): Promise<{ members: ChatRoster; ended: boolean }> {
   const [{ data: event }, { data: rsvps }] = await Promise.all([
-    supabase.from('events').select('creator_id').eq('id', eventId).maybeSingle(),
+    supabase.from('events').select('creator_id, ends_at').eq('id', eventId).maybeSingle(),
     supabase.from('rsvps').select('user_id, status').eq('event_id', eventId),
   ]);
 
@@ -76,7 +127,8 @@ export async function loadChatRoster(eventId: string): Promise<ChatRoster> {
       ...(rsvps ?? []).map((r) => r.user_id),
     ]),
   ];
-  if (ids.length === 0) return {};
+  const ended = event ? eventEnded(event.ends_at) : false;
+  if (ids.length === 0) return { members: {}, ended };
 
   const { data: profiles } = await supabase
     .from('profiles')
@@ -95,7 +147,7 @@ export async function loadChatRoster(eventId: string): Promise<ChatRoster> {
         : ((rsvps?.find((r) => r.user_id === id)?.status as RsvpStatus) ?? null);
     roster[id] = { name, avatarUrl, status };
   }
-  return roster;
+  return { members: roster, ended };
 }
 
 // Fallback for someone who has spoken but isn't on the roster any more -

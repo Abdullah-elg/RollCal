@@ -14,10 +14,11 @@ import { supabase } from './supabase';
 export const PURCHASES_LIVE = false;
 
 export const PRO_PRICES = {
-  monthlyUsdCents: 699,
+  monthlyUsdCents: 499,
   yearlyUsdCents: 4999,
   // Yearly against twelve months of monthly.
-  yearlySaving: '40%',
+  // $49.99 against 12 × $4.99 = $59.88 is 16.5%; rounded down, never up.
+  yearlySaving: '16%',
   trialDays: 7,
 };
 

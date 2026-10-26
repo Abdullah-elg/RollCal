@@ -1,5 +1,6 @@
-// The small menu for one person with Report and Block, plus an optional extra
-// action such as the host's "Remove from event". It hands off between
+// The small menu for one person: add them as a friend (when you aren't
+// already), Report and Block, plus an optional extra action such as the
+// host's "Remove from event". It hands off between
 // modals one at a time because iOS drops a modal opened mid-close.
 
 import { useEffect, useMemo, useState } from 'react';
@@ -7,7 +8,13 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { hapticLight } from '../lib/haptics';
+import {
+  acceptFriendRequest,
+  FriendStatus,
+  friendStatusWith,
+  sendFriendRequest,
+} from '../lib/friends';
+import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { blockUser, ReportTarget } from '../lib/safety';
 import { Palette, radii, spacing } from '../theme';
 import ConfirmDialog from './ConfirmDialog';
@@ -41,12 +48,30 @@ export default function PersonActionsSheet({ person, report, extra, onClose, onB
   const [stage, setStage] = useState<Stage>('menu');
   const [error, setError] = useState<string | null>(null);
 
+  // Where you stand with them; null until it's known, so the friend row
+  // doesn't flash a choice that turns out wrong.
+  const [friend, setFriend] = useState<FriendStatus | null>(null);
+  const [friendBusy, setFriendBusy] = useState(false);
+  // Set once they become friends from this menu, to say so.
+  const [becameFriends, setBecameFriends] = useState(false);
+
   // Always open on the list. The person is only null while closed.
   const personId = person?.id;
+  const myId = session?.user.id;
   useEffect(() => {
     setStage('menu');
     setError(null);
-  }, [personId]);
+    setFriend(null);
+    setBecameFriends(false);
+    if (!personId || !myId || personId === myId) return;
+    let live = true;
+    friendStatusWith(myId, personId).then((s) => {
+      if (live) setFriend(s);
+    });
+    return () => {
+      live = false;
+    };
+  }, [personId, myId]);
 
   // Kept after close so the sheets don't blank out while they animate away.
   const [last, setLast] = useState<ActionsPerson | null>(null);
@@ -69,6 +94,41 @@ export default function PersonActionsSheet({ person, report, extra, onClose, onB
     subject: shown.name,
     label: `Report ${shown.name}`,
   };
+
+  const addFriend = async () => {
+    if (!friend || friendBusy) return;
+    setFriendBusy(true);
+    setError(null);
+    let next: FriendStatus | null = null;
+    if (friend.status === 'received') {
+      const err = await acceptFriendRequest(friend.friendshipId);
+      if (err) setError('Could not accept the request. Please try again.');
+      else next = { status: 'friends' };
+    } else {
+      const res = await sendFriendRequest(shown.id);
+      if ('error' in res) setError(res.error);
+      else next = { status: res.result === 'friends' ? 'friends' : 'sent' };
+    }
+    setFriendBusy(false);
+    if (next) {
+      setFriend(next);
+      setBecameFriends(next.status === 'friends');
+      hapticSuccess();
+    }
+  };
+
+  // The friend row's words: an action while there's one to take, then a
+  // quiet note of what happened. Hidden for people who were already friends.
+  const friendLabel =
+    friend?.status === 'none'
+      ? `Add ${shown.name} as a friend`
+      : friend?.status === 'received'
+        ? `Accept ${shown.name}'s friend request`
+        : friend?.status === 'sent'
+          ? 'Friend request sent'
+          : becameFriends
+            ? 'You’re friends now'
+            : null;
 
   const block = async () => {
     if (!session) return;
@@ -98,6 +158,31 @@ export default function PersonActionsSheet({ person, report, extra, onClose, onB
             accessibilityViewIsModal
           >
             <ErrorText message={error} />
+            {friendLabel && (
+              <>
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+                  onPress={addFriend}
+                  disabled={friend?.status === 'sent' || friend?.status === 'friends' || friendBusy}
+                  accessibilityRole="button"
+                >
+                  <Text
+                    style={[
+                      type.body,
+                      {
+                        color:
+                          friend?.status === 'sent' || friend?.status === 'friends'
+                            ? colors.inkMuted
+                            : colors.ink,
+                      },
+                    ]}
+                  >
+                    {friendLabel}
+                  </Text>
+                </Pressable>
+                <View style={styles.divider} />
+              </>
+            )}
             {extra && (
               <>
                 <Pressable

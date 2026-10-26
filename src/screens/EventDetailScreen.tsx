@@ -72,6 +72,7 @@ import {
   setJoinMode,
 } from '../lib/joinRequests';
 import { setRsvp } from '../lib/rsvp';
+import { eventEnded, rsvpLabel } from '../lib/rsvpLabels';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
@@ -84,13 +85,6 @@ type Attendee = {
   name: string;
   avatarUrl?: string | null;
   status: RsvpStatus | 'host';
-};
-
-const STATUS_LABEL: Record<Attendee['status'], string> = {
-  host: 'Host',
-  going: 'Going',
-  maybe: 'Maybe',
-  not_going: "Can't go",
 };
 
 
@@ -182,6 +176,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   const [justRsvpdGoing, setJustRsvpdGoing] = useState(false);
   const [activityLine, setActivityLine] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // The first load couldn't reach the server (no signal, or it timed out).
+  const [loadFailed, setLoadFailed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [savingRsvp, setSavingRsvp] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -221,11 +217,22 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   }, [screenAnim]);
 
   const load = useCallback(async () => {
-    const { data: ev } = await supabase
+    const { data: ev, error: eventError } = await supabase
       .from('events')
       .select('*')
       .eq('id', eventId)
       .maybeSingle();
+
+    // Couldn't reach the server: say so (with Try again) instead of "not
+    // found", but keep showing what's already on screen if there is some.
+    if (eventError) {
+      if (!hasLoadedRef.current) {
+        setLoadFailed(true);
+        setLoaded(true);
+      }
+      return;
+    }
+    setLoadFailed(false);
 
     if (!ev) {
       setEvent(null);
@@ -412,6 +419,22 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       <View style={[styles.screen, styles.center]}>
         {!loaded ? (
           <ActivityIndicator color={colors.accent} />
+        ) : loadFailed ? (
+          <>
+            <Text style={type.h2}>Couldn’t load this event</Text>
+            <Text style={[type.bodyMuted, { marginTop: spacing.sm, textAlign: 'center' }]}>
+              Check your connection and try again.
+            </Text>
+            <Button
+              title="Try again"
+              variant="secondary"
+              onPress={() => {
+                setLoaded(false);
+                load();
+              }}
+              style={{ marginTop: spacing.lg }}
+            />
+          </>
         ) : (
           <>
             <Text style={type.h2}>Event not found</Text>
@@ -425,6 +448,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   }
 
   const isLeader = event.creator_id === session?.user.id;
+  // Once it's over, RSVPs are final and read in the past tense.
+  const ended = eventEnded(event.ends_at);
   const hostName = attendees.find((a) => a.status === 'host')?.name;
   // The host can remove anyone but themselves, from the person's ··· menu.
   const removableActingOn = isLeader
@@ -450,7 +475,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   );
 
   const {
-    beforeEnd,
+    beforeOpen,
     withinWindow: withinUploadWindow,
     uploadOpen,
     msLeft,
@@ -736,7 +761,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     );
                   })}
                 </View>
-                <Text style={styles.goingCountText}>{goingCount} going</Text>
+                <Text style={styles.goingCountText}>{goingCount} {ended ? 'went' : 'going'}</Text>
                 <View style={{ flex: 1 }} />
                 <ChevronRightIcon size={16} color={colors.inkMuted} />
               </Pressable>
@@ -787,7 +812,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               <View style={styles.divider} />
               <View style={styles.rsvpHeaderRow}>
                 <Text style={styles.sectionHeader}>Your RSVP</Text>
-                {myStatus === 'going' && (
+                {myStatus === 'going' && !ended && (
                   <View style={styles.youreInBadge}>
                     <Text style={styles.youreInText}>You're in.</Text>
                   </View>
@@ -797,7 +822,13 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 value={myStatus}
                 onSelect={chooseRsvp}
                 disabled={savingRsvp}
+                ended={ended}
               />
+              {ended && (
+                <Text style={[type.caption, { marginTop: spacing.sm }]}>
+                  This event is over, so RSVPs can't change.
+                </Text>
+              )}
             </>
           )}
 
@@ -979,7 +1010,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     </View>
                   )}
 
-                  {isLeader && !beforeEnd && !withinUploadWindow && (
+                  {isLeader && !beforeOpen && !withinUploadWindow && (
                     <View style={styles.sheetSection}>
                       <Text style={styles.sectionHeader}>Photo uploads</Text>
                       <Text style={type.caption}>
@@ -1036,23 +1067,23 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     </View>
                   )}
 
-                  <Text style={styles.sectionHeader}>Who's coming</Text>
+                  <Text style={styles.sectionHeader}>{ended ? 'Who went' : "Who's coming"}</Text>
 
                   <View style={{ gap: spacing.md }}>
                     {(
                       [
                         {
-                          title: 'Going',
+                          title: rsvpLabel('going', ended),
                           people: attendees.filter(
                             (a) => a.status === 'host' || a.status === 'going'
                           ),
                         },
                         {
-                          title: 'Maybe',
+                          title: rsvpLabel('maybe', ended),
                           people: attendees.filter((a) => a.status === 'maybe'),
                         },
                         {
-                          title: "Can't go",
+                          title: rsvpLabel('not_going', ended),
                           people: attendees.filter((a) => a.status === 'not_going'),
                         },
                       ] as { title: string; people: Attendee[] }[]
@@ -1088,7 +1119,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                                     { color: colors.inkMuted, marginRight: spacing.md },
                                   ]}
                                 >
-                                  {STATUS_LABEL.host}
+                                  {rsvpLabel('host', ended)}
                                 </Text>
                               ) : null}
                               {a.userId !== session?.user.id && (

@@ -42,6 +42,7 @@ export function PersonRow({
       <Avatar
         userId={person.id}
         name={person.display_name}
+        username={person.username}
         avatarUrl={person.avatar_url}
         size={36}
       />

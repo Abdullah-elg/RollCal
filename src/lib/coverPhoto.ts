@@ -4,7 +4,7 @@ import { supabase } from './supabase';
 
 // The cover is an ordinary photo row pointed to by events.cover_photo_id.
 // A host can add one before the event; like every photo it stays out of the
-// roll until the roll opens (see isRollOpen).
+// roll until the roll opens at the start (see isRollOpen).
 
 export async function setCoverPhoto(
   eventId: string,
@@ -40,13 +40,15 @@ export async function pickAndUploadCover(
 }
 
 // Photos (cover included) only show up in the roll, counts and activity once
-// the event has ended.
-export function isRollOpen(endsAt: string): boolean {
-  return Date.now() >= new Date(endsAt).getTime();
+// the event has started.
+export function isRollOpen(startsAt: string): boolean {
+  return Date.now() >= new Date(startsAt).getTime();
 }
 
-// Reads ends_at from a photo row's embedded `events!inner(ends_at)`.
+// Reads starts_at from a photo row's embedded `events!inner(starts_at)`.
 // PostgREST returns it as an object; supabase-js may type it as an array.
-export function eventEndsAt(events: { ends_at: string } | { ends_at: string }[]): string {
-  return Array.isArray(events) ? events[0].ends_at : events.ends_at;
+export function eventStartsAt(
+  events: { starts_at: string } | { starts_at: string }[]
+): string {
+  return Array.isArray(events) ? events[0].starts_at : events.starts_at;
 }

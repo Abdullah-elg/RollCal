@@ -105,10 +105,10 @@ export default function BillShareScreen({ navigation, route }: Props) {
         ) : methods.length === 0 ? (
           <View style={{ marginBottom: spacing.md }}>
             <Text style={[type.bodyMuted, { marginBottom: spacing.md }]}>
-              You haven't added a payment method yet.
+              You haven't added a receiving method yet.
             </Text>
             <Button
-              title="Add a payment method"
+              title="Add a receiving method"
               variant="secondary"
               onPress={() => navigation.navigate('PaymentMethods')}
             />
