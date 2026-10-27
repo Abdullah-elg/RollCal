@@ -28,6 +28,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useUnread } from '../context/UnreadContext';
 import { animateNext } from '../lib/animate';
 import { hapticLight } from '../lib/haptics';
+import { loadInbox } from '../lib/inbox';
 import {
   dayOfMonth,
   formatDay,
@@ -83,6 +84,8 @@ export default function HomeScreen({ navigation }: Props) {
 
   const [events, setEvents] = useState<Event[]>([]);
   const [invites, setInvites] = useState<PendingInvitation[]>([]);
+  // Unseen notifications, for the number on the bell.
+  const [inboxNew, setInboxNew] = useState(0);
   const [metaMap, setMetaMap] = useState<Record<string, EventMeta>>({});
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -245,7 +248,10 @@ export default function HomeScreen({ navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load])
+      loadInbox(userId)
+        .then((inbox) => setInboxNew(inbox.fresh.length))
+        .catch(() => {});
+    }, [load, userId])
   );
 
   const retry = async () => {
@@ -445,9 +451,9 @@ export default function HomeScreen({ navigation }: Props) {
         <View style={styles.titleRow}>
           <Text style={styles.displayTitle}>Your events</Text>
           <Pressable
-            accessibilityLabel="Event invitations"
+            accessibilityLabel={inboxNew > 0 ? `Notifications, ${inboxNew} new` : 'Notifications'}
             accessibilityRole="button"
-            onPress={() => navigation.navigate('EventInvitations')}
+            onPress={() => navigation.navigate('Notifications')}
             hitSlop={12}
             style={({ pressed }) => [
               styles.iconBtn,
@@ -456,10 +462,10 @@ export default function HomeScreen({ navigation }: Props) {
           >
             <View>
               <BellIcon size={22} color={colors.ink} />
-              {invites.length > 0 && (
+              {inboxNew > 0 && (
                 <View style={styles.bellBadge}>
                   <Text style={styles.bellBadgeText}>
-                    {invites.length > 9 ? '9+' : invites.length}
+                    {inboxNew > 9 ? '9+' : inboxNew}
                   </Text>
                 </View>
               )}

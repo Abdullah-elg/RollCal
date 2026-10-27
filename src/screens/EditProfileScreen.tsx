@@ -4,10 +4,8 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +17,7 @@ import { CameraIcon } from '../components/icons';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import ActionMenuSheet from '../components/ActionMenuSheet';
 import { pickAndUploadAvatar, removeAvatar } from '../lib/avatar';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { cleanUsername, usernameProblem } from '../lib/username';
@@ -40,6 +39,10 @@ export default function EditProfileScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  // The change/remove menu, open while set.
+  const [photoMenu, setPhotoMenu] = useState<{ upload: () => void; remove: () => void } | null>(
+    null
+  );
 
   const handleAvatarPress = () => {
     if (uploadingAvatar || !session?.user.id) return;
@@ -70,26 +73,7 @@ export default function EditProfileScreen({ navigation }: Props) {
     };
 
     if (profile?.avatar_url) {
-      if (Platform.OS === 'ios') {
-        ActionSheetIOS.showActionSheetWithOptions(
-          {
-            options: ['Cancel', 'Choose photo', 'Remove photo'],
-            destructiveButtonIndex: 2,
-            cancelButtonIndex: 0,
-            title: 'Profile photo',
-          },
-          (buttonIndex) => {
-            if (buttonIndex === 1) doUpload();
-            else if (buttonIndex === 2) doRemove();
-          }
-        );
-      } else {
-        Alert.alert('Profile photo', undefined, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Choose photo', onPress: doUpload },
-          { text: 'Remove photo', style: 'destructive', onPress: doRemove },
-        ]);
-      }
+      setPhotoMenu({ upload: doUpload, remove: doRemove });
     } else {
       doUpload();
     }
@@ -209,6 +193,15 @@ export default function EditProfileScreen({ navigation }: Props) {
           disabled={!firstName.trim() || !lastName.trim() || !username.trim()}
         />
       </ScrollView>
+      <ActionMenuSheet
+        visible={photoMenu !== null}
+        title="Profile photo"
+        options={[
+          { label: 'Choose photo', onPress: () => photoMenu?.upload() },
+          { label: 'Remove photo', onPress: () => photoMenu?.remove(), destructive: true },
+        ]}
+        onClose={() => setPhotoMenu(null)}
+      />
     </FormScreen>
   );
 }

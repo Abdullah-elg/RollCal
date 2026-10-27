@@ -39,10 +39,21 @@ describe('seenPositions', () => {
     assert.equal(placed.get('m2'), undefined);
   });
 
-  test('not under their own message: the one before it instead', () => {
+  test('no mark when the newest message they have seen is their own', () => {
     // amr read right after sending m2, before m3 arrived.
     const placed = seenPositions({ amr: '2026-10-24T18:11:00Z' }, messages, 'me');
-    assert.deepEqual(placed.get('m1'), ['amr']);
+    assert.equal(placed.size, 0);
+  });
+
+  test('no mark when they wrote after their saved read time', () => {
+    // amr opened the chat at 18:05, then sent m2 at 18:10.
+    const placed = seenPositions({ amr: '2026-10-24T18:05:00Z' }, messages, 'me');
+    assert.equal(placed.size, 0);
+  });
+
+  test('a mark again once someone else writes after them', () => {
+    const placed = seenPositions({ amr: '2026-10-24T18:25:00Z' }, messages, 'me');
+    assert.deepEqual(placed.get('m3'), ['amr']);
   });
 
   test('never the person looking, and nobody who read before any message', () => {

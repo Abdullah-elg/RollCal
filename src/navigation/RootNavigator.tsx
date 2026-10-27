@@ -60,6 +60,7 @@ import { LEGAL } from '../legal/documents';
 import PaymentMethodsScreen from '../screens/PaymentMethodsScreen';
 import SentRequestsScreen from '../screens/SentRequestsScreen';
 import EventInvitationsScreen from '../screens/EventInvitationsScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 import HomeScreen from '../screens/HomeScreen';
 import JoinEventScreen from '../screens/JoinEventScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -536,6 +537,11 @@ export default function RootNavigator() {
               name="EventInvitations"
               component={EventInvitationsScreen}
               options={{ title: 'Invitations' }}
+            />
+            <AppStack.Screen
+              name="Notifications"
+              component={NotificationsScreen}
+              options={{ title: 'Notifications' }}
             />
           </AppStack.Navigator>
           <CurrencyPrompt />

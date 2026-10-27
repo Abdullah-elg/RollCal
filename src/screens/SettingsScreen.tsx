@@ -6,7 +6,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   AppState,
@@ -28,6 +27,7 @@ import { Button, ErrorText, ThemedSwitch } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useProPrompt } from '../context/ProPromptContext';
 import { useTheme } from '../context/ThemeContext';
+import ActionMenuSheet from '../components/ActionMenuSheet';
 import { pickAndUploadAvatar, removeAvatar } from '../lib/avatar';
 import { currencyLabel } from '../lib/currency';
 import { supabase } from '../lib/supabase';
@@ -163,6 +163,10 @@ export default function SettingsScreen({ navigation }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  // The change/remove menu, open while set.
+  const [photoMenu, setPhotoMenu] = useState<{ upload: () => void; remove: () => void } | null>(
+    null
+  );
   const [paymentCount, setPaymentCount] = useState(0);
   const [quietError, setQuietError] = useState<string | null>(null);
   const [pickingCurrency, setPickingCurrency] = useState(false);
@@ -250,26 +254,7 @@ export default function SettingsScreen({ navigation }: Props) {
     };
 
     if (profile?.avatar_url) {
-      if (Platform.OS === 'ios') {
-        ActionSheetIOS.showActionSheetWithOptions(
-          {
-            options: ['Cancel', 'Choose photo', 'Remove photo'],
-            destructiveButtonIndex: 2,
-            cancelButtonIndex: 0,
-            title: 'Profile photo',
-          },
-          (buttonIndex) => {
-            if (buttonIndex === 1) doUpload();
-            else if (buttonIndex === 2) doRemove();
-          }
-        );
-      } else {
-        Alert.alert('Profile photo', undefined, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Choose photo', onPress: doUpload },
-          { text: 'Remove photo', style: 'destructive', onPress: doRemove },
-        ]);
-      }
+      setPhotoMenu({ upload: doUpload, remove: doRemove });
     } else {
       doUpload();
     }
@@ -816,6 +801,15 @@ export default function SettingsScreen({ navigation }: Props) {
         destructive
         onConfirm={handleDeleteAccount}
         onCancel={() => setConfirmDelete(false)}
+      />
+      <ActionMenuSheet
+        visible={photoMenu !== null}
+        title="Profile photo"
+        options={[
+          { label: 'Choose photo', onPress: () => photoMenu?.upload() },
+          { label: 'Remove photo', onPress: () => photoMenu?.remove(), destructive: true },
+        ]}
+        onClose={() => setPhotoMenu(null)}
       />
     </ScrollView>
   </SafeAreaView>

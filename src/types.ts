@@ -39,6 +39,8 @@ export type Message = {
   created_at: string;
   // Set when the sender edited it (within 10 minutes of sending).
   edited_at?: string | null;
+  // The message this one answers (see supabase/message-replies.sql).
+  reply_to?: string | null;
 };
 
 export type InvitationStatus = 'pending' | 'accepted' | 'declined';
@@ -71,5 +73,8 @@ export type Event = {
   uploads_closed: boolean;
   uploads_reopened_until?: string | null;
   cover_photo_id?: string | null;
+  // Set when the host deleted an event that's over: it goes at this time
+  // (see supabase/event-delete.sql). Missing before that migration ran.
+  delete_at?: string | null;
   created_at: string;
 };

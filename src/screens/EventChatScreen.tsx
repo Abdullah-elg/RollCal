@@ -90,6 +90,8 @@ export default function EventChatScreen({ navigation, route }: Props) {
   const [ownMenu, setOwnMenu] = useState<Message | null>(null);
   // The message whose text is in the box being edited, if any.
   const [editing, setEditing] = useState<Message | null>(null);
+  // The message the next one answers, shown above the box.
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   // Waiting on "Delete this message?".
   const [confirmDeleteMsg, setConfirmDeleteMsg] = useState<Message | null>(null);
   // Read inside the realtime handler, which is created once.
@@ -235,7 +237,14 @@ export default function EventChatScreen({ navigation, route }: Props) {
   // The host can delete anyone's message (the server checks it too).
   const isHost = roster[userId]?.status === 'host';
 
+  const startReply = (message: Message) => {
+    setEditing(null);
+    setReplyingTo(message);
+    setError(null);
+  };
+
   const startEdit = (message: Message) => {
+    setReplyingTo(null);
     setEditing(message);
     setDraft(message.body);
     setError(null);
@@ -296,19 +305,23 @@ export default function EventChatScreen({ navigation, route }: Props) {
       sender_id: userId,
       body,
       created_at: new Date().toISOString(),
+      reply_to: replyingTo?.id ?? null,
     };
+    const replyTo = replyingTo;
 
     setMessages((prev) => [...prev, optimisticMsg]);
     setDraft('');
+    setReplyingTo(null);
     hapticLight();
     setSending(true);
     setError(null);
 
-    const err = await sendMessage(eventId, userId, body);
+    const err = await sendMessage(eventId, userId, body, replyTo?.id);
     setSending(false);
     if (err) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setDraft(body);
+      setReplyingTo(replyTo);
       setError(err);
     }
   };
@@ -381,6 +394,34 @@ export default function EventChatScreen({ navigation, route }: Props) {
     );
   };
 
+  const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
+  const nameOf = (id: string) =>
+    id === userId ? 'You' : (roster[id]?.name.split(' ')[0] ?? 'Someone');
+
+  // The quoted message inside a reply's bubble. It may be gone (deleted, or
+  // older than what's loaded).
+  const renderQuote = (item: Message, mine: boolean) => {
+    if (!item.reply_to) return null;
+    const quoted = byId.get(item.reply_to);
+    const hidden = quoted && blockedIds.has(quoted.sender_id);
+    return (
+      <View style={[styles.quote, mine ? styles.quoteMine : styles.quoteTheirs]}>
+        {quoted && !hidden ? (
+          <>
+            <Text style={[styles.quoteName, mine && styles.quoteTextMine]}>{nameOf(quoted.sender_id)}</Text>
+            <Text style={[styles.quoteBody, mine && styles.quoteTextMine]} numberOfLines={2}>
+              {quoted.body}
+            </Text>
+          </>
+        ) : (
+          <Text style={[styles.quoteBody, mine && styles.quoteTextMine]}>
+            {quoted ? 'Message from someone you blocked' : 'Earlier message, no longer here'}
+          </Text>
+        )}
+      </View>
+    );
+  };
+
   const renderItem = ({ item, index }: { item: Message; index: number }) => {
     const mine = item.sender_id === userId;
     // In an inverted list the earlier message is index + 1 and the later one is index - 1
@@ -409,8 +450,9 @@ export default function EventChatScreen({ navigation, route }: Props) {
               hapticLight();
               setOwnMenu(item);
             }}
-            accessibilityHint="Long press to edit or delete"
+            accessibilityHint="Long press to reply, edit or delete"
           >
+            {renderQuote(item, true)}
             <Text style={[type.body, styles.bubbleMineText]}>{item.body}</Text>
           </Pressable>
           {(endsGroup || item.edited_at) && (
@@ -463,8 +505,9 @@ export default function EventChatScreen({ navigation, route }: Props) {
                   },
                 });
               }}
-              accessibilityHint="Long press to report or block"
+              accessibilityHint="Long press to reply, report or block"
             >
+              {renderQuote(item, false)}
               <Text style={[type.body, styles.bubbleTheirsText]}>{item.body}</Text>
             </Pressable>
             {(endsGroup || item.edited_at) && (
@@ -527,6 +570,27 @@ export default function EventChatScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {replyingTo && !editing && (
+        <View style={styles.editBar}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.editBarText}>
+              Replying to{' '}
+              {replyingTo.sender_id === userId ? 'yourself' : nameOf(replyingTo.sender_id)}
+            </Text>
+            <Text style={styles.replyBarBody} numberOfLines={1}>
+              {replyingTo.body}
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => setReplyingTo(null)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel reply"
+          >
+            <CloseIcon size={16} color={colors.inkMuted} />
+          </Pressable>
+        </View>
+      )}
       {editing && (
         <View style={styles.editBar}>
           <Text style={styles.editBarText}>Editing message</Text>
@@ -602,6 +666,9 @@ export default function EventChatScreen({ navigation, route }: Props) {
             ? { label: 'Delete message', onPress: () => setConfirmDeleteMsg(acting.message) }
             : undefined
         }
+        primary={
+          acting ? { label: 'Reply', onPress: () => startReply(acting.message) } : undefined
+        }
         onClose={() => setActing(null)}
         onBlocked={refreshBlocked}
       />
@@ -612,6 +679,18 @@ export default function EventChatScreen({ navigation, route }: Props) {
         <View style={styles.menuOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setOwnMenu(null)} accessibilityLabel="Close" />
           <View style={[styles.menuCard, { marginBottom: insets.bottom + spacing.xl }]} accessibilityViewIsModal>
+            <Pressable
+              style={({ pressed }) => [styles.menuRow, pressed && { opacity: 0.6 }]}
+              onPress={() => {
+                const m = ownMenu;
+                setOwnMenu(null);
+                if (m) startReply(m);
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={type.body}>Reply</Text>
+            </Pressable>
+            <View style={styles.menuDivider} />
             {ownMenu && canStillEdit(ownMenu) && (
               <>
                 <Pressable
@@ -866,6 +945,33 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       ...t.caption,
       color: c.inkMuted,
     },
+    replyBarBody: {
+      ...t.caption,
+      color: c.ink,
+      marginTop: 1,
+    },
+    // The quoted message at the top of a reply bubble.
+    quote: {
+      borderRadius: 10,
+      paddingVertical: 5,
+      paddingHorizontal: 9,
+      marginBottom: 6,
+      marginHorizontal: -6,
+    },
+    quoteMine: { backgroundColor: 'rgba(255,255,255,0.18)' },
+    quoteTheirs: { backgroundColor: c.paper },
+    quoteName: {
+      ...t.caption,
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 12,
+      color: c.ink,
+    },
+    quoteBody: {
+      ...t.caption,
+      fontSize: 13,
+      color: c.inkMuted,
+    },
+    quoteTextMine: { color: c.onAccent, opacity: 0.9 },
     menuOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: c.scrim },
     menuCard: {
       marginHorizontal: spacing.md,

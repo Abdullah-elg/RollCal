@@ -22,9 +22,10 @@ export function seenBy(
 }
 
 // Where each person's "seen" mark goes: under the newest message they've
-// read up to (their read time is at or after it), skipping their own
-// messages, since seeing your own message says nothing. Like seenBy, never
-// the person looking. message id -> reader ids, earliest reader first.
+// read up to (their read time is at or after it). If that newest message is
+// their own, they get no mark at all: sending it says they're caught up.
+// Like seenBy, never the person looking. message id -> reader ids, earliest
+// reader first.
 export function seenPositions(
   reads: ChatReads,
   messages: { id: string; sender_id: string; created_at: string }[],
@@ -33,15 +34,22 @@ export function seenPositions(
   // Newest first, so the first match is the latest message they've seen.
   const newestFirst = [...messages].sort((a, b) => b.created_at.localeCompare(a.created_at));
   const placed = new Map<string, string[]>();
-  const readers = Object.entries(reads)
+  // Sending a message means you've seen everything before it, even if your
+  // read time was saved before you sent it.
+  const effective: ChatReads = { ...reads };
+  for (const m of messages) {
+    const at = effective[m.sender_id];
+    if (!at || new Date(m.created_at).getTime() > new Date(at).getTime()) {
+      effective[m.sender_id] = m.created_at;
+    }
+  }
+  const readers = Object.entries(effective)
     .filter(([id]) => id !== myId)
     .sort(([, a], [, b]) => a.localeCompare(b));
   for (const [id, at] of readers) {
     const readAt = new Date(at).getTime();
-    const last = newestFirst.find(
-      (m) => m.sender_id !== id && new Date(m.created_at).getTime() <= readAt
-    );
-    if (!last) continue;
+    const last = newestFirst.find((m) => new Date(m.created_at).getTime() <= readAt);
+    if (!last || last.sender_id === id) continue;
     placed.set(last.id, [...(placed.get(last.id) ?? []), id]);
   }
   return placed;

@@ -27,12 +27,20 @@ export function nextTimeStep(d: Date): Date {
   return new Date(Math.ceil(d.getTime() / STEP_MS) * STEP_MS);
 }
 
+// Some locales (en-CA among them) write "7:30 p.m."; the app always says
+// "7:30 PM".
+export function tidyDayPeriod(time: string): string {
+  return time.replace(/\s?([ap])\.\s?m\./gi, (_, p: string) => ` ${p.toUpperCase()}M`);
+}
+
 // "7:30 PM"
 export function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return tidyDayPeriod(
+    new Date(iso).toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  );
 }
 
 // Chat timestamps: just the time for today, with the day added once the
@@ -57,10 +65,12 @@ export function formatSpan(startIso: string, endIso: string): string {
 function formatHourTime(iso: string): string {
   const d = new Date(iso);
   const hasMins = d.getMinutes() !== 0;
-  return d.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    ...(hasMins ? { minute: '2-digit' } : {}),
-  });
+  return tidyDayPeriod(
+    d.toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      ...(hasMins ? { minute: '2-digit' } : {}),
+    })
+  );
 }
 
 // Live countdown for hero event: "Happening now", "In 3 hours", "Tomorrow at 7 PM", etc.

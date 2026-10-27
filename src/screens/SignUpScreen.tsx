@@ -225,6 +225,11 @@ export default function SignUpScreen({ navigation }: Props) {
           keyboardType="email-address"
           placeholder="you@example.com"
         />
+        {isReservedEmail(email) ? (
+          <Text style={[styles.usernameStatus, { color: colors.danger }]}>
+            {RESERVED_EMAIL_ERROR}
+          </Text>
+        ) : null}
         <PasswordField
           label="Password"
           value={password}
@@ -290,6 +295,7 @@ export default function SignUpScreen({ navigation }: Props) {
             free === undefined ||
             free === false ||
             !email ||
+            isReservedEmail(email) ||
             password.length < 6 ||
             !passwordsMatch ||
             !termsAccepted

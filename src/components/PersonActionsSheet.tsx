@@ -31,6 +31,8 @@ type Props = {
   // An extra action listed first, like "Remove from event" for the host. The
   // list closes before it runs, so it can open its own sheet.
   extra?: { label: string; onPress: () => void };
+  // A plain action listed at the very top, like "Reply" in chat.
+  primary?: { label: string; onPress: () => void };
   onClose: () => void;
   onBlocked: () => void;
 };
@@ -40,7 +42,14 @@ type Stage = 'menu' | 'switching' | 'confirm' | 'report';
 
 // Report and Block for one person, from a small floating list. Block asks
 // first; Report opens the report sheet.
-export default function PersonActionsSheet({ person, report, extra, onClose, onBlocked }: Props) {
+export default function PersonActionsSheet({
+  person,
+  report,
+  extra,
+  primary,
+  onClose,
+  onBlocked,
+}: Props) {
   const { session } = useAuth();
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -158,6 +167,21 @@ export default function PersonActionsSheet({ person, report, extra, onClose, onB
             accessibilityViewIsModal
           >
             <ErrorText message={error} />
+            {primary && (
+              <>
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+                  onPress={() => {
+                    onClose();
+                    primary.onPress();
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={type.body}>{primary.label}</Text>
+                </Pressable>
+                <View style={styles.divider} />
+              </>
+            )}
             {friendLabel && (
               <>
                 <Pressable

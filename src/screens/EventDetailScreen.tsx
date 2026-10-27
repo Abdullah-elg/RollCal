@@ -52,8 +52,8 @@ import { useUnread } from '../context/UnreadContext';
 import { animateNext } from '../lib/animate';
 import { BillSummary, listEventBills } from '../lib/bills';
 import { formatCents } from '../lib/money';
-import { formatSpan } from '../lib/dates';
-import { hapticLight, hapticMedium } from '../lib/haptics';
+import { formatDay, formatSpan, formatTime } from '../lib/dates';
+import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { syncEventReminders } from '../lib/notifications';
 import { loadEventActivity } from '../lib/activity';
 import {
@@ -181,7 +181,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [savingRsvp, setSavingRsvp] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<'leave' | 'cancel' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'leave' | 'cancel' | 'delete' | null>(null);
   const [showNavApps, setShowNavApps] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<Attendee | null>(null);
   const [actingOn, setActingOn] = useState<ActionsPerson | null>(null);
@@ -607,6 +607,29 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     navigation.goBack();
   };
 
+  // An event that's over goes in 48 hours, so people can save what they want.
+  const deleteEvent = async () => {
+    setConfirmAction(null);
+    const { error } = await supabase.rpc('schedule_event_deletion', { p_event: event.id });
+    if (error) {
+      Alert.alert('Could not delete', error.message);
+      return;
+    }
+    hapticMedium();
+    setShowInfo(false);
+    load();
+  };
+
+  const keepEvent = async () => {
+    const { error } = await supabase.rpc('keep_event', { p_event: event.id });
+    if (error) {
+      Alert.alert('Could not keep the event', error.message);
+      return;
+    }
+    hapticSuccess();
+    load();
+  };
+
   const withdrawInvite = async (invitationId: string) => {
     const err = await removeInvitation(invitationId);
     if (err) {
@@ -673,20 +696,28 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               </Pressable>
             )}
             <View style={{ flex: 1 }} />
-            {event.is_link_enabled && (
+            <View style={styles.headerActions}>
+              {event.is_link_enabled && (
+                <Pressable
+                  style={({ pressed }) => [styles.infoButton, pressed && { opacity: 0.6 }]}
+                  onPress={openShare}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Share event"
+                >
+                  <ShareIcon size={12} color={colors.inkMuted} />
+                </Pressable>
+              )}
               <Pressable
-                style={({ pressed }) => [styles.shareIconButton, pressed && { opacity: 0.6 }]}
-                onPress={openShare}
-                hitSlop={12}
+                style={({ pressed }) => [styles.infoButton, pressed && { opacity: 0.6 }]}
+                onPress={openInfo}
+                hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel="Share event"
+                accessibilityLabel="Event info"
               >
-                <ShareIcon size={20} color={colors.inkMuted} />
+                <Text style={styles.infoGlyph}>i</Text>
               </Pressable>
-            )}
-            <Pressable style={styles.infoButton} onPress={openInfo} hitSlop={12}>
-              <Text style={styles.infoGlyph}>i</Text>
-            </Pressable>
+            </View>
           </View>
 
           <Text style={styles.hostLine}>
@@ -715,6 +746,17 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             <View style={styles.activityWrap}>
               <View style={styles.activityDot} />
               <Text style={styles.activityText}>{activityLine}</Text>
+            </View>
+          ) : null}
+
+          {event.delete_at ? (
+            <View style={[styles.urgentRollBanner, styles.deletingBanner]}>
+              <View style={[styles.urgentRollDot, { backgroundColor: colors.danger }]} />
+              <Text style={[styles.urgentRollText, { color: colors.danger }]}>
+                {isLeader ? 'You deleted this event. ' : 'The host deleted this event. '}
+                It goes for good on {formatDay(event.delete_at)} at {formatTime(event.delete_at)}.
+                Save any photos you want to keep before then.
+              </Text>
             </View>
           ) : null}
 
@@ -1228,12 +1270,21 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                   {isLeader && (
                     <>
                       <View style={styles.divider} />
-                      <Pressable
-                        onPress={() => setConfirmAction('cancel')}
-                        hitSlop={8}
-                      >
-                        <Text style={styles.leaveText}>Cancel event</Text>
-                      </Pressable>
+                      {event.delete_at ? (
+                        <Pressable onPress={keepEvent} hitSlop={8} accessibilityRole="button">
+                          <Text style={styles.keepText}>Keep event</Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable
+                          onPress={() => setConfirmAction(ended ? 'delete' : 'cancel')}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                        >
+                          <Text style={styles.leaveText}>
+                            {ended ? 'Delete event' : 'Cancel event'}
+                          </Text>
+                        </Pressable>
+                      )}
                     </>
                   )}
                 </>
@@ -1327,6 +1378,17 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               onConfirm={cancelEvent}
               onCancel={() => setConfirmAction(null)}
             />
+
+            <ConfirmDialog
+              visible={confirmAction === 'delete'}
+              title="Delete this event?"
+              message="Everything in it will be lost: photos, videos, chat, bills and RSVPs. Everyone in the event gets a notice to save what they want, and it's deleted for good in 48 hours."
+              confirmLabel="Delete event"
+              cancelLabel="Keep event"
+              destructive
+              onConfirm={deleteEvent}
+              onCancel={() => setConfirmAction(null)}
+            />
           </SafeAreaView>
         </View>
       </Modal>
@@ -1384,12 +1446,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       justifyContent: 'center',
       marginTop: 2,
     },
-    shareIconButton: {
-      width: 24,
-      height: 24,
+    headerActions: {
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: spacing.lg,
+      gap: spacing.md,
     },
     infoButton: {
       width: 22,
@@ -1463,6 +1523,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       borderWidth: 1,
       borderColor: c.accent + '35',
       marginTop: spacing.sm,
+    },
+    deletingBanner: {
+      backgroundColor: c.danger + '12',
+      borderColor: c.danger + '35',
     },
     urgentRollDot: {
       width: 7,
@@ -1689,6 +1753,13 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       ...t.body,
       fontFamily: fonts.bodySemiBold,
       color: c.danger,
+      textAlign: 'center',
+      paddingVertical: spacing.sm,
+    },
+    keepText: {
+      ...t.body,
+      fontFamily: fonts.bodySemiBold,
+      color: c.accentText,
       textAlign: 'center',
       paddingVertical: spacing.sm,
     },

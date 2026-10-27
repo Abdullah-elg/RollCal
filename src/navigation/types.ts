@@ -49,6 +49,7 @@ export type AppStackParamList = {
   FriendRequests: undefined;
   SentRequests: undefined;
   EventInvitations: undefined;
+  Notifications: undefined;
   BlockedPeople: undefined;
   Support: undefined;
   Licenses: undefined;

@@ -24,13 +24,18 @@ export async function loadMessages(eventId: string): Promise<Message[]> {
 export async function sendMessage(
   eventId: string,
   senderId: string,
-  body: string
+  body: string,
+  replyTo?: string | null
 ): Promise<string | null> {
   const trimmed = body.trim();
   if (!trimmed) return null;
-  const { error } = await supabase
-    .from('messages')
-    .insert({ event_id: eventId, sender_id: senderId, body: trimmed });
+  const { error } = await supabase.from('messages').insert({
+    event_id: eventId,
+    sender_id: senderId,
+    body: trimmed,
+    // Only sent with a reply, so plain messages don't depend on the column.
+    ...(replyTo ? { reply_to: replyTo } : {}),
+  });
   return error ? error.message : null;
 }
 
