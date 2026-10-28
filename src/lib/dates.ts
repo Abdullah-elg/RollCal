@@ -50,6 +50,35 @@ export function formatMessageTime(iso: string): string {
   return sameDay ? formatTime(iso) : `${formatDay(iso)}, ${formatTime(iso)}`;
 }
 
+// The chat shows a time line above a message only when it starts a new day
+// or comes after a pause this long, instead of a time under every message.
+export const CHAT_TIME_GAP_MS = 60 * 60 * 1000;
+
+export function startsChatTimeBlock(earlierIso: string | undefined, iso: string): boolean {
+  if (!earlierIso) return true;
+  if (new Date(earlierIso).toDateString() !== new Date(iso).toDateString()) return true;
+  return new Date(iso).getTime() - new Date(earlierIso).getTime() >= CHAT_TIME_GAP_MS;
+}
+
+// The chat's time line: "Today 7:30 PM", "Yesterday 7:30 PM", "Mon 7:30 PM"
+// within the week, then "Oct 21, 7:30 PM" (with the year once it's another
+// year).
+export function formatChatDivider(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const time = formatTime(iso);
+  const dayStart = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const daysAgo = Math.round((dayStart(now) - dayStart(d)) / (24 * 60 * 60 * 1000));
+  if (daysAgo <= 0) return `Today ${time}`;
+  if (daysAgo === 1) return `Yesterday ${time}`;
+  if (daysAgo < 7) return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+  const date = d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
+  });
+  return `${date}, ${time}`;
+}
+
 // "Sat, Sep 12, 7:30 PM to 10:00 PM" (or spelling out both days when it spans one)
 export function formatSpan(startIso: string, endIso: string): string {
   const sameDay =

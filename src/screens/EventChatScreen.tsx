@@ -47,7 +47,7 @@ import {
   seenPositions,
   subscribeToChatReads,
 } from '../lib/chatReads';
-import { formatMessageTime } from '../lib/dates';
+import { formatChatDivider, formatMessageTime, startsChatTimeBlock } from '../lib/dates';
 import { rsvpLabel } from '../lib/rsvpLabels';
 import { hapticLight } from '../lib/haptics';
 import { loadBlockedIds } from '../lib/safety';
@@ -346,6 +346,9 @@ export default function EventChatScreen({ navigation, route }: Props) {
   }, [reads, rows, userId, blockedIds]);
   // Which messages' seen rows are opened up to show everyone.
   const [openSeen, setOpenSeen] = useState<Set<string>>(new Set());
+  // The one message whose exact time is showing (tap a message to see it).
+  const [timeShownId, setTimeShownId] = useState<string | null>(null);
+  const toggleTime = (id: string) => setTimeShownId((cur) => (cur === id ? null : id));
   const toggleSeen = (messageId: string) =>
     setOpenSeen((prev) => {
       const next = new Set(prev);
@@ -441,10 +444,17 @@ export default function EventChatScreen({ navigation, route }: Props) {
   };
 
   // Every message can be swiped right to reply (once the server has it).
+  // A time line sits above the first message of each day or after a long
+  // pause; it stays put while the message slides.
   const renderItem = ({ item, index }: { item: Message; index: number }) => (
-    <SwipeToReply onReply={() => startReply(item)} disabled={item.id.startsWith('temp-')}>
-      <View style={flashId === item.id ? styles.flash : undefined}>{renderMessage(item, index)}</View>
-    </SwipeToReply>
+    <View>
+      {startsChatTimeBlock(rows[index + 1]?.created_at, item.created_at) && (
+        <Text style={styles.timeDivider}>{formatChatDivider(item.created_at)}</Text>
+      )}
+      <SwipeToReply onReply={() => startReply(item)} disabled={item.id.startsWith('temp-')}>
+        <View style={flashId === item.id ? styles.flash : undefined}>{renderMessage(item, index)}</View>
+      </SwipeToReply>
+    </View>
   );
 
   const renderMessage = (item: Message, index: number) => {
@@ -468,6 +478,7 @@ export default function EventChatScreen({ navigation, route }: Props) {
         <View style={styles.mineGroup}>
           <Pressable
             style={[styles.bubbleMine, editing?.id === item.id && styles.bubbleEditing]}
+            onPress={() => toggleTime(item.id)}
             delayLongPress={350}
             onLongPress={() => {
               // Not until the server has it (it has no real id yet).
@@ -475,16 +486,16 @@ export default function EventChatScreen({ navigation, route }: Props) {
               hapticLight();
               setOwnMenu(item);
             }}
-            accessibilityHint="Long press to reply, edit or delete"
+            accessibilityHint="Tap for the time. Long press to reply, edit or delete"
           >
             {renderQuote(item, true)}
             <Text style={[type.body, styles.bubbleMineText]}>{item.body}</Text>
           </Pressable>
-          {(endsGroup || item.edited_at) && (
+          {(timeShownId === item.id || item.edited_at) && (
             <Text style={styles.timeMine}>
               {item.edited_at ? 'Edited' : ''}
-              {item.edited_at && endsGroup ? ' · ' : ''}
-              {endsGroup ? formatMessageTime(item.created_at) : ''}
+              {item.edited_at && timeShownId === item.id ? ' · ' : ''}
+              {timeShownId === item.id ? formatMessageTime(item.created_at) : ''}
             </Text>
           )}
           {renderSeen(item, true)}
@@ -519,6 +530,7 @@ export default function EventChatScreen({ navigation, route }: Props) {
           <View style={styles.bubbleTheirsCol}>
             <Pressable
               style={styles.bubbleTheirs}
+              onPress={() => toggleTime(item.id)}
               delayLongPress={350}
               onLongPress={() => {
                 hapticLight();
@@ -530,16 +542,16 @@ export default function EventChatScreen({ navigation, route }: Props) {
                   },
                 });
               }}
-              accessibilityHint="Long press to reply, report or block"
+              accessibilityHint="Tap for the time. Long press to reply, report or block"
             >
               {renderQuote(item, false)}
               <Text style={[type.body, styles.bubbleTheirsText]}>{item.body}</Text>
             </Pressable>
-            {(endsGroup || item.edited_at) && (
+            {(timeShownId === item.id || item.edited_at) && (
               <Text style={styles.timeTheirs}>
                 {item.edited_at ? 'Edited' : ''}
-                {item.edited_at && endsGroup ? ' · ' : ''}
-                {endsGroup ? formatMessageTime(item.created_at) : ''}
+                {item.edited_at && timeShownId === item.id ? ' · ' : ''}
+                {timeShownId === item.id ? formatMessageTime(item.created_at) : ''}
               </Text>
             )}
           </View>
@@ -585,7 +597,7 @@ export default function EventChatScreen({ navigation, route }: Props) {
           }}
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
-          extraData={[seenAt, flashId]}
+          extraData={[seenAt, flashId, timeShownId]}
           contentContainerStyle={styles.list}
           keyboardDismissMode="interactive"
           refreshControl={
@@ -882,6 +894,14 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       fontSize: 10,
       fontFamily: fonts.bodySemiBold,
       color: c.ink,
+    },
+    timeDivider: {
+      ...t.caption,
+      fontSize: 11,
+      color: c.inkMuted,
+      textAlign: 'center',
+      marginTop: spacing.md,
+      marginBottom: spacing.sm,
     },
     timeMine: {
       ...t.caption,
