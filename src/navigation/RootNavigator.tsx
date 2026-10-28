@@ -17,6 +17,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   PixelRatio,
   Platform,
   Pressable,
@@ -37,6 +38,7 @@ import CurrencyPrompt from '../components/CurrencyPrompt';
 import AgeBlockedScreen from '../screens/AgeBlockedScreen';
 import { hapticLight } from '../lib/haptics';
 import {
+  ensurePushRegistered,
   NotificationTarget,
   onNotificationTap,
   onPushTokenChange,
@@ -389,7 +391,14 @@ export default function RootNavigator() {
   useEffect(() => {
     if (!signedInId) return;
     registerForPush(signedInId);
-    return onPushTokenChange(signedInId);
+    const stopTokenWatch = onPushTokenChange(signedInId);
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') ensurePushRegistered(signedInId);
+    });
+    return () => {
+      stopTokenWatch();
+      appState.remove();
+    };
   }, [signedInId]);
 
   // The native splash is still covering the screen while this renders.
@@ -453,7 +462,10 @@ export default function RootNavigator() {
             <AppStack.Screen
               name="EventChat"
               component={EventChatScreen}
-              options={({ route }) => ({ title: route.params.title })}
+              // A sideways drag on a message replies to it, so going back is
+              // from the screen's edge only (iOS 26 otherwise lets the whole
+              // screen swipe back).
+              options={({ route }) => ({ title: route.params.title, fullScreenGestureEnabled: false })}
             />
             <AppStack.Screen
               name="JoinEvent"

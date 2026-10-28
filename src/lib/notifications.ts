@@ -4,6 +4,7 @@ import { Linking, Platform } from 'react-native';
 import { formatCents } from './money';
 import { loadPhotoExpiry } from './expiry';
 import { rollClosesAt } from './roll';
+import { reportError } from './crashReporting';
 import { supabase } from './supabase';
 
 // Two kinds of notification live here:
@@ -570,8 +571,14 @@ export async function notifyChatMessages(
       [...latestPerEvent.values()].slice(0, 5).map((m) => {
         const title = watched.find((e) => e.id === m.event_id)?.title ?? 'Event chat';
         const who = names[m.sender_id] ?? 'Someone';
+        // Same identifier per chat, so a newer one replaces it; tapping opens the chat.
         return Notifications.scheduleNotificationAsync({
-          content: { title, body: `${who}: ${m.body}` },
+          identifier: `chat-${m.event_id}`,
+          content: {
+            title,
+            body: `${who}: ${m.body}`,
+            data: { type: 'chat', eventId: m.event_id, title },
+          },
           trigger: null,
         });
       })
@@ -859,6 +866,7 @@ async function sendPushSettings(userId: string, token: string): Promise<void> {
   });
   if (error) {
     console.warn('Push registration failed:', error.message);
+    reportError(new Error(error.message), 'push-register');
     return;
   }
   await AsyncStorage.setItem(PUSH_TOKEN_KEY, JSON.stringify({ userId, token } satisfies StoredPush));
@@ -883,8 +891,21 @@ export async function registerForPush(userId: string): Promise<void> {
     await sendPushSettings(userId, token);
   } catch (err) {
     // Simulators and phones without Google Play services can't get a token.
+    // Anything else (like a Firebase setup problem) is worth hearing about.
     console.warn('Push token unavailable:', err);
+    reportError(err, 'push-token');
   }
+}
+
+// When the app comes back to the front: registers this phone if it isn't
+// yet, e.g. notifications were turned on in the phone's settings, or the
+// token couldn't be had last time.
+export async function ensurePushRegistered(userId: string): Promise<void> {
+  if (await serverPushActive(userId)) return;
+  const Notifications = getNotifications();
+  if (!Notifications) return;
+  if (!(await Notifications.getPermissionsAsync()).granted) return;
+  await registerForPush(userId);
 }
 
 // Re-sends this phone's settings after they change.

@@ -30,6 +30,10 @@ export type ExpoMessage = {
   priority: 'high' | 'default';
   // Groups one event's chat messages together on iOS.
   threadId?: string;
+  // One notification per chat: a new message replaces the last one shown,
+  // on iOS (collapseId) and Android (tag), like the in-app inbox.
+  collapseId?: string;
+  tag?: string;
   // The number on the app icon: what's waiting for this person.
   badge?: number;
 };
@@ -67,6 +71,9 @@ export function buildMessages(
         channelId: 'default',
         priority: row.kind === 'chatMessage' ? 'high' : 'default',
         ...(row.event_id ? { threadId: row.event_id } : {}),
+        ...(row.kind === 'chatMessage' && row.event_id
+          ? { collapseId: `chat-${row.event_id}`, tag: `chat-${row.event_id}` }
+          : {}),
         ...(row.user_id in badges ? { badge: badges[row.user_id] } : {}),
       });
     }

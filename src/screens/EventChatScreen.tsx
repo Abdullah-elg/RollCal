@@ -22,6 +22,7 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { useFocusEffect } from '@react-navigation/native';
 import Avatar from '../components/Avatar';
 import ConfirmDialog from '../components/ConfirmDialog';
+import SwipeToReply from '../components/SwipeToReply';
 import PersonActionsSheet, { ActionsPerson } from '../components/PersonActionsSheet';
 import { AlertCircleIcon, BellIcon, BellOffIcon, CloseIcon, SendIcon } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
@@ -92,6 +93,9 @@ export default function EventChatScreen({ navigation, route }: Props) {
   const [editing, setEditing] = useState<Message | null>(null);
   // The message the next one answers, shown above the box.
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  // The message a tapped quote jumped to, lit up for a moment.
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const listRef = useRef<FlatList<Message>>(null);
   // Waiting on "Delete this message?".
   const [confirmDeleteMsg, setConfirmDeleteMsg] = useState<Message | null>(null);
   // Read inside the realtime handler, which is created once.
@@ -400,12 +404,26 @@ export default function EventChatScreen({ navigation, route }: Props) {
 
   // The quoted message inside a reply's bubble. It may be gone (deleted, or
   // older than what's loaded).
+  const jumpTo = (messageId: string) => {
+    const index = rows.findIndex((m) => m.id === messageId);
+    if (index < 0) return;
+    hapticLight();
+    listRef.current?.scrollToIndex({ index, viewPosition: 0.5, animated: true });
+    setFlashId(messageId);
+    setTimeout(() => setFlashId((id) => (id === messageId ? null : id)), 1600);
+  };
+
   const renderQuote = (item: Message, mine: boolean) => {
     if (!item.reply_to) return null;
     const quoted = byId.get(item.reply_to);
     const hidden = quoted && blockedIds.has(quoted.sender_id);
     return (
-      <View style={[styles.quote, mine ? styles.quoteMine : styles.quoteTheirs]}>
+      <Pressable
+        style={[styles.quote, mine ? styles.quoteMine : styles.quoteTheirs]}
+        onPress={quoted && !hidden ? () => jumpTo(quoted.id) : undefined}
+        accessibilityRole={quoted && !hidden ? 'button' : undefined}
+        accessibilityHint={quoted && !hidden ? 'Shows the original message' : undefined}
+      >
         {quoted && !hidden ? (
           <>
             <Text style={[styles.quoteName, mine && styles.quoteTextMine]}>{nameOf(quoted.sender_id)}</Text>
@@ -418,11 +436,18 @@ export default function EventChatScreen({ navigation, route }: Props) {
             {quoted ? 'Message from someone you blocked' : 'Earlier message, no longer here'}
           </Text>
         )}
-      </View>
+      </Pressable>
     );
   };
 
-  const renderItem = ({ item, index }: { item: Message; index: number }) => {
+  // Every message can be swiped right to reply (once the server has it).
+  const renderItem = ({ item, index }: { item: Message; index: number }) => (
+    <SwipeToReply onReply={() => startReply(item)} disabled={item.id.startsWith('temp-')}>
+      <View style={flashId === item.id ? styles.flash : undefined}>{renderMessage(item, index)}</View>
+    </SwipeToReply>
+  );
+
+  const renderMessage = (item: Message, index: number) => {
     const mine = item.sender_id === userId;
     // In an inverted list the earlier message is index + 1 and the later one is index - 1
     const earlier = rows[index + 1];
@@ -544,11 +569,23 @@ export default function EventChatScreen({ navigation, route }: Props) {
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={rows}
           inverted
+          onScrollToIndexFailed={(info) => {
+            // Not laid out yet: get close, then try again.
+            listRef.current?.scrollToOffset({
+              offset: info.averageItemLength * info.index,
+              animated: false,
+            });
+            setTimeout(
+              () => listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0.5 }),
+              250
+            );
+          }}
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
-          extraData={seenAt}
+          extraData={[seenAt, flashId]}
           contentContainerStyle={styles.list}
           keyboardDismissMode="interactive"
           refreshControl={
@@ -950,6 +987,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       color: c.ink,
       marginTop: 1,
     },
+    flash: { backgroundColor: c.accent + '1F', borderRadius: radii.md },
     // The quoted message at the top of a reply bubble.
     quote: {
       borderRadius: 10,

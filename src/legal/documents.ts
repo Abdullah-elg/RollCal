@@ -8,7 +8,7 @@
 const OPERATOR = 'RollCal';
 const CONTACT = 'support@rollcal.app';
 const PROVINCE = 'Ontario';
-const UPDATED = 'October 24, 2026';
+const UPDATED = 'October 27, 2026';
 
 export type LegalDoc = 'terms' | 'pro' | 'privacy';
 
@@ -249,6 +249,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
           'Notifications: if you allow them, we keep a token for your phone and send each notification’s text (for example a friend’s name or a preview of a chat message) through Expo’s push service and Apple’s or Google’s notification service, which deliver it to your phone. You can turn notifications off in the app or in your phone’s settings.',
           'Maps are shown with Apple Maps on iPhone and Google Maps on Android. They receive the area of the map you are looking at, as any map app does, under Apple’s and Google’s privacy policies.',
           'Exchange rates come from ExchangeRate-API’s public feed. Our servers fetch the day’s rates; nothing about you is sent.',
+          'When the app crashes or hits an error, Sentry receives a report of what went wrong, with the app version and your phone’s model and system version, so we can fix it. Reports don’t include your name, email, messages or photos.',
         ],
       },
       {

@@ -24,7 +24,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import RatesCredit from '../components/RatesCredit';
-import { CheckIcon } from '../components/icons';
+import { CheckIcon, ChevronRightIcon } from '../components/icons';
 import { Button, ErrorText } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -137,8 +137,46 @@ async function loadOtherOwed(current: Bill, myId: string, going: number): Promis
   return found.filter((o): o is OtherOwed => o !== null);
 }
 
+// Every bill on this event you still owe the same person on, this one
+// included, whether or not you've picked your part yet (cents is 0 until you
+// have). Left out: other currencies, bills already paid up, and ones where a
+// payment of yours is still waiting to be marked received.
+async function loadPayeeBills(current: Bill, myId: string, going: number): Promise<OtherOwed[]> {
+  const summaries = await listEventBills(current.event_id);
+  const candidates = summaries.filter(
+    (s) =>
+      s.bill.created_by === current.created_by &&
+      s.bill.status !== 'draft' &&
+      s.bill.currency === current.currency &&
+      s.totalCents > s.paidCents
+  );
+  const found = await Promise.all(
+    candidates.map(async (s): Promise<OtherOwed | null> => {
+      const [detail, picks, payments] = await Promise.all([
+        loadBill(s.bill.id),
+        loadPicks(myId, s.bill.id),
+        loadPayments(s.bill.id),
+      ]);
+      if (!detail) return null;
+      if (payments.some((p) => p.user_id === myId && p.status === 'sent')) return null;
+      const quote = quoteOf(detail.bill, detail.items, picks, going);
+      const left = leftToPay(billTotal(detail.bill, detail.items), payments);
+      return {
+        billId: s.bill.id,
+        title: detail.bill.title || 'Bill',
+        cents: Math.min(quote.totalCents, left),
+        picks,
+      };
+    })
+  );
+  // This bill first, then the rest as listed.
+  return found
+    .filter((o): o is OtherOwed => o !== null)
+    .sort((a, b) => (a.billId === current.id ? -1 : b.billId === current.id ? 1 : 0));
+}
+
 export default function BillScreen({ navigation, route }: Props) {
-  const { billId } = route.params;
+  const { billId, pickOnly } = route.params;
   const { session } = useAuth();
   const { colors, type } = useTheme();
   const insets = useSafeAreaInsets();
@@ -162,6 +200,15 @@ export default function BillScreen({ navigation, route }: Props) {
   // Set once they chose to pay those too: the send dialog then covers them all.
   const [bundle, setBundle] = useState<OtherOwed[] | null>(null);
   const [checkingOthers, setCheckingOthers] = useState(false);
+  // "Pay together": all of this person's bills you still owe on. The list is
+  // open while `together` is set; the send dialog then covers `togetherSend`.
+  const [payeeBills, setPayeeBills] = useState<OtherOwed[]>([]);
+  const [together, setTogether] = useState<OtherOwed[] | null>(null);
+  const [togetherSend, setTogetherSend] = useState<OtherOwed[] | null>(null);
+  // Bills left out of this payment from the list.
+  const [skipped, setSkipped] = useState<string[]>([]);
+  // Set when leaving the list to choose a part, so it opens again on return.
+  const reopenTogether = useRef(false);
   const [takeBack, setTakeBack] = useState<Payment | null>(null);
   const [turnDown, setTurnDown] = useState<Payment | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -208,11 +255,19 @@ export default function BillScreen({ navigation, route }: Props) {
         if (!live) return;
         setGoingCount(going);
         setPicks(saved);
+        if (d.bill.created_by === myId || pickOnly) return;
+        const owed = await loadPayeeBills(d.bill, myId, going).catch(() => []);
+        if (!live) return;
+        setPayeeBills(owed);
+        if (reopenTogether.current) {
+          reopenTogether.current = false;
+          setTogether(owed);
+        }
       });
       return () => {
         live = false;
       };
-    }, [billId, myId, navigation, refreshPayments, learnPeople])
+    }, [billId, myId, pickOnly, navigation, refreshPayments, learnPeople])
   );
 
   useEffect(
@@ -365,6 +420,55 @@ export default function BillScreen({ navigation, route }: Props) {
       },
       true
     );
+
+  // Each chosen bill's part, one payment per bill so each keeps its own
+  // record, stopping at the first that fails.
+  const submitTogether = (entries: OtherOwed[]) =>
+    run(
+      'send',
+      async () => {
+        for (const e of entries) {
+          const failed = await sendPayment(e.billId, e.cents, e.picks, goingCount);
+          if (failed) return `${e.title}: ${failed}`;
+          if (e.billId === bill.id) changePicks({});
+          else await savePicks(myId, e.billId, {});
+        }
+        return null;
+      },
+      () => {
+        hapticSuccess();
+        setSending(false);
+        setTogetherSend(null);
+        setPayeeBills([]);
+      },
+      true
+    );
+
+  const openTogether = () => {
+    hapticLight();
+    setSkipped([]);
+    // This bill's part as it stands on screen right now.
+    setTogether(
+      payeeBills.map((b) =>
+        b.billId === bill.id ? { ...b, picks, cents: Math.min(quote.totalCents, left) } : b
+      )
+    );
+  };
+
+  // Choose your part on one of the bills, then come back to the list.
+  const chooseTogetherPart = (entry: OtherOwed) => {
+    setTogether(null);
+    if (entry.billId === bill.id) return;
+    reopenTogether.current = true;
+    setTimeout(() => navigation.push('Bill', { billId: entry.billId, pickOnly: true }), 350);
+  };
+
+  const sendTogether = (entries: OtherOwed[]) => {
+    setTogether(null);
+    setBundle(null);
+    setTogetherSend(entries);
+    setTimeout(() => setSending(true), 350);
+  };
 
   // Before sending, see whether there are other bills from the same person
   // to pay in the same go. Only when this bill's own amount is known.
@@ -810,7 +914,15 @@ export default function BillScreen({ navigation, route }: Props) {
       />
       <SendDialog
         visible={sending}
-        title={isCreator ? 'Add your part' : bundle ? `Pay ${creatorName} for ${bundle.length + 1} bills` : 'Send a payment'}
+        title={
+          isCreator
+            ? 'Add your part'
+            : togetherSend
+              ? `Pay ${creatorName} for ${togetherSend.length} ${togetherSend.length === 1 ? 'bill' : 'bills'}`
+              : bundle
+                ? `Pay ${creatorName} for ${bundle.length + 1} bills`
+                : 'Send a payment'
+        }
         helper={
           isCreator
             ? 'This counts toward the bill straight away.'
@@ -825,7 +937,9 @@ export default function BillScreen({ navigation, route }: Props) {
         fmt={fmt}
         working={busy.includes('send')}
         breakdown={
-          bundle
+          togetherSend
+            ? togetherSend.map((e) => ({ label: e.title, cents: e.cents }))
+            : bundle
             ? [
                 { label: bill.title || 'This bill', cents: Math.min(quote.totalCents, left) },
                 ...bundle.map((o) => ({ label: o.title, cents: o.cents })),
@@ -833,12 +947,33 @@ export default function BillScreen({ navigation, route }: Props) {
             : undefined
         }
         onSubmit={(cents) =>
-          bundle ? submitBundle(bundle, Math.min(quote.totalCents, left)) : submitPayment(cents)
+          togetherSend
+            ? submitTogether(togetherSend)
+            : bundle
+              ? submitBundle(bundle, Math.min(quote.totalCents, left))
+              : submitPayment(cents)
         }
         onCancel={() => {
           setSending(false);
           setBundle(null);
+          setTogetherSend(null);
         }}
+        styles={styles}
+      />
+
+      <TogetherSheet
+        visible={!!together}
+        payee={creatorName}
+        entries={together ?? []}
+        currentId={bill.id}
+        skipped={skipped}
+        onToggle={(id) =>
+          setSkipped((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+        }
+        fmt={fmt}
+        onChoose={chooseTogetherPart}
+        onSend={sendTogether}
+        onClose={() => setTogether(null)}
         styles={styles}
       />
 
@@ -882,19 +1017,35 @@ export default function BillScreen({ navigation, route }: Props) {
             <Text style={type.bodyMuted}>Pick what you had, or send any amount.</Text>
           )}
           <View style={{ marginTop: spacing.md }}>
-            <Button
-              title={
-                isCreator
-                  ? 'Add my part'
-                  : quote.totalCents > 0
-                  ? `Send ${fmt(quote.totalCents)} to ${creatorName}`
-                  : 'Send a payment'
-              }
-              disabled={busy.includes('send') || checkingOthers}
-              loading={checkingOthers}
-              onPress={startSending}
-            />
+            {pickOnly ? (
+              // Picks save as they're made; this just goes back to the list.
+              <Button title="Done" onPress={() => navigation.goBack()} />
+            ) : (
+              <Button
+                title={
+                  isCreator
+                    ? 'Add my part'
+                    : quote.totalCents > 0
+                    ? `Send ${fmt(quote.totalCents)} to ${creatorName}`
+                    : 'Send a payment'
+                }
+                disabled={busy.includes('send') || checkingOthers}
+                loading={checkingOthers}
+                onPress={startSending}
+              />
+            )}
           </View>
+          {!isCreator && !pickOnly && payeeBills.length > 1 && (
+            <Pressable
+              onPress={openTogether}
+              style={({ pressed }) => [styles.togetherLink, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+            >
+              <Text style={styles.togetherLinkText}>
+                Pay {creatorName} for {payeeBills.length} bills together
+              </Text>
+            </Pressable>
+          )}
           {isCreator && (
             <Pressable
               onPress={remind}
@@ -1087,6 +1238,118 @@ function SendDialog({
           </View>
         </View>
       </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// "Pay Amr together": every bill you still owe them on in this event. Tap a
+// bill to choose your part on it; tick bills in or out; send the total in
+// one go at the bottom.
+function TogetherSheet({
+  visible,
+  payee,
+  entries,
+  currentId,
+  skipped,
+  onToggle,
+  fmt,
+  onChoose,
+  onSend,
+  onClose,
+  styles,
+}: {
+  visible: boolean;
+  payee: string;
+  entries: OtherOwed[];
+  currentId: string;
+  skipped: string[];
+  onToggle: (billId: string) => void;
+  fmt: (cents: number) => string;
+  onChoose: (entry: OtherOwed) => void;
+  onSend: (entries: OtherOwed[]) => void;
+  onClose: () => void;
+  styles: Styles;
+}) {
+  const { colors, type } = useTheme();
+  const chosen = entries.filter((e) => e.cents > 0 && !skipped.includes(e.billId));
+  const total = chosen.reduce((sum, e) => sum + e.cents, 0);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
+        <View style={styles.dialog}>
+          <Text style={type.h2}>Pay {payee} together</Text>
+          <Text style={type.bodyMuted}>
+            Tap a bill to choose your part. Everything ticked goes in one payment.
+          </Text>
+          <View style={styles.togetherList}>
+            {entries.map((e, i) => {
+              const ready = e.cents > 0;
+              const on = ready && !skipped.includes(e.billId);
+              return (
+                <View key={e.billId}>
+                  {i > 0 && <View style={styles.rowDivider} />}
+                  <View style={styles.togetherRow}>
+                    <Pressable
+                      onPress={() => ready && onToggle(e.billId)}
+                      disabled={!ready}
+                      hitSlop={8}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on, disabled: !ready }}
+                      accessibilityLabel={`Include ${e.title}`}
+                      style={[styles.tick, on && styles.tickOn, !ready && { opacity: 0.35 }]}
+                    >
+                      {on && <CheckIcon size={13} color={colors.onAccent} />}
+                    </Pressable>
+                    <Pressable
+                      onPress={() => onChoose(e)}
+                      style={({ pressed }) => [styles.togetherInfo, pressed && { opacity: 0.6 }]}
+                      accessibilityRole="button"
+                      accessibilityHint="Choose your part of this bill"
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={type.body} numberOfLines={1}>
+                          {e.title}
+                          {e.billId === currentId ? ' (this bill)' : ''}
+                        </Text>
+                        <Text style={type.caption}>
+                          {ready ? 'Your part · tap to change' : 'Choose your part'}
+                        </Text>
+                      </View>
+                      <Text style={[type.body, !ready && { color: colors.inkMuted }]}>
+                        {ready ? fmt(e.cents) : ''}
+                      </Text>
+                      <ChevronRightIcon size={16} color={colors.inkMuted} />
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.dialogButtons}>
+            <Pressable
+              style={({ pressed }) => [styles.dialogCancel, pressed && { opacity: 0.7 }]}
+              onPress={onClose}
+              accessibilityRole="button"
+            >
+              <Text style={styles.dialogCancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.dialogConfirm,
+                (pressed || total === 0) && { opacity: total === 0 ? 0.4 : 0.7 },
+              ]}
+              onPress={() => onSend(chosen)}
+              disabled={total === 0}
+              accessibilityRole="button"
+            >
+              <Text style={styles.dialogConfirmText} numberOfLines={1}>
+                {total > 0 ? `Send ${fmt(total)} to ${payee}` : 'Choose your parts'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -1432,6 +1695,21 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     dialogButtons: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
     bundleList: { marginTop: spacing.md, gap: spacing.xs },
+    togetherLink: { alignSelf: 'center', paddingVertical: spacing.sm, marginTop: spacing.xs },
+    togetherLinkText: { ...t.body, fontFamily: fonts.bodySemiBold, color: c.accentText },
+    togetherList: { marginTop: spacing.sm },
+    togetherRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 52 },
+    togetherInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    tick: {
+      width: 24,
+      height: 24,
+      borderRadius: 6,
+      borderWidth: 1.5,
+      borderColor: c.inkMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tickOn: { backgroundColor: c.accent, borderColor: c.accent },
     dialogCancel: {
       flex: 1,
       height: 44,

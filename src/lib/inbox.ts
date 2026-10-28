@@ -8,8 +8,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDay, formatTime } from './dates';
 import { arrangeInbox, markSeen, SeenMap } from './inboxArrange';
+import { earliestOf } from './marks';
 import { NotificationTarget } from './notifications';
 import { loadBlockedIds } from './safety';
+import { loadServerMarks, saveServerMarks } from './seenMarks';
 import { supabase } from './supabase';
 import { getChatReadMap } from './unread';
 
@@ -33,7 +35,7 @@ export type InboxItem = {
 
 const seenKey = (userId: string) => `rollcal.inboxSeen.${userId}`;
 
-async function getSeen(userId: string): Promise<SeenMap> {
+async function getLocalSeen(userId: string): Promise<SeenMap> {
   try {
     const raw = await AsyncStorage.getItem(seenKey(userId));
     return raw ? JSON.parse(raw) : {};
@@ -42,11 +44,22 @@ async function getSeen(userId: string): Promise<SeenMap> {
   }
 }
 
-// Everything on screen now counts as seen (from now, unless it was already).
+// Seen on this phone or any other: the first time counts.
+async function getSeen(userId: string): Promise<SeenMap> {
+  const [local, server] = await Promise.all([getLocalSeen(userId), loadServerMarks('inbox')]);
+  return earliestOf(local, server);
+}
+
+// Everything on screen now counts as seen (from now, unless it was already),
+// here and on the server for your other phones.
 export async function markInboxSeen(userId: string, keys: string[]): Promise<void> {
   try {
-    const next = markSeen(await getSeen(userId), keys);
+    const before = await getLocalSeen(userId);
+    const next = markSeen(before, keys);
     await AsyncStorage.setItem(seenKey(userId), JSON.stringify(next));
+    const fresh: SeenMap = {};
+    for (const key of keys) fresh[key] = next[key];
+    await saveServerMarks('inbox', fresh, true);
   } catch {
     // A lost mark only means something shows as new once more.
   }

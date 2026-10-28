@@ -101,3 +101,20 @@ describe('badge', () => {
     assert.equal(sent.find((m) => m.to === 'tb')?.badge, undefined);
   });
 });
+
+describe('one notification per chat', () => {
+  test('chat messages replace the last one from the same chat; others stand alone', () => {
+    const tokens = [{ token: 'ta', user_id: 'a', platform: 'android', prefs: {}, muted_events: [] }];
+    const [chat, album] = buildMessages(
+      [
+        { id: 1, user_id: 'a', kind: 'chatMessage', event_id: 'e1', title: 't', body: 'b', data: {} },
+        { id: 2, user_id: 'a', kind: 'albumOpen', event_id: 'e1', title: 't', body: 'b', data: {} },
+      ],
+      tokens
+    );
+    assert.equal(chat.collapseId, 'chat-e1');
+    assert.equal(chat.tag, 'chat-e1');
+    assert.equal(album.collapseId, undefined);
+    assert.equal(album.tag, undefined);
+  });
+});

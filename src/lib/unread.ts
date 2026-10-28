@@ -1,15 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { eventStartsAt, isRollOpen } from './coverPhoto';
+import { latestOf } from './marks';
+import { loadServerChatReads, loadServerMarks, saveServerMarks } from './seenMarks';
 
-// Per-event "last read" times, kept on the device, so the app can mark which
-// chats have said something since you last looked.
+// Per-event "last read" times, so the app can mark which chats and rolls
+// have something new since you last looked. Kept on the phone and on the
+// server (seenMarks), so reading on one phone counts on the others.
 
 type ReadMap = Record<string, string>;
 
 const readKey = (userId: string) => `rollcal.chatRead.${userId}`;
 
-export async function getChatReadMap(userId: string): Promise<ReadMap> {
+async function getLocalChatReadMap(userId: string): Promise<ReadMap> {
   try {
     const raw = await AsyncStorage.getItem(readKey(userId));
     return raw ? JSON.parse(raw) : {};
@@ -18,13 +21,22 @@ export async function getChatReadMap(userId: string): Promise<ReadMap> {
   }
 }
 
+// Read on this phone or another one (the server's chat reads): the later wins.
+export async function getChatReadMap(userId: string): Promise<ReadMap> {
+  const [local, server] = await Promise.all([
+    getLocalChatReadMap(userId),
+    loadServerChatReads(userId),
+  ]);
+  return latestOf(local, server);
+}
+
 export async function markChatRead(
   userId: string,
   eventId: string,
   timestamp: string
 ): Promise<void> {
   try {
-    const map = await getChatReadMap(userId);
+    const map = await getLocalChatReadMap(userId);
     // Never move the mark backwards.
     if (!map[eventId] || timestamp > map[eventId]) {
       map[eventId] = timestamp;
@@ -63,7 +75,7 @@ export async function loadUnreadChats(
 
 const photoReadKey = (userId: string) => `rollcal.photoRead.${userId}`;
 
-export async function getPhotoReadMap(userId: string): Promise<ReadMap> {
+async function getLocalPhotoReadMap(userId: string): Promise<ReadMap> {
   try {
     const raw = await AsyncStorage.getItem(photoReadKey(userId));
     return raw ? JSON.parse(raw) : {};
@@ -72,17 +84,28 @@ export async function getPhotoReadMap(userId: string): Promise<ReadMap> {
   }
 }
 
+// Looked at on this phone or another one: the later wins.
+export async function getPhotoReadMap(userId: string): Promise<ReadMap> {
+  const [local, server] = await Promise.all([
+    getLocalPhotoReadMap(userId),
+    loadServerMarks('photos'),
+  ]);
+  return latestOf(local, server);
+}
+
 export async function markPhotosRead(
   userId: string,
   eventId: string,
   timestamp: string
 ): Promise<void> {
   try {
-    const map = await getPhotoReadMap(userId);
+    const map = await getLocalPhotoReadMap(userId);
     if (!map[eventId] || timestamp > map[eventId]) {
       map[eventId] = timestamp;
       await AsyncStorage.setItem(photoReadKey(userId), JSON.stringify(map));
     }
+    // The server keeps the later of the two, for your other phones.
+    await saveServerMarks('photos', { [eventId]: timestamp }, false);
   } catch {
     // A lost mark only means a dot lingers until opened again
   }

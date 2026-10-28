@@ -44,7 +44,8 @@ export type AppStackParamList = {
   // receivedCents is what's been paid on it so far.
   BillReview: { eventId: string; draft?: BillDraft; editBillId?: string; receivedCents?: number };
   BillShare: { draft: BillDraft };
-  Bill: { billId: string };
+  // pickOnly: opened from "Pay together" just to choose your part.
+  Bill: { billId: string; pickOnly?: boolean };
   FindPeople: undefined;
   FriendRequests: undefined;
   SentRequests: undefined;
