@@ -385,7 +385,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     typeChip: {
       paddingVertical: 8,
       paddingHorizontal: spacing.md,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       backgroundColor: c.paper,
@@ -433,8 +433,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     androidSheetCard: {
       marginTop: (RNStatusBar.currentHeight ?? 24) + 12,
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
+      borderTopLeftRadius: radii.sheet,
+      borderTopRightRadius: radii.sheet,
       overflow: 'hidden',
     },
     sheetHandleBar: {

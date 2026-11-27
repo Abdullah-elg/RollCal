@@ -45,6 +45,7 @@ export type ReportReason =
   | 'nudity'
   | 'violence'
   | 'impersonation'
+  | 'child_safety'
   | 'other';
 
 export const REPORT_REASONS: { value: ReportReason; label: string }[] = [
@@ -52,11 +53,16 @@ export const REPORT_REASONS: { value: ReportReason; label: string }[] = [
   { value: 'hate', label: 'Hate speech or symbols' },
   { value: 'nudity', label: 'Nudity or sexual content' },
   { value: 'violence', label: 'Violence or threats' },
+  { value: 'child_safety', label: 'Involves a child' },
   { value: 'spam', label: 'Spam or scams' },
   { value: 'impersonation', label: 'Pretending to be someone else' },
   { value: 'other', label: 'Something else' },
 ];
 
+// route 'host' sends a photo or video report to the event's host (see
+// lib/reportRoute); the server may still send it to support instead. Before
+// host-reports.sql has run there's no route column, so it goes to support
+// as before.
 export async function reportContent(report: {
   reporterId: string;
   target: ReportTarget;
@@ -65,22 +71,46 @@ export async function reportContent(report: {
   targetUserId: string | null;
   reason: ReportReason;
   details?: string;
-}): Promise<string | null> {
-  const { error } = await supabase.from('reports').insert({
+  route?: 'support' | 'host';
+}): Promise<{ error: string | null; route: 'support' | 'host' }> {
+  const row = {
     reporter_id: report.reporterId,
     target_type: report.target,
     target_id: report.targetId,
     target_user_id: report.targetUserId,
     reason: report.reason,
     details: report.details?.trim() || null,
-  });
-  if (!error) return null;
-  if (error.code === '23505') return 'You’ve already reported this. We’re looking into it.';
-  if (error.message.includes('Too many')) return 'You’ve sent a lot of reports today. Try again tomorrow.';
-  return 'Could not send the report. Please try again.';
+  };
+  let route: 'support' | 'host' = report.route === 'host' ? 'host' : 'support';
+  const withRoute: typeof row & { route?: 'host' } = route === 'host' ? { ...row, route } : row;
+  let { error } = await supabase.from('reports').insert(withRoute);
+  if (error && route === 'host' && (error.code === 'PGRST204' || error.code === '42703')) {
+    route = 'support';
+    ({ error } = await supabase.from('reports').insert(row));
+  }
+  if (!error) {
+    // Where the server actually sent it: it may have sent a host report to
+    // support instead. If this can't be read, the request stands.
+    const { data } = await supabase
+      .from('reports')
+      .select('route')
+      .eq('reporter_id', report.reporterId)
+      .eq('target_type', report.target)
+      .eq('target_id', report.targetId)
+      .maybeSingle();
+    const stored = (data as { route?: string } | null)?.route;
+    return { error: null, route: stored === 'host' ? 'host' : stored === 'support' ? 'support' : route };
+  }
+  if (error.code === '23505') {
+    return { error: 'You’ve already reported this. We’re looking into it.', route };
+  }
+  if (error.message.includes('Too many')) {
+    return { error: 'You’ve sent a lot of reports today. Try again tomorrow.', route };
+  }
+  return { error: 'Could not send the report. Please try again.', route };
 }
 
-// Quiet mode is a Pro feature: friend requests to you are kept but hidden.
+// Quiet mode (every plan): friend requests to you are kept but hidden.
 export async function setQuietMode(userId: string, on: boolean): Promise<string | null> {
   const { error } = await supabase.from('profiles').update({ quiet_mode: on }).eq('id', userId);
   return error ? 'Could not change Quiet mode. Please try again.' : null;

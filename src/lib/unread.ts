@@ -93,6 +93,20 @@ export async function getPhotoReadMap(userId: string): Promise<ReadMap> {
   return latestOf(local, server);
 }
 
+// The time photos were last viewed before this visit's mark overwrote it, so
+// the album can still show which photos are new. Only kept when the old mark
+// is clearly from an earlier visit (not one written seconds ago).
+const previousPhotoMarks = new Map<string, string>();
+const RECENT_MARK_MS = 30_000;
+
+export function previousPhotoMark(eventId: string): string | undefined {
+  return previousPhotoMarks.get(eventId);
+}
+
+export function isRecentMark(iso: string): boolean {
+  return Date.now() - new Date(iso).getTime() < RECENT_MARK_MS;
+}
+
 export async function markPhotosRead(
   userId: string,
   eventId: string,
@@ -100,6 +114,8 @@ export async function markPhotosRead(
 ): Promise<void> {
   try {
     const map = await getLocalPhotoReadMap(userId);
+    const before = map[eventId];
+    if (before && !isRecentMark(before)) previousPhotoMarks.set(eventId, before);
     if (!map[eventId] || timestamp > map[eventId]) {
       map[eventId] = timestamp;
       await AsyncStorage.setItem(photoReadKey(userId), JSON.stringify(map));

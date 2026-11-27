@@ -1,6 +1,6 @@
-import { RealtimeChannel } from '@supabase/supabase-js';
 import { Message, RsvpStatus } from '../types';
 import { eventEnded } from './rsvpLabels';
+import { listen } from './live';
 import { supabase } from './supabase';
 
 // Event chat. RLS does the gatekeeping on both ends: only members can read
@@ -82,29 +82,20 @@ export function subscribeToMessages(
   onInsert: (message: Message) => void,
   onUpdate?: (message: Message) => void,
   onDelete?: (messageId: string) => void
-): RealtimeChannel {
-  const filter = `event_id=eq.${eventId}`;
-  return supabase
-    .channel(`event-chat-${eventId}`)
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'messages', filter },
-      (payload) => onInsert(payload.new as Message)
-    )
-    .on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'messages', filter },
-      (payload) => onUpdate?.(payload.new as Message)
-    )
-    .on(
-      'postgres_changes',
-      { event: 'DELETE', schema: 'public', table: 'messages' },
-      (payload) => {
-        const id = (payload.old as { id?: string })?.id;
+): () => void {
+  const match = { column: 'event_id', value: eventId };
+  return listen(`event-chat-${eventId}`, [
+    { table: 'messages', event: 'INSERT', match, onChange: (c) => onInsert(c.new as Message) },
+    { table: 'messages', event: 'UPDATE', match, onChange: (c) => onUpdate?.(c.new as Message) },
+    {
+      table: 'messages',
+      event: 'DELETE',
+      onChange: (c) => {
+        const id = c.old.id as string | undefined;
         if (id) onDelete?.(id);
-      }
-    )
-    .subscribe();
+      },
+    },
+  ]);
 }
 
 // Who's in the event, with how they answered - so the chat can show whether

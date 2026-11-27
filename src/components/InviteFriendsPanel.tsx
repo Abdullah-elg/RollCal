@@ -258,7 +258,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       paddingVertical: spacing.sm,
       paddingHorizontal: spacing.md,
       marginBottom: spacing.md,

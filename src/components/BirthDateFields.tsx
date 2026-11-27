@@ -69,7 +69,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       width: '23.5%',
       paddingVertical: spacing.sm,
       alignItems: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       backgroundColor: c.card,

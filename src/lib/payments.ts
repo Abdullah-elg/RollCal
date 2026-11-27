@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { type ItemPick, type PaidPick, resolvePick } from './billSplit';
+import { listen } from './live';
 import { supabase } from './supabase';
 
 // Paying back the person who paid. Each person picks what they had on their
@@ -170,17 +171,17 @@ export function subscribeToPayments(
   isMine: (paymentId: string) => boolean,
   onChange: () => void
 ): () => void {
-  const channel = supabase
-    .channel(`bill-payments-${billId}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'bill_payments' }, (payload) => {
-      const row = payload.new as { bill_id?: string } | undefined;
-      const gone = payload.old as { id?: string } | undefined;
-      if (row?.bill_id === billId || (gone?.id && isMine(gone.id))) onChange();
-    })
-    .subscribe();
-  return () => {
-    supabase.removeChannel(channel);
-  };
+  return listen(`bill-payments-${billId}`, [
+    {
+      table: 'bill_payments',
+      event: '*',
+      onChange: (c) => {
+        const row = c.new as { bill_id?: string };
+        const gone = c.old as { id?: string };
+        if (row.bill_id === billId || (gone.id && isMine(gone.id))) onChange();
+      },
+    },
+  ]);
 }
 
 // ---------------------------------------------------------------------------

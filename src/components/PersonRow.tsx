@@ -4,7 +4,7 @@
 import { ReactNode, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
-import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Profile } from '../types';
 
 import Avatar from './Avatar';
@@ -106,18 +106,19 @@ export function MoreAction({ name, onPress }: { name: string; onPress: () => voi
       accessibilityRole="button"
       accessibilityLabel={`More options for ${name}`}
       style={({ pressed }) => [
+        // A plain icon with a full-size touch target, not a filled circle.
         {
-          width: 32,
-          height: 32,
-          borderRadius: 16,
+          width: 44,
+          height: 44,
+          marginRight: -spacing.sm,
+          borderRadius: radii.full,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: colors.line,
         },
-        pressed && { opacity: 0.6 },
+        pressed && { backgroundColor: colors.ink + '0D' },
       ]}
     >
-      <MoreIcon size={18} color={colors.ink} />
+      <MoreIcon size={20} color={colors.inkMuted} />
     </Pressable>
   );
 }

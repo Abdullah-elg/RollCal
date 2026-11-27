@@ -51,6 +51,11 @@ type AuthContextValue = {
     code: string,
     newPassword: string
   ) => Promise<{ error: string | null }>;
+  // Signed in: checks the current password, then saves the new one.
+  changePassword: (current: string, next: string) => Promise<{ error: string | null }>;
+  // Signed in without knowing the password (forgot it, or signs in with
+  // Apple or Google): the code from sendPasswordReset, then the new one.
+  setPasswordWithCode: (code: string, next: string) => Promise<{ error: string | null }>;
   // True between a correct reset code and the new password being saved.
   // The app stays on the sign-in screens meanwhile.
   recovering: boolean;
@@ -71,6 +76,10 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const AGE_BLOCK_KEY = 'rollcal.ageBlocked';
+// When signing in to an unconfirmed account last sent a code, per email.
+const AUTO_CODE_KEY = 'rollcal.autoCodeSent';
+// Codes last an hour; one sent this recently is still good.
+const AUTO_CODE_GAP_MS = 10 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -235,8 +244,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
     });
     if (error?.code === 'email_not_confirmed') {
-      // Send a fresh code so the verify screen has something to check.
-      await supabase.auth.resend({ type: 'signup', email: email.trim() });
+      // Send a fresh code so the verify screen has something to check, but
+      // not on every attempt: repeated sign-ins (app review robots do this)
+      // would flood the inbox. The verify screen can always send another.
+      const key = email.trim().toLowerCase();
+      const sent: Record<string, number> = JSON.parse(
+        (await AsyncStorage.getItem(AUTO_CODE_KEY).catch(() => null)) ?? '{}'
+      );
+      if (!sent[key] || Date.now() - sent[key] > AUTO_CODE_GAP_MS) {
+        await supabase.auth.resend({ type: 'signup', email: email.trim() });
+        sent[key] = Date.now();
+        await AsyncStorage.setItem(AUTO_CODE_KEY, JSON.stringify(sent)).catch(() => {});
+      }
       return { error: null, needsEmailConfirm: true };
     }
     return { error: error ? error.message : null, needsEmailConfirm: false };
@@ -284,6 +303,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) return { error: error.message };
     setRecovering(false);
     return { error: null };
+  };
+
+  const changePassword: AuthContextValue['changePassword'] = async (current, next) => {
+    const email = session?.user.email;
+    if (!email) return { error: 'This account has no email address.' };
+    const { error: checkError } = await supabase.auth.signInWithPassword({
+      email,
+      password: current,
+    });
+    if (checkError) {
+      return {
+        error: /invalid/i.test(checkError.message)
+          ? 'Your current password isn’t right.'
+          : checkError.message,
+      };
+    }
+    const { error } = await supabase.auth.updateUser({ password: next });
+    return { error: error ? error.message : null };
+  };
+
+  const setPasswordWithCode: AuthContextValue['setPasswordWithCode'] = async (code, next) => {
+    const email = session?.user.email;
+    if (!email) return { error: 'This account has no email address.' };
+    // Always check the code, even though they're signed in: an unlocked
+    // phone alone mustn't be enough to change the password.
+    const { error: codeError } = await supabase.auth.verifyOtp({
+      email,
+      token: code.trim(),
+      type: 'recovery',
+    });
+    if (codeError) return { error: codeError.message };
+    const { error } = await supabase.auth.updateUser({ password: next });
+    return { error: error ? error.message : null };
   };
 
   const blockForAge = async () => {
@@ -345,6 +397,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         verifyEmail,
         resendEmailCode,
         sendPasswordReset,
+        changePassword,
+        setPasswordWithCode,
         resetPassword,
         recovering,
         ageBlocked,

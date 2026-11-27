@@ -8,7 +8,7 @@ import { useTheme } from './ThemeContext';
 
 // The small Pro pop-up. Any screen calls showProPrompt('video') when a free
 // account reaches for a Pro feature; it floats over the bottom of the screen
-// with what they can't do, and "See Pro" opens the full upgrade screen.
+// with what they can't do, and "See plans" opens the plans screen.
 
 type ProPromptValue = { showProPrompt: (reason: ProPromptReason) => void };
 
@@ -67,7 +67,7 @@ export function ProPromptProvider({
                   onPress={seePro}
                   accessibilityRole="button"
                 >
-                  <Text style={styles.primaryText}>See Pro</Text>
+                  <Text style={styles.primaryText}>See plans</Text>
                 </Pressable>
               </View>
             </View>
@@ -92,7 +92,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     card: {
       marginHorizontal: spacing.md,
       backgroundColor: c.paper,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       padding: spacing.lg,
@@ -106,10 +106,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     buttons: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
     secondary: {
       flex: 1,
-      height: 44,
+      height: 48,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       backgroundColor: c.card,
@@ -117,10 +117,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     secondaryText: { ...t.button, color: c.ink },
     primary: {
       flex: 1,
-      height: 44,
+      height: 48,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       backgroundColor: c.accent,
     },
     primaryText: { ...t.button, color: c.onAccent },

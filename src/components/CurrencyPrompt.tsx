@@ -30,7 +30,7 @@ export default function CurrencyPrompt() {
       visible
       selected={null}
       title="Your currency"
-      intro="Which currency do you use? Bills you split and Pro prices are shown in it. You can change it any time in Settings."
+      intro="Which currency do you use? Bills you split and plan prices are shown in it. You can change it any time in Settings."
       onSelect={choose}
     />
   );

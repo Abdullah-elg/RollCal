@@ -56,3 +56,6 @@ platform-tools/
 # editors
 .idea/
 store/builds/
+
+# Migration exports hold people's data (scripts/export-for-migration.mjs).
+migration-export/

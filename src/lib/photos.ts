@@ -4,8 +4,10 @@
 
 import { File } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { cleanPhoto } from './cleanPhoto';
+import { cleanPhoto, THUMB_SIDE } from './cleanPhoto';
+import { discardMedia, MediaError, uploadMedia } from './media';
 import { supabase } from './supabase';
+import { videoThumb } from './videoThumb';
 import {
   formatBytes,
   loadUploadAllowance,
@@ -13,12 +15,14 @@ import {
   overAllowance,
   UploadAllowance,
   VIDEO_MAX_SECONDS,
+  FREE_VIDEO_SECONDS,
+  FREE_VIDEO_BYTES,
 } from './uploads';
 import { Event } from '../types';
 import { hapticShutter } from './haptics';
 import { rollState } from './roll';
 
-const BUCKET = 'event-photos';
+const BUCKET = 'event-photos' as const;
 
 // Events the user is part of whose 48-hour upload window is open right now.
 // Being able to see an event isn't enough: a pending or declined invite shows
@@ -43,10 +47,12 @@ export async function getOpenUploadEvents(userId: string): Promise<Event[]> {
   );
 }
 
-// Uploads one picked photo or video to the event's folder and records it in
-// photos. The database fills in its size and type from the stored file and
-// refuses videos without Pro; if the row is refused, the file is removed so
-// it doesn't count against the allowance. Returns the new row's id.
+// Uploads one picked photo or video, with a small preview for the grid, and
+// records it in photos. The database fills in its size and type from the
+// stored file and refuses videos on Basic; if the row is refused, the file
+// is thrown away so it doesn't count against the allowance. Goes to R2
+// through the media Worker (lib/media), or Supabase Storage if the Worker
+// can't be reached. Returns the new row's id.
 export async function uploadPhotoAsset(
   eventId: string,
   userId: string,
@@ -59,29 +65,36 @@ export async function uploadPhotoAsset(
   let body: ArrayBuffer;
   let ext: string;
   let contentType: string;
+  let thumb: ArrayBuffer | null = null;
   if (isVideo) {
     // Read the video straight from disk.
     body = await new File(asset.uri).arrayBuffer();
     ext = (asset.uri.split('.').pop() ?? 'mp4').toLowerCase();
-    contentType = asset.mimeType ?? 'video/mp4';
+    contentType = asset.mimeType ?? (ext === 'mov' ? 'video/quicktime' : 'video/mp4');
+    thumb = await videoThumb(asset.uri);
   } else {
     // Strips location and other hidden details; see cleanPhoto.
-    const photo = await cleanPhoto(asset.uri, quality);
+    const photo = await cleanPhoto(asset.uri, quality, undefined, THUMB_SIDE);
     body = photo.body;
     ext = photo.ext;
     contentType = photo.mimeType;
+    thumb = photo.thumb ?? null;
   }
-  const path = `${eventId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-  const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, body, {
-    contentType,
-  });
-  if (uploadError) {
-    // Storage's row-level security only says no here when the allowance is used up.
-    throw new UploadError(
-      /row-level security|unauthorized|403/i.test(uploadError.message) ? 'limit' : 'failed',
-      uploadError.message
-    );
+  let path: string;
+  let inR2 = true;
+  try {
+    path = await uploadMedia({ bucket: BUCKET, eventId, body, contentType, thumb });
+  } catch (e) {
+    if (!(e instanceof MediaError) || e.reason !== 'unavailable') {
+      const reason = e instanceof MediaError ? e.reason : 'failed';
+      throw new UploadError(
+        reason === 'limit' ? 'limit' : reason === 'video' ? 'video' : 'failed',
+        e instanceof Error ? e.message : 'Upload failed'
+      );
+    }
+    inR2 = false;
+    path = await uploadToStorage(eventId, body, ext, contentType);
   }
 
   const { data, error: rowError } = await supabase
@@ -95,17 +108,41 @@ export async function uploadPhotoAsset(
     .select('id')
     .single();
   if (rowError) {
-    await supabase.storage.from(BUCKET).remove([path]);
-    throw new UploadError(rowError.hint === 'video_pro' ? 'video' : 'failed', rowError.message);
+    if (inR2) await discardMedia(BUCKET, path);
+    else await supabase.storage.from(BUCKET).remove([path]);
+    throw new UploadError(
+      rowError.hint === 'video_pro' ? 'video' : rowError.hint === 'photos_full' ? 'roll_full' : 'failed',
+      rowError.message
+    );
   }
   return data.id;
+}
+
+// The way uploads worked before R2, used only when the media Worker can't
+// be reached.
+async function uploadToStorage(
+  eventId: string,
+  body: ArrayBuffer,
+  ext: string,
+  contentType: string
+): Promise<string> {
+  const path = `${eventId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, body, { contentType });
+  if (error) {
+    // Storage's row-level security only says no here when the allowance is used up.
+    throw new UploadError(
+      /row-level security|unauthorized|403/i.test(error.message) ? 'limit' : 'failed',
+      error.message
+    );
+  }
+  return path;
 }
 
 // Why an upload stopped: 'limit' = their storage is full,
 // 'video' = a video without Pro.
 export class UploadError extends Error {
   constructor(
-    readonly reason: 'limit' | 'video' | 'failed',
+    readonly reason: 'limit' | 'video' | 'roll_full' | 'failed',
     message: string
   ) {
     super(message);
@@ -124,8 +161,8 @@ export async function uploadBlocker(isPro: boolean): Promise<'storage' | string 
   return isPro ? proLimitMessage(allowance) : 'storage';
 }
 
-// The roll's picker: photos and videos for everyone, so free users can see
-// videos are possible; uploadRollMedia turns theirs into a Pro prompt.
+// The roll's picker: photos and videos for everyone. Free accounts can add
+// videos up to 15 seconds; uploadRollMedia turns longer ones into a prompt.
 export async function pickRollMedia(): Promise<ImagePicker.ImagePickerAsset[]> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images', 'videos'],
@@ -171,9 +208,15 @@ export async function uploadRollMedia(
 
   const ready = assets.filter((a) => {
     if (a.type !== 'video') return true;
+    // Free: short videos only (15 s, 25 MB; the server checks the same).
     if (!isPro) {
-      needsPro = 'video';
-      return false;
+      const short = !!a.duration && a.duration <= FREE_VIDEO_SECONDS * 1000 + 500;
+      const small = !a.fileSize || a.fileSize <= FREE_VIDEO_BYTES;
+      if (!short || !small) {
+        needsPro = 'video';
+        return false;
+      }
+      return true;
     }
     if (a.duration && a.duration > (VIDEO_MAX_SECONDS + 1) * 1000) {
       problems.push(`Videos can be up to ${VIDEO_MAX_SECONDS / 60} minute long. Trim it and try again.`);
@@ -208,6 +251,10 @@ export async function uploadRollMedia(
         needsPro = 'video';
         continue;
       }
+      if (reason === 'roll_full') {
+        problems.push('The photo roll is full. The host can make room for more with an Event Pass or Plus.');
+        break;
+      }
       problems.push('Some uploads didn’t go through. Please try again.');
       break;
     }
@@ -218,7 +265,7 @@ export async function uploadRollMedia(
 }
 
 function proLimitMessage(a: UploadAllowance): string {
-  return `You’ve stored ${formatBytes(a.storedLimit)}, the most Pro allows. Remove some uploads to add more.`;
+  return `You’ve stored ${formatBytes(a.storedLimit)}, the most your plan allows. Remove some uploads to add more.`;
 }
 
 // Deletes every file in an event's folder. Called before the event row is

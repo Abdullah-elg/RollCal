@@ -155,7 +155,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: 1,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       // Same as the code field on VerifyEmailScreen: a fixed height with no
       // vertical padding, or iOS clips the tops of these large digits.
       height: 64,

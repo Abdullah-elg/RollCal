@@ -33,6 +33,9 @@ type Props = {
   extra?: { label: string; onPress: () => void };
   // A plain action listed at the very top, like "Reply" in chat.
   primary?: { label: string; onPress: () => void };
+  // More plain actions, listed just before the red extra one, like "Let
+  // them add photos" for the host. They run as the list closes.
+  actions?: { label: string; onPress: () => void }[];
   onClose: () => void;
   onBlocked: () => void;
 };
@@ -47,6 +50,7 @@ export default function PersonActionsSheet({
   report,
   extra,
   primary,
+  actions,
   onClose,
   onBlocked,
 }: Props) {
@@ -207,6 +211,21 @@ export default function PersonActionsSheet({
                 <View style={styles.divider} />
               </>
             )}
+            {actions?.map((a) => (
+              <View key={a.label}>
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+                  onPress={() => {
+                    onClose();
+                    a.onPress();
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={type.body}>{a.label}</Text>
+                </Pressable>
+                <View style={styles.divider} />
+              </View>
+            ))}
             {extra && (
               <>
                 <Pressable
@@ -279,7 +298,7 @@ const makeStyles = (c: Palette) =>
     card: {
       marginHorizontal: spacing.md,
       backgroundColor: c.paper,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       paddingHorizontal: spacing.lg,
@@ -290,6 +309,6 @@ const makeStyles = (c: Palette) =>
       shadowRadius: 12,
       elevation: 8,
     },
-    row: { minHeight: 48, justifyContent: 'center' },
+    row: { minHeight: 52, justifyContent: 'center' },
     divider: { height: StyleSheet.hairlineWidth, backgroundColor: c.line },
   });

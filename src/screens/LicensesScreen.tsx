@@ -141,7 +141,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     section: { ...t.caption, fontSize: 13, color: c.inkMuted, marginBottom: spacing.xs },
     credit: {
       backgroundColor: c.card,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       padding: spacing.md,
@@ -153,7 +153,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     divider: { height: StyleSheet.hairlineWidth, backgroundColor: c.line },
     textBox: {
       backgroundColor: c.card,
-      borderRadius: radii.sm,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       padding: spacing.md,

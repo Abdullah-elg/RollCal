@@ -17,7 +17,7 @@ import { Calendar, DateData } from 'react-native-calendars';
 import { MarkedDates } from 'react-native-calendars/src/types';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowIcon } from '../components/icons';
-import { Button } from '../components/ui';
+import { Button, SectionLabel } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useUnread } from '../context/UnreadContext';
@@ -40,6 +40,7 @@ import {
   TypeTokens,
 } from '../theme';
 import { Event } from '../types';
+import { placeLabel } from '../lib/place';
 
 type Props = TabScreenProps<'CalendarTab'>;
 type ViewMode = 'month' | 'day';
@@ -175,10 +176,10 @@ export default function CalendarScreen({ navigation }: Props) {
         <View style={styles.timeCol}>
           {/* One line each: "10:30 PM" fits the column, and shrinks a little
               rather than wrapping if the text is set larger. */}
-          <Text style={styles.timeText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+          <Text style={styles.timeText} numberOfLines={1}>
             {formatTime(event.starts_at)}
           </Text>
-          <Text style={styles.timeEnd} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+          <Text style={styles.timeEnd} numberOfLines={1}>
             {formatTime(event.ends_at)}
           </Text>
         </View>
@@ -188,7 +189,7 @@ export default function CalendarScreen({ navigation }: Props) {
           </Text>
           {event.location ? (
             <Text style={type.caption} numberOfLines={1}>
-              {event.location}
+              {placeLabel(event.location)}
             </Text>
           ) : null}
         </View>
@@ -291,9 +292,7 @@ export default function CalendarScreen({ navigation }: Props) {
           />
 
           <View style={styles.dayBlock}>
-            <Text style={styles.sectionLabel}>
-              {formatDay(`${selectedDay}T12:00:00`)}
-            </Text>
+            <SectionLabel>{formatDay(`${selectedDay}T12:00:00`)}</SectionLabel>
             {dayEvents.length > 0 ? (
               <View style={styles.eventListWrap}>
                 {dayEvents.map((event, i) => (
@@ -326,8 +325,16 @@ export default function CalendarScreen({ navigation }: Props) {
             </Pressable>
 
             <View style={styles.dayNavCenter}>
-              <Text style={styles.dayNavTitle}>
-                {formatDay(`${selectedDay}T12:00:00`)}
+              <Text style={styles.dayNavWeekday}>
+                {new Date(`${selectedDay}T12:00:00`).toLocaleDateString(undefined, {
+                  weekday: 'long',
+                })}
+              </Text>
+              <Text style={styles.dayNavTitle} numberOfLines={1} adjustsFontSizeToFit>
+                {new Date(`${selectedDay}T12:00:00`).toLocaleDateString(undefined, {
+                  month: 'long',
+                  day: 'numeric',
+                })}
               </Text>
               {!isToday && (
                 <Pressable
@@ -399,7 +406,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flexDirection: 'row',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       backgroundColor: c.card,
       overflow: 'hidden',
     },
@@ -419,19 +426,13 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       marginHorizontal: spacing.lg,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: 16,
+      borderRadius: radii.card,
       overflow: 'hidden',
       paddingBottom: spacing.sm,
     },
     dayBlock: {
       paddingHorizontal: spacing.lg,
       marginTop: spacing.lg,
-    },
-    sectionLabel: {
-      ...t.body,
-      fontSize: 15,
-      color: c.inkMuted,
-      marginBottom: spacing.sm,
     },
     emptyDayWrap: {
       paddingVertical: spacing.md,
@@ -455,7 +456,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: 16,
+      borderRadius: radii.card,
       paddingVertical: spacing.md,
       paddingHorizontal: spacing.md,
       marginBottom: spacing.lg,
@@ -463,7 +464,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     navBtn: {
       width: 40,
       height: 40,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       backgroundColor: c.paper,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
@@ -476,6 +477,11 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       justifyContent: 'center',
       paddingHorizontal: spacing.sm,
     },
+    dayNavWeekday: {
+      ...t.caption,
+      fontFamily: fonts.bodyMedium,
+      textAlign: 'center',
+    },
     dayNavTitle: {
       ...t.h3,
       fontFamily: fonts.heading,
@@ -487,7 +493,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       paddingVertical: 2,
       paddingHorizontal: spacing.sm,
       backgroundColor: c.line,
-      borderRadius: 999,
+      borderRadius: radii.full,
     },
     todayBadgeText: {
       ...t.caption,

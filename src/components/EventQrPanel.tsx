@@ -19,6 +19,7 @@ import { joinUrl } from '../lib/links';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { CheckIcon, CopyIcon } from './icons';
 import { Button } from './ui';
+import { placeLabel } from '../lib/place';
 
 type Props = {
   event: {
@@ -56,7 +57,7 @@ export default function EventQrPanel({ event }: Props) {
       message:
         `Join "${event.title}" on RollCal!\n` +
         `${formatSpan(event.starts_at, event.ends_at)}` +
-        (event.location ? `\n${event.location}` : '') +
+        (event.location ? `\n${placeLabel(event.location)}` : '') +
         `\n\nTap to join: ${webUrl}` +
         `\n\nOr open the app, tap "Join with code" and enter: ${event.invite_code}`,
     });
@@ -72,7 +73,7 @@ export default function EventQrPanel({ event }: Props) {
       </Text>
       {event.location ? (
         <Text style={styles.location} numberOfLines={1}>
-          {event.location}
+          {placeLabel(event.location)}
         </Text>
       ) : null}
 
@@ -111,7 +112,7 @@ export default function EventQrPanel({ event }: Props) {
       </View>
 
       <Text style={styles.hint}>
-        Scan with any phone camera app or RollCal to open and join this event.
+        Scan with a phone camera to join.
       </Text>
 
       <Button
@@ -155,14 +156,14 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     qrFrame: {
       padding: spacing.md,
       backgroundColor: c.paper,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
     },
     codeBox: {
       alignItems: 'center',
       backgroundColor: c.card,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       paddingVertical: spacing.sm,
       paddingHorizontal: spacing.lg,
       borderWidth: StyleSheet.hairlineWidth,

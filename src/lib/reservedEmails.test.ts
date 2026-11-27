@@ -8,10 +8,15 @@ describe('isReservedEmail', () => {
     assert.equal(isReservedEmail('support@rollcal.app'), true);
     assert.equal(isReservedEmail('  Support@RollCal.APP '), true);
     assert.equal(isReservedEmail('no-reply@rollcal.app'), true);
+    assert.equal(isReservedEmail('testuser99@rollcal.app'), true);
+    assert.equal(isReservedEmail('support+x@rollcal.app'), true);
+    assert.equal(isReservedEmail('a@mail.rollcal.app'), true);
   });
 
-  test('everyone else, including other rollcal.app addresses', () => {
+  test('everyone else, and the app-review accounts', () => {
     assert.equal(isReservedEmail('apple-test@rollcal.app'), false);
+    assert.equal(isReservedEmail('google-test@rollcal.app'), false);
     assert.equal(isReservedEmail('support@gmail.com'), false);
+    assert.equal(isReservedEmail('me@notrollcal.app'), false);
   });
 });

@@ -5,7 +5,7 @@ import { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/n
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LegalDoc } from '../legal/documents';
 import { BillDraft } from '../lib/bills';
-import { UpgradeReason } from '../lib/pro';
+import { PlanId, UpgradeReason } from '../lib/pro';
 
 export type AuthStackParamList = {
   SignIn: undefined;
@@ -22,7 +22,7 @@ export type TabParamList = {
   CalendarTab: undefined;
   CreateTab: undefined;
   FriendsTab: undefined;
-  SettingsTab: undefined;
+  ProfileTab: undefined;
 };
 
 export type AppStackParamList = {
@@ -30,12 +30,21 @@ export type AppStackParamList = {
   // With editEventId the same form edits an existing event (host only).
   CreateEvent: { editEventId?: string; initialDate?: string } | undefined;
   EventDetail: { eventId: string };
+  // Every photo in an event. From a Memory it also offers "Go to event".
+  EventPhotos: { eventId: string; fromMemories?: boolean };
+  // The shareable recap picture of an event.
+  Recap: { eventId: string };
+  // The recap played back like a story (photos with a slow zoom).
+  // savedPath: play the event's saved recap file instead of building it.
+  VideoRecap: { eventId: string; mode?: 'all' | 'highlights'; savedPath?: string };
   EventChat: { eventId: string; title: string };
   JoinEvent: { code?: string; openScanner?: boolean } | undefined;
   EditProfile: undefined;
+  ChangePassword: undefined;
   PaymentMethods: undefined;
-  // RollCal Pro; reason is where the person came from.
-  Upgrade: { reason?: UpgradeReason } | undefined;
+  // The plans screen; reason is where the person came from.
+  // plan wins over reason for which card opens; eventId is for Event Pass.
+  Upgrade: { reason?: UpgradeReason; plan?: PlanId; eventId?: string } | undefined;
   Legal: { doc: LegalDoc };
   // Bill splitting. BillReview is where a bill is typed in or a scanned one
   // is checked; BillShare picks payment methods and shares it; Bill shows a
@@ -51,9 +60,13 @@ export type AppStackParamList = {
   SentRequests: undefined;
   EventInvitations: undefined;
   Notifications: undefined;
+  // A photo or video reported to you as the event's host.
+  HostReport: { reportId: string };
   BlockedPeople: undefined;
-  Support: undefined;
+  Support: { message?: string } | undefined;
   Licenses: undefined;
+  // Behind the gear on the Profile tab.
+  Settings: undefined;
 };
 
 // Tab screens can navigate to stack routes too, so their props compose both.

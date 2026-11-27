@@ -5,12 +5,16 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
+  Animated,
   Image,
   Pressable,
   RefreshControl,
+  ScrollView,
   SectionList,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +26,7 @@ import Svg, {
 } from 'react-native-svg';
 import Avatar from '../components/Avatar';
 import { BellIcon, ChevronRightIcon } from '../components/icons';
-import { Button } from '../components/ui';
+import { Button, SectionLabel, SECTION_GAP } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useUnread } from '../context/UnreadContext';
@@ -51,13 +55,23 @@ import { supabase } from '../lib/supabase';
 import { TabScreenProps } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Event } from '../types';
-import { signedUrls } from '../lib/signedUrls';
+import { signedLinks, signedUrls } from '../lib/signedUrls';
+import { loadMemories } from '../lib/memories';
+import { eventInitial, isLiveNow, pickMemoryStrip } from '../lib/homeEvents';
+import { placeLabel } from '../lib/place';
+import { daysLeft, loadPhotoExpiry, WARN_DAYS } from '../lib/expiry';
 
 type Props = TabScreenProps<'HomeTab'>;
+
+type MemoryTile = { eventId: string; title: string; image: string };
+// A past event whose photos are deleted within a week.
+type ExpiringTile = MemoryTile & { days: number };
 
 type EventMeta = {
   photoCount: number;
   coverUrl?: string;
+  // The host's cover, else the event's first photo (upcoming events only).
+  imageUrl?: string;
   goingCount: number;
   attendees: Array<{ userId: string; name: string; avatarUrl?: string | null }>;
 };
@@ -78,7 +92,7 @@ export default function HomeScreen({ navigation }: Props) {
   const { profile, session } = useAuth();
   const userId = session!.user.id;
   const { colors, type } = useTheme();
-  const { unreadChats, unreadPhotos, refresh: refreshUnread } = useUnread();
+  const { unreadChats, unreadPhotos, hostReports, refresh: refreshUnread } = useUnread();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
 
@@ -87,6 +101,8 @@ export default function HomeScreen({ navigation }: Props) {
   // Unseen notifications, for the number on the bell.
   const [inboxNew, setInboxNew] = useState(0);
   const [metaMap, setMetaMap] = useState<Record<string, EventMeta>>({});
+  const [memoryTiles, setMemoryTiles] = useState<MemoryTile[]>([]);
+  const [expiringTiles, setExpiringTiles] = useState<ExpiringTile[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   // The last load couldn't reach the server. Events from an earlier load
@@ -120,7 +136,7 @@ export default function HomeScreen({ navigation }: Props) {
           const [{ data: photosData }, { data: rsvpsData }] = await Promise.all([
             supabase
               .from('photos')
-              .select('id, event_id, storage_path, created_at')
+              .select('id, event_id, storage_path, created_at, kind')
               .in('event_id', eventIds)
               .order('created_at', { ascending: true }),
             supabase
@@ -170,6 +186,18 @@ export default function HomeScreen({ navigation }: Props) {
               if (photo) {
                 chosenCoverPaths.push(photo.storage_path);
               }
+            }
+          });
+
+          // Events still to come with no chosen cover show their first photo.
+          const nowMs = Date.now();
+          const firstPathByEvent = new Map<string, string>();
+          data.forEach((e) => {
+            if (new Date(e.ends_at).getTime() < nowMs) return;
+            const first = photosData?.find((p) => p.event_id === e.id && p.kind === 'photo');
+            if (first) {
+              firstPathByEvent.set(e.id, first.storage_path);
+              chosenCoverPaths.push(first.storage_path);
             }
           });
 
@@ -226,6 +254,11 @@ export default function HomeScreen({ navigation }: Props) {
             newMeta[e.id] = {
               photoCount: count,
               coverUrl: url, // undefined unless explicitly chosen by the host!
+              imageUrl:
+                url ??
+                (firstPathByEvent.has(e.id)
+                  ? signedUrlMap.get(firstPathByEvent.get(e.id)!)
+                  : undefined),
               goingCount: going,
               attendees: attendeeList,
             };
@@ -245,13 +278,50 @@ export default function HomeScreen({ navigation }: Props) {
     refreshUnread();
   }, [userId, refreshUnread]);
 
+  const loadStrip = useCallback(async () => {
+    try {
+      const all = await loadMemories();
+      // Photos about to be deleted, soonest first.
+      const expiry = await loadPhotoExpiry(all.map((m) => m.eventId));
+      const soon = all
+        .map((m) => ({ m, e: expiry[m.eventId] }))
+        .filter(({ e }) => e?.expiresAt && !e.expiredAt && daysLeft(e.expiresAt) <= WARN_DAYS)
+        .sort((a, b) => a.e!.expiresAt!.localeCompare(b.e!.expiresAt!))
+        .slice(0, 8);
+      // Shown once: what's expiring isn't repeated under memories.
+      const soonIds = new Set(soon.map(({ m }) => m.eventId));
+      const picked = pickMemoryStrip(all.filter((m) => !soonIds.has(m.eventId)), 6);
+      const links = await signedLinks(
+        'event-photos',
+        [...picked, ...soon.map(({ m }) => m)].flatMap((m) => (m.coverPath ? [m.coverPath] : []))
+      );
+      const expiring: ExpiringTile[] = [];
+      soon.forEach(({ m, e }) => {
+        const link = m.coverPath ? links.get(m.coverPath) : undefined;
+        const image = link ? (link.thumb ?? (m.coverIsVideo ? null : link.url)) : null;
+        if (image) expiring.push({ eventId: m.eventId, title: m.title, image, days: daysLeft(e!.expiresAt!) });
+      });
+      setExpiringTiles(expiring);
+      const tiles: MemoryTile[] = [];
+      picked.forEach((m) => {
+        const link = m.coverPath ? links.get(m.coverPath) : undefined;
+        const image = link ? (link.thumb ?? (m.coverIsVideo ? null : link.url)) : null;
+        if (image) tiles.push({ eventId: m.eventId, title: m.title, image });
+      });
+      setMemoryTiles(tiles);
+    } catch {
+      // The strip is a bonus; hide it quietly.
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       load();
+      loadStrip();
       loadInbox(userId)
         .then((inbox) => setInboxNew(inbox.fresh.length))
         .catch(() => {});
-    }, [load, userId])
+    }, [load, loadStrip, userId])
   );
 
   const retry = async () => {
@@ -264,18 +334,18 @@ export default function HomeScreen({ navigation }: Props) {
   const onRefresh = async () => {
     hapticLight();
     setRefreshing(true);
-    await load();
+    await Promise.all([load(), loadStrip()]);
     setRefreshing(false);
   };
 
   const now = Date.now();
   const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
   const weekAgo = now - sevenDaysMs;
-  const weekAhead = now + sevenDaysMs;
   const invitedIds = useMemo(() => new Set(invites.map((i) => i.event.id)), [invites]);
+  // A photo reported to you as host keeps its event's dot until you deal with it.
   const unreadSet = useMemo(
-    () => new Set([...unreadChats, ...unreadPhotos]),
-    [unreadChats, unreadPhotos]
+    () => new Set([...unreadChats, ...unreadPhotos, ...hostReports.map((r) => r.event_id)]),
+    [unreadChats, unreadPhotos, hostReports]
   );
 
   const visible = useMemo(
@@ -302,30 +372,24 @@ export default function HomeScreen({ navigation }: Props) {
     [visible, now]
   );
 
-  // Hero event: earliest upcoming event in the next 7 days
-  const heroEvent = useMemo(() => {
-    if (upcomingAll.length === 0) return null;
-    const earliest = upcomingAll[0];
-    const startMs = new Date(earliest.starts_at).getTime();
-    if (startMs <= weekAhead) {
-      return earliest;
-    }
-    return null;
-  }, [upcomingAll, weekAhead]);
-
-  const upcomingRemaining = useMemo(() => {
-    if (!heroEvent) return upcomingAll;
-    return upcomingAll.filter((e) => e.id !== heroEvent.id);
-  }, [upcomingAll, heroEvent]);
+  // Any ended event at all (Home hides ones older than a week), so the empty
+  // state can tell someone with history from a brand new user.
+  const hasPastEvents = useMemo(
+    () =>
+      events.some(
+        (e) => !invitedIds.has(e.id) && new Date(e.ends_at).getTime() < now
+      ),
+    [events, invitedIds, now]
+  );
 
   const sections = useMemo<EventSection[]>(() => {
     const list: EventSection[] = [];
 
-    if (upcomingRemaining.length > 0) {
+    if (upcomingAll.length > 0) {
       list.push({
         title: 'Coming up',
         type: 'upcoming',
-        data: upcomingRemaining,
+        data: upcomingAll,
       });
     }
 
@@ -338,12 +402,30 @@ export default function HomeScreen({ navigation }: Props) {
     }
 
     return list;
-  }, [upcomingRemaining, past]);
+  }, [upcomingAll, past]);
 
   const isPhotoCard = (event: Event | undefined, section: EventSection) => {
     const meta = event && metaMap[event.id];
     return section.type === 'past' && !!meta && meta.photoCount > 0 && !!meta.coverUrl;
   };
+
+  const openEvent = (eventId: string) => {
+    hapticLight();
+    navigation.navigate('EventDetail', { eventId });
+  };
+
+  const openMemory = (eventId: string) => {
+    hapticLight();
+    navigation.navigate('EventPhotos', { eventId, fromMemories: true });
+  };
+
+  const memoryStrip =
+    memoryTiles.length > 0 || expiringTiles.length > 0 ? (
+      <>
+        {expiringTiles.length > 0 && <ExpiringStrip tiles={expiringTiles} onOpen={openMemory} />}
+        {memoryTiles.length > 0 && <MemoryStrip tiles={memoryTiles} onOpen={openMemory} />}
+      </>
+    ) : null;
 
   const renderItem = ({
     item,
@@ -356,6 +438,17 @@ export default function HomeScreen({ navigation }: Props) {
     const meta = metaMap[event.id];
     const hasUnread = unreadSet.has(event.id);
     const isPast = section.type === 'past';
+    if (!isPast) {
+      return (
+        <EventCard
+          key={`card-${event.id}`}
+          event={event}
+          meta={meta}
+          hasUnread={hasUnread}
+          onPress={() => openEvent(event.id)}
+        />
+      );
+    }
     // Past events with a chosen cover get a wide photo card. The two kinds of
     // card have different keys so switching builds a new view: Android can
     // keep the old shape's clipping when a view gains overflow: hidden in
@@ -423,7 +516,7 @@ export default function HomeScreen({ navigation }: Props) {
 
         <View style={styles.rowContent}>
           <Text
-            style={[styles.rowTitle, isPast && styles.quieterText]}
+            style={styles.rowTitle}
             numberOfLines={1}
           >
             {event.title}
@@ -449,18 +542,20 @@ export default function HomeScreen({ navigation }: Props) {
       <View style={styles.topBar}>
         <Text style={styles.greetingText}>Hey, {profile?.first_name || profile?.display_name || '…'}</Text>
         <View style={styles.titleRow}>
-          <Text style={styles.displayTitle}>Your events</Text>
+          <Text style={styles.displayTitle} numberOfLines={2}>
+            Your events
+          </Text>
           <Pressable
             accessibilityLabel={inboxNew > 0 ? `Notifications, ${inboxNew} new` : 'Notifications'}
             accessibilityRole="button"
             onPress={() => navigation.navigate('Notifications')}
-            hitSlop={12}
+            hitSlop={4}
             style={({ pressed }) => [
               styles.iconBtn,
               pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] },
             ]}
           >
-            <View>
+            <View style={styles.bellInner}>
               <BellIcon size={22} color={colors.ink} />
               {inboxNew > 0 && (
                 <View style={styles.bellBadge}>
@@ -507,29 +602,18 @@ export default function HomeScreen({ navigation }: Props) {
                   </Pressable>
                 </View>
               )}
-              {heroEvent ? (
-                <View
-                  style={[
-                    styles.heroWrapper,
-                    sections.length > 0 && styles.heroWrapperWithSections,
-                  ]}
-                >
-                  <NextUpHero
-                    event={heroEvent}
-                    meta={metaMap[heroEvent.id]}
-                    hasUnread={unreadSet.has(heroEvent.id)}
-                    onPress={() =>
-                      navigation.navigate('EventDetail', { eventId: heroEvent.id })
-                    }
-                  />
-                </View>
-              ) : null}
+              {upcomingAll.length >= 2 && (
+                <StoriesRow
+                  events={upcomingAll}
+                  metaMap={metaMap}
+                  unreadSet={unreadSet}
+                  onOpen={openEvent}
+                />
+              )}
             </>
           }
           renderSectionHeader={({ section: { title } }) => (
-            <View style={styles.sectionHeaderWrap}>
-              <Text style={styles.sectionHeaderTitle}>{title}</Text>
-            </View>
+            <SectionLabel style={styles.sectionHeaderWrap}>{title}</SectionLabel>
           )}
           ItemSeparatorComponent={({ leadingItem, trailingItem, section }) =>
             // Photo cards carry their own edges, so no hairline next to them.
@@ -539,7 +623,13 @@ export default function HomeScreen({ navigation }: Props) {
               <View style={styles.rowDivider} />
             )
           }
-          SectionSeparatorComponent={() => <View style={styles.sectionSpacer} />}
+          // Space after each section only (a SectionSeparator also lands
+          // between a heading and its first row).
+          // The last section has nothing under it but the strips, which
+          // bring their own top space; adding more doubled the gap.
+          renderSectionFooter={({ section }) =>
+            section === sections[sections.length - 1] ? null : <View style={styles.sectionSpacer} />
+          }
           contentContainerStyle={[
             styles.listContent,
             { paddingBottom: insets.bottom + spacing.xxl },
@@ -553,8 +643,9 @@ export default function HomeScreen({ navigation }: Props) {
               progressBackgroundColor={colors.card}
             />
           }
+          ListFooterComponent={sections.length > 0 ? memoryStrip : null}
           ListEmptyComponent={
-            !heroEvent && loadError ? (
+            loadError ? (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyTitle}>Can’t reach RollCal</Text>
                 <Text style={styles.emptyText}>Check your connection and try again.</Text>
@@ -565,16 +656,28 @@ export default function HomeScreen({ navigation }: Props) {
                   style={styles.emptyButton}
                 />
               </View>
-            ) : !heroEvent ? (
+            ) : (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No events yet.</Text>
+                <Text style={styles.emptyText}>
+                  {hasPastEvents ? 'Nothing coming up.' : 'No events yet.'}
+                </Text>
                 <Button
                   title="Plan something"
                   onPress={() => navigation.navigate('CreateEvent')}
                   style={styles.emptyButton}
                 />
+                {hasPastEvents && (
+                  <Pressable
+                    onPress={() => navigation.navigate('ProfileTab')}
+                    hitSlop={8}
+                    accessibilityRole="link"
+                  >
+                    <Text style={styles.emptyLink}>See your memories</Text>
+                  </Pressable>
+                )}
+                {hasPastEvents && memoryStrip}
               </View>
-            ) : null
+            )
           }
         />
       )}
@@ -582,7 +685,87 @@ export default function HomeScreen({ navigation }: Props) {
   );
 }
 
-function NextUpHero({
+function useReduceMotion(): boolean {
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((v) => alive && setReduce(v))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return reduce;
+}
+
+// An image that fades in once it has loaded.
+function FadeImage({ uri, style }: { uri: string; style: any }) {
+  const reduce = useReduceMotion();
+  const opacity = useRef(new Animated.Value(0)).current;
+  return (
+    <Animated.Image
+      source={{ uri }}
+      style={[style, { opacity }]}
+      onLoad={() => {
+        if (reduce) opacity.setValue(1);
+        else Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+      }}
+    />
+  );
+}
+
+function StoriesRow({
+  events,
+  metaMap,
+  unreadSet,
+  onOpen,
+}: {
+  events: Event[];
+  metaMap: Record<string, EventMeta>;
+  unreadSet: Set<string>;
+  onOpen: (eventId: string) => void;
+}) {
+  const { colors, type } = useTheme();
+  const styles = useMemo(() => makeCardStyles(colors, type), [colors, type]);
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.storiesScroll}
+      contentContainerStyle={styles.storiesContent}
+    >
+      {events.map((e) => {
+        const image = metaMap[e.id]?.imageUrl;
+        const ring = isLiveNow(e.starts_at, e.ends_at) || unreadSet.has(e.id);
+        return (
+          <Pressable
+            key={e.id}
+            accessibilityRole="button"
+            accessibilityLabel={e.title}
+            onPress={() => onOpen(e.id)}
+            style={({ pressed }) => [styles.story, pressed && styles.pressed]}
+          >
+            <View style={[styles.storyRing, { borderColor: ring ? colors.live : colors.line }]}>
+              <View style={styles.storyCircle}>
+                {image ? (
+                  <FadeImage uri={image} style={styles.storyImage} />
+                ) : (
+                  <Text style={styles.storyInitial}>{eventInitial(e.title)}</Text>
+                )}
+              </View>
+            </View>
+            <Text style={styles.storyTitle} numberOfLines={1}>
+              {e.title}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function EventCard({
   event,
   meta,
   hasUnread,
@@ -593,8 +776,8 @@ function NextUpHero({
   hasUnread?: boolean;
   onPress: () => void;
 }) {
-  const { colors, mode } = useTheme();
-  const styles = useMemo(() => makeHeroStyles(colors, mode), [colors, mode]);
+  const { colors, type } = useTheme();
+  const styles = useMemo(() => makeCardStyles(colors, type), [colors, type]);
   const [countdown, setCountdown] = useState(() =>
     formatLiveCountdown(event.starts_at, event.ends_at)
   );
@@ -607,297 +790,260 @@ function NextUpHero({
     return () => clearInterval(interval);
   }, [event.starts_at, event.ends_at]);
 
-  const hasCover = Boolean(meta?.coverUrl);
-  const isHappeningNow = countdown === 'Happening now';
-  const attendees = meta?.attendees ?? [];
-  const displayAttendees = attendees.slice(0, 4);
+  const live = countdown === 'Happening now';
+  const image = meta?.imageUrl;
+  const attendees = (meta?.attendees ?? []).slice(0, 4);
   const goingCount = meta?.goingCount ?? (attendees.length > 0 ? attendees.length : 1);
 
-  if (hasCover && meta?.coverUrl) {
-    return (
-      // Keyed apart from the text card below, for the same reason as the
-      // past-event photo cards: switching in place left this card blank on
-      // Android.
-      <Pressable
-        key="photo"
-        accessibilityRole="button"
-        accessibilityLabel={`Next up: ${event.title}`}
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.photoCard,
-          pressed && { opacity: 0.92, transform: [{ scale: 0.98 }] },
+  const badge = (
+    <View style={[styles.badge, live ? styles.badgeLive : image ? styles.badgeOnPhoto : styles.badgePlain]}>
+      <Text
+        style={[
+          styles.badgeText,
+          live ? { color: colors.onLive } : image ? { color: '#FFFFFF' } : { color: colors.inkMuted },
         ]}
       >
-        <Image source={{ uri: meta.coverUrl }} style={styles.photoCardImage} />
-
-        <Svg height="100%" width="100%" style={StyleSheet.absoluteFill}>
-          <Defs>
-            <SvgLinearGradient id={`hero-grad-${event.id}`} x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#000000" stopOpacity="0.45" />
-              <Stop offset="0.35" stopColor="#000000" stopOpacity="0.1" />
-              <Stop offset="0.6" stopColor="#000000" stopOpacity="0.35" />
-              <Stop offset="1" stopColor="#000000" stopOpacity="0.85" />
-            </SvgLinearGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100%" height="100%" fill={`url(#hero-grad-${event.id})`} />
-        </Svg>
-
-        <View style={styles.photoOverlayContent}>
-          <View style={styles.topRow}>
-            <View style={[styles.badge, styles.photoBadge]}>
-              <View
-                style={[
-                  styles.badgeDot,
-                  isHappeningNow ? styles.badgeDotLive : styles.photoBadgeDot,
-                ]}
-              />
-              <Text style={styles.photoBadgeText}>{countdown}</Text>
-            </View>
-            {hasUnread && <View style={styles.unreadDot} />}
-          </View>
-
-          <View style={styles.bottomArea}>
-            <Text style={styles.photoTitle} numberOfLines={2}>
-              {event.title}
-            </Text>
-
-            <View style={styles.avatarsRow}>
-              {displayAttendees.length > 0 && (
-                <View style={styles.avatarStack}>
-                  {displayAttendees.map((att, idx) => (
-                    <Avatar
-                      key={att.userId || idx}
-                      userId={att.userId}
-                      name={att.name}
-                      avatarUrl={att.avatarUrl}
-                      size={26}
-                      style={[
-                        styles.avatarBorderPhoto,
-                        idx > 0 && styles.avatarOverlap,
-                        { zIndex: displayAttendees.length - idx },
-                      ]}
-                    />
-                  ))}
-                </View>
-              )}
-              <Text style={styles.photoGoingText}>{goingCount} going</Text>
-            </View>
-          </View>
-        </View>
-      </Pressable>
-    );
-  }
+        {live ? 'Live now' : countdown}
+      </Text>
+    </View>
+  );
 
   return (
     <Pressable
-      key="text"
+      // Keyed by shape so switching between photo and text builds a new view.
+      key={image ? 'photo' : 'text'}
       accessibilityRole="button"
-      accessibilityLabel={`Next up: ${event.title}`}
+      accessibilityLabel={event.title}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.textCard,
-        pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-      ]}
+      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
-      <View style={styles.topRow}>
-        <View
-          style={[
-            styles.badge,
-            styles.cardBadge,
-            isHappeningNow && styles.cardBadgeLive,
-          ]}
-        >
-          <View
-            style={[
-              styles.badgeDot,
-              isHappeningNow ? styles.badgeDotLive : styles.cardBadgeDot,
-            ]}
-          />
-          <Text
-            style={[
-              styles.cardBadgeText,
-              isHappeningNow && styles.cardBadgeTextLive,
-            ]}
-          >
-            {countdown}
-          </Text>
+      {image ? (
+        <View style={styles.cardPhotoWrap}>
+          <FadeImage uri={image} style={styles.cardPhoto} />
+          <View style={styles.badgeSlot}>{badge}</View>
+          {hasUnread && <View style={styles.cardUnreadDot} />}
         </View>
-        {hasUnread && <View style={styles.unreadDot} />}
-      </View>
-
-      <Text style={styles.cardTitle} numberOfLines={2}>
-        {event.title}
-      </Text>
-
-      <Text style={styles.cardSubtitle} numberOfLines={1}>
-        {formatDay(event.starts_at)} · {formatTime(event.starts_at)}
-        {event.location ? ` · ${event.location}` : ''}
-      </Text>
-
-      <View style={styles.avatarsRow}>
-        {displayAttendees.length > 0 && (
-          <View style={styles.avatarStack}>
-            {displayAttendees.map((att, idx) => (
-              <Avatar
-                key={att.userId || idx}
-                userId={att.userId}
-                name={att.name}
-                avatarUrl={att.avatarUrl}
-                size={26}
-                style={[
-                  styles.avatarBorderCard,
-                  idx > 0 && styles.avatarOverlap,
-                  { zIndex: displayAttendees.length - idx },
-                ]}
-              />
-            ))}
+      ) : null}
+      <View style={styles.cardBody}>
+        {!image && (
+          <View style={styles.topRow}>
+            {badge}
+            {hasUnread && <View style={styles.unreadDot} />}
           </View>
         )}
-        <Text style={styles.cardGoingText}>{goingCount} going</Text>
+        <Text style={styles.cardTitle} numberOfLines={2}>
+          {event.title}
+        </Text>
+        <Text style={styles.cardSubtitle} numberOfLines={2}>
+          {formatDay(event.starts_at)} · {formatTime(event.starts_at)}
+          {event.location ? ` · ${placeLabel(event.location)}` : ''}
+        </Text>
+        <View style={styles.avatarsRow}>
+          {attendees.length > 0 && (
+            <View style={styles.avatarStack}>
+              {attendees.map((att, idx) => (
+                <Avatar
+                  key={att.userId || idx}
+                  userId={att.userId}
+                  name={att.name}
+                  avatarUrl={att.avatarUrl}
+                  size={26}
+                  style={[
+                    styles.avatarBorder,
+                    idx > 0 && styles.avatarOverlap,
+                    { zIndex: attendees.length - idx },
+                  ]}
+                />
+              ))}
+            </View>
+          )}
+          <Text style={styles.goingText}>{goingCount} going</Text>
+        </View>
       </View>
     </Pressable>
   );
 }
 
-const makeHeroStyles = (c: Palette, mode: 'light' | 'dark') =>
+// Past events whose photos are about to go: a row of cards with the days
+// left in coral, so people save them (or keep them) in time.
+function ExpiringStrip({
+  tiles,
+  onOpen,
+}: {
+  tiles: ExpiringTile[];
+  onOpen: (eventId: string) => void;
+}) {
+  const { colors, type } = useTheme();
+  const styles = useMemo(() => makeCardStyles(colors, type), [colors, type]);
+  const size = 132;
+  return (
+    <View style={styles.memories}>
+      <SectionLabel>Expiring soon</SectionLabel>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.storiesScroll}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}
+      >
+        {tiles.map((t) => (
+          <Pressable
+            key={t.eventId}
+            accessibilityRole="button"
+            accessibilityLabel={`${t.title}, photos deleted in ${t.days} ${t.days === 1 ? 'day' : 'days'}`}
+            onPress={() => onOpen(t.eventId)}
+            style={({ pressed }) => [{ width: size }, pressed && styles.pressed]}
+          >
+            <View style={[styles.memoryThumb, { width: size, height: size, overflow: 'hidden' }]}>
+              <FadeImage uri={t.image} style={{ width: size, height: size }} />
+            </View>
+            <Text style={styles.memoryTitle} numberOfLines={1}>
+              {t.title}
+            </Text>
+            <Text style={[type.caption, { color: colors.accentText, fontFamily: fonts.bodySemiBold }]}>
+              {t.days <= 1 ? 'Deleted tomorrow' : `Deleted in ${t.days} days`}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+function MemoryStrip({
+  tiles,
+  onOpen,
+}: {
+  tiles: MemoryTile[];
+  onOpen: (eventId: string) => void;
+}) {
+  const { colors, type } = useTheme();
+  const styles = useMemo(() => makeCardStyles(colors, type), [colors, type]);
+  const { width } = useWindowDimensions();
+  const gap = spacing.sm;
+  const size = Math.floor((width - spacing.lg * 2 - gap * 2) / 3);
+  return (
+    <View style={styles.memories}>
+      <SectionLabel>From your memories</SectionLabel>
+      <View style={styles.memoriesGrid}>
+        {tiles.slice(0, 6).map((t) => (
+          <Pressable
+            key={t.eventId}
+            accessibilityRole="button"
+            accessibilityLabel={`${t.title} memories`}
+            onPress={() => onOpen(t.eventId)}
+            style={({ pressed }) => [{ width: size }, pressed && styles.pressed]}
+          >
+            {/* The frame shows the placeholder colour while the photo fades in. */}
+            <View style={[styles.memoryThumb, { width: size, height: size, overflow: 'hidden' }]}>
+              <FadeImage uri={t.image} style={{ width: size, height: size }} />
+            </View>
+            <Text style={styles.memoryTitle} numberOfLines={1}>
+              {t.title}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const makeCardStyles = (c: Palette, t: TypeTokens) =>
   StyleSheet.create({
-    photoCard: {
-      height: 230,
-      width: '100%',
-      borderRadius: radii.lg,
+    pressed: { transform: [{ scale: 0.98 }] },
+    storiesScroll: { marginHorizontal: -spacing.lg },
+    storiesContent: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+      gap: spacing.md,
+    },
+    story: { width: 68, alignItems: 'center', gap: 4 },
+    storyRing: {
+      width: 66,
+      height: 66,
+      borderRadius: 33,
+      borderWidth: 2.5,
+      padding: 2,
+    },
+    storyCircle: {
+      flex: 1,
+      borderRadius: 31,
       overflow: 'hidden',
-      position: 'relative',
       backgroundColor: c.card,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    photoCardImage: {
-      width: '100%',
-      height: '100%',
-      resizeMode: 'cover',
+    storyImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+    storyInitial: { fontFamily: fonts.heading, fontSize: 22, color: c.ink },
+    storyTitle: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 11,
+      color: c.inkMuted,
+      maxWidth: 68,
     },
-    photoOverlayContent: {
-      ...StyleSheet.absoluteFill,
-      padding: spacing.lg,
-      justifyContent: 'space-between',
-    },
-    textCard: {
-      width: '100%',
+    card: {
       backgroundColor: c.card,
-      borderRadius: radii.lg,
+      borderRadius: radii.card,
       borderWidth: 1,
       borderColor: c.line,
-      padding: spacing.lg,
+      overflow: 'hidden',
+      marginVertical: spacing.xs,
     },
+    cardPhotoWrap: { height: 160, backgroundColor: c.line },
+    cardPhoto: { width: '100%', height: '100%', resizeMode: 'cover' },
+    badgeSlot: { position: 'absolute', top: spacing.sm, left: spacing.sm },
+    cardUnreadDot: {
+      position: 'absolute',
+      top: spacing.sm,
+      right: spacing.sm,
+      width: 9,
+      height: 9,
+      borderRadius: 5,
+      backgroundColor: c.danger,
+    },
+    cardBody: { padding: spacing.md, gap: 4 },
     topRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      marginBottom: spacing.xs,
     },
     badge: {
-      flexDirection: 'row',
-      alignItems: 'center',
+      alignSelf: 'flex-start',
       paddingHorizontal: 10,
       paddingVertical: 5,
       borderRadius: radii.full,
-      gap: 6,
     },
-    photoBadge: {
-      backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    },
-    photoBadgeText: {
-      color: '#FFFFFF',
-      fontSize: 12,
-      fontFamily: fonts.bodySemiBold,
-      letterSpacing: 0.2,
-    },
-    cardBadge: {
-      backgroundColor: c.paper,
-    },
-    cardBadgeLive: {
-      backgroundColor: c.accent + '1A',
-    },
-    cardBadgeText: {
-      color: c.inkMuted,
-      fontSize: 12,
-      fontFamily: fonts.bodySemiBold,
-      letterSpacing: 0.2,
-    },
-    cardBadgeTextLive: {
-      color: c.accent,
-    },
-    badgeDot: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
-    },
-    photoBadgeDot: {
-      backgroundColor: 'rgba(255, 255, 255, 0.75)',
-    },
-    cardBadgeDot: {
-      backgroundColor: c.inkMuted,
-    },
-    badgeDotLive: {
-      backgroundColor: c.accent,
-    },
-    unreadDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: c.danger,
-    },
-    bottomArea: {
-      gap: 10,
-    },
-    photoTitle: {
-      fontFamily: fonts.display,
-      fontSize: 24,
-      lineHeight: 29,
-      letterSpacing: -0.4,
-      color: '#FFFFFF',
-    },
+    badgeLive: { backgroundColor: c.live },
+    badgeOnPhoto: { backgroundColor: 'rgba(0, 0, 0, 0.55)' },
+    badgePlain: { backgroundColor: c.paper },
+    badgeText: { fontSize: 12, fontFamily: fonts.bodySemiBold, letterSpacing: 0.2 },
+    unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: c.danger },
     cardTitle: {
       fontFamily: fonts.display,
-      fontSize: 26,
-      lineHeight: 32,
-      letterSpacing: -0.4,
+      fontSize: 22,
+      lineHeight: 28,
+      letterSpacing: -0.3,
       color: c.ink,
-      marginTop: spacing.md,
-      marginBottom: 4,
     },
-    cardSubtitle: {
-      fontSize: 14,
-      fontFamily: fonts.body,
-      color: c.inkMuted,
-      marginBottom: spacing.md,
-    },
+    cardSubtitle: { ...t.caption, fontSize: 14, color: c.inkMuted },
     avatarsRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
+      marginTop: spacing.xs,
     },
-    avatarStack: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    avatarOverlap: {
-      marginLeft: -8,
-    },
-    avatarBorderPhoto: {
-      borderWidth: 2,
-      borderColor: '#111513',
-    },
-    avatarBorderCard: {
-      borderWidth: 2,
-      borderColor: c.card,
-    },
-    photoGoingText: {
-      color: 'rgba(255, 255, 255, 0.9)',
-      fontSize: 13,
+    avatarStack: { flexDirection: 'row', alignItems: 'center' },
+    avatarOverlap: { marginLeft: -8 },
+    avatarBorder: { borderWidth: 2, borderColor: c.card },
+    goingText: { color: c.inkMuted, fontSize: 13, fontFamily: fonts.bodyMedium },
+    memories: { marginTop: SECTION_GAP, alignSelf: 'stretch' },
+    memoriesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+    memoryThumb: { borderRadius: radii.card, backgroundColor: c.card },
+    memoryTitle: {
       fontFamily: fonts.bodyMedium,
-    },
-    cardGoingText: {
-      color: c.inkMuted,
-      fontSize: 13,
-      fontFamily: fonts.bodyMedium,
+      fontSize: 12,
+      color: c.ink,
+      marginTop: 4,
     },
   });
 
@@ -906,13 +1052,6 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     screen: {
       flex: 1,
       backgroundColor: c.paper,
-    },
-    heroWrapper: {
-      paddingTop: spacing.xs,
-      paddingBottom: spacing.xs,
-    },
-    heroWrapperWithSections: {
-      marginBottom: spacing.md,
     },
     topBar: {
 
@@ -928,10 +1067,13 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     titleRow: {
       flexDirection: 'row',
+      gap: spacing.sm,
       justifyContent: 'space-between',
       alignItems: 'center',
     },
     displayTitle: {
+      flex: 1,
+      flexShrink: 1,
       fontFamily: fonts.display,
       fontSize: 28,
       lineHeight: 34,
@@ -939,10 +1081,17 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       color: c.ink,
     },
     iconBtn: {
-      width: 36,
-      height: 36,
+      width: 44,
+      height: 44,
+      flexShrink: 0,
       justifyContent: 'center',
-      alignItems: 'flex-end',
+      alignItems: 'center',
+    },
+    bellInner: {
+      width: 28,
+      height: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     bellBadge: {
       position: 'absolute',
@@ -969,15 +1118,9 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     sectionHeaderWrap: {
       paddingTop: spacing.sm,
-      paddingBottom: spacing.xs,
-    },
-    sectionHeaderTitle: {
-      fontSize: 15,
-      fontFamily: fonts.body,
-      color: c.inkMuted,
     },
     sectionSpacer: {
-      height: spacing.sm,
+      height: SECTION_GAP - spacing.sm,
     },
     row: {
       flexDirection: 'row',
@@ -1038,7 +1181,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     photoCard: {
       height: 180,
       width: '100%',
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       overflow: 'hidden',
       position: 'relative',
       marginVertical: spacing.xs,
@@ -1087,6 +1230,12 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       color: c.inkMuted,
       textAlign: 'center',
     },
+    emptyLink: {
+      ...t.body,
+      fontFamily: fonts.bodySemiBold,
+      color: c.accentText,
+      textAlign: 'center',
+    },
     emptyTitle: {
       ...t.h3,
       textAlign: 'center',
@@ -1127,7 +1276,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     skeletonDate: {
       width: 44,
       height: 44,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       backgroundColor: c.card,
     },
     skeletonContent: {
@@ -1137,13 +1286,13 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     skeletonTitle: {
       width: '55%',
       height: 16,
-      borderRadius: 4,
+      borderRadius: radii.tag,
       backgroundColor: c.card,
     },
     skeletonSubtitle: {
       width: '35%',
       height: 12,
-      borderRadius: 4,
+      borderRadius: radii.tag,
       backgroundColor: c.card,
     },
   });

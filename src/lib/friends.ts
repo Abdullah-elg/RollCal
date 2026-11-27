@@ -62,7 +62,7 @@ export async function loadFriendData(userId: string): Promise<FriendData> {
 }
 
 // Find people by name or @username, leaving out anyone either of you has
-// blocked. Strips characters that would break PostgREST's `or` filter syntax.
+// blocked, and web guests (they can't have friends). Strips characters that would break PostgREST's `or` filter syntax.
 export async function searchProfiles(
   query: string,
   excludeUserId: string,
@@ -76,7 +76,7 @@ export async function searchProfiles(
     .or(`display_name.ilike.%${q}%,username.ilike.%${q}%`)
     .neq('id', excludeUserId)
     .limit(20);
-  return ((data ?? []) as Profile[]).filter((p) => !hidden.has(p.id));
+  return ((data ?? []) as Profile[]).filter((p) => !hidden.has(p.id) && !p.is_guest);
 }
 
 // Where two people stand: 'none', 'friends', 'sent' (I asked, waiting on

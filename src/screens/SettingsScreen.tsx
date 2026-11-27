@@ -1,5 +1,5 @@
 // The Settings tab: profile, theme, default currency, reminder and
-// notification toggles, quiet mode (Pro), payment methods, support, legal
+// notification toggles, quiet mode, payment methods, support, legal
 // pages, sign out and account deletion. Deletion calls the delete-account
 // edge function.
 
@@ -19,19 +19,17 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import Avatar from '../components/Avatar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import CurrencyPicker from '../components/CurrencyPicker';
-import { CameraIcon, ChevronRightIcon } from '../components/icons';
-import { Button, ErrorText, ThemedSwitch } from '../components/ui';
+import { ChevronRightIcon } from '../components/icons';
+import { Button, ErrorText, SECTION_GAP, SectionLabel, ThemedSwitch } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
-import { useProPrompt } from '../context/ProPromptContext';
 import { useTheme } from '../context/ThemeContext';
-import ActionMenuSheet from '../components/ActionMenuSheet';
-import { pickAndUploadAvatar, removeAvatar } from '../lib/avatar';
+import { PLAN_NAMES, planOf } from '../lib/pro';
+import EditableAvatar from '../components/EditableAvatar';
 import { currencyLabel } from '../lib/currency';
 import { supabase } from '../lib/supabase';
-import { hapticLight, hapticSuccess } from '../lib/haptics';
+import { hapticLight } from '../lib/haptics';
 import {
   ALBUM_PREF_KEYS,
   CHAT_PREF_KEYS,
@@ -47,23 +45,26 @@ import {
 } from '../lib/notifications';
 import { setQuietMode } from '../lib/safety';
 import { listPaymentMethods } from '../lib/paymentMethods';
-import { TabScreenProps } from '../navigation/types';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { AppStackParamList } from '../navigation/types';
 import {
-  tabBarHeight,
   fonts,
   Palette,
   radii,
   spacing,
   TypeTokens,
 } from '../theme';
+import InfoTip from '../components/InfoTip';
 
-type Props = TabScreenProps<'SettingsTab'>;
+type Props = NativeStackScreenProps<AppStackParamList, 'Settings'>;
 
 type RowProps = {
   label: string;
   caption?: string;
   value: boolean;
   onToggle: (next: boolean) => void;
+  // A short explanation behind an ⓘ next to the label.
+  info?: string;
 };
 
 type ToggleRow = { key: keyof ReminderPrefs; label: string; caption?: string };
@@ -80,7 +81,7 @@ const EVENT_ROWS: ToggleRow[] = [
 const ALBUM_ROWS: ToggleRow[] = [
   {
     key: 'albumOpen',
-    label: 'When the roll opens',
+    label: 'When photos open',
     caption: 'When the event starts and photo uploads begin',
   },
   { key: 'albumDayLeft', label: '1 day till it closes' },
@@ -126,12 +127,15 @@ const QUIET_CAPTION =
 // Defined out here on purpose. Declared inside the screen, it would be a
 // brand-new component type on every render, so toggling one switch would
 // unmount and remount every other row - replaying their switch animations.
-function SettingRow({ label, caption, value, onToggle }: RowProps) {
+function SettingRow({ label, caption, value, onToggle, info }: RowProps) {
   const { type } = useTheme();
   return (
     <View style={rowStyles.row}>
       <View style={rowStyles.text}>
-        <Text style={type.body}>{label}</Text>
+        <View style={rowStyles.labelRow}>
+          <Text style={type.body}>{label}</Text>
+          {info ? <InfoTip title={label} text={info} /> : null}
+        </View>
         {caption ? <Text style={type.caption}>{caption}</Text> : null}
       </View>
       <ThemedSwitch value={value} onValueChange={onToggle} />
@@ -150,11 +154,11 @@ const rowStyles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
 });
 
 export default function SettingsScreen({ navigation }: Props) {
   const { session, profile, signOut, refreshProfile } = useAuth();
-  const { showProPrompt } = useProPrompt();
   const { mode, preference, setPreference, colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const [prefs, setPrefsState] = useState<ReminderPrefs | null>(null);
@@ -162,11 +166,6 @@ export default function SettingsScreen({ navigation }: Props) {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  // The change/remove menu, open while set.
-  const [photoMenu, setPhotoMenu] = useState<{ upload: () => void; remove: () => void } | null>(
-    null
-  );
   const [paymentCount, setPaymentCount] = useState(0);
   const [quietError, setQuietError] = useState<string | null>(null);
   const [pickingCurrency, setPickingCurrency] = useState(false);
@@ -195,17 +194,31 @@ export default function SettingsScreen({ navigation }: Props) {
 
   const toggleQuiet = async (next: boolean) => {
     if (!profile) return;
-    // Quiet mode is Pro; a free account sees the pop-up and the switch stays put.
-    if (!profile.is_pro) {
-      showProPrompt('quiet');
-      return;
-    }
     setQuietError(null);
     setQuietOn(next);
     const err = await setQuietMode(profile.id, next);
     if (err) {
       setQuietOn(!next);
       setQuietError(err);
+    } else await refreshProfile();
+  };
+
+  // Profile photo for everyone, or friends only (avatar-visibility.sql; the
+  // database decides who gets the photo's link).
+  const [photoPublic, setPhotoPublic] = useState(!!profile?.avatar_public);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  useEffect(() => {
+    setPhotoPublic(!!profile?.avatar_public);
+  }, [profile?.avatar_public]);
+
+  const togglePhotoPublic = async (next: boolean) => {
+    if (!profile) return;
+    setPhotoError(null);
+    setPhotoPublic(next);
+    const { error } = await supabase.from('profiles').update({ avatar_public: next }).eq('id', profile.id);
+    if (error) {
+      setPhotoPublic(!next);
+      setPhotoError('Couldn’t change that. Try again.');
     } else await refreshProfile();
   };
 
@@ -223,41 +236,6 @@ export default function SettingsScreen({ navigation }: Props) {
       return;
     }
     await signOut();
-  };
-
-  const handleAvatarPress = () => {
-    if (uploadingAvatar || !session?.user.id) return;
-    hapticLight();
-
-    const doUpload = async () => {
-      setUploadingAvatar(true);
-      const res = await pickAndUploadAvatar(session.user.id);
-      setUploadingAvatar(false);
-      if (res.error) {
-        Alert.alert('Profile photo', res.error);
-      } else if (res.url) {
-        hapticSuccess();
-        await refreshProfile();
-      }
-    };
-
-    const doRemove = async () => {
-      setUploadingAvatar(true);
-      const res = await removeAvatar(session.user.id);
-      setUploadingAvatar(false);
-      if (res.error) {
-        Alert.alert('Profile photo', res.error);
-      } else {
-        hapticSuccess();
-        await refreshProfile();
-      }
-    };
-
-    if (profile?.avatar_url) {
-      setPhotoMenu({ upload: doUpload, remove: doRemove });
-    } else {
-      doUpload();
-    }
   };
 
   useEffect(() => {
@@ -295,7 +273,7 @@ export default function SettingsScreen({ navigation }: Props) {
     if (result === 'allowed') {
       setOsAllowed(true);
       setPermissionDenied(false);
-    } else if (result === 'settings') {
+    } else if (result === 'settings' || result === 'denied') {
       setPermissionDenied(true);
     }
   };
@@ -307,7 +285,7 @@ export default function SettingsScreen({ navigation }: Props) {
     if (next && notificationsAvailable && osAllowed !== true) {
       const result = await turnOnNotifications(userId);
       if (result !== 'allowed') {
-        setPermissionDenied(result === 'settings');
+        setPermissionDenied(result === 'settings' || result === 'denied');
         return;
       }
       setOsAllowed(true);
@@ -334,10 +312,8 @@ export default function SettingsScreen({ navigation }: Props) {
           : EVENT_ROWS;
 
   const insets = useSafeAreaInsets();
-  const bottomInset =
-    Platform.OS === 'ios'
-      ? insets.bottom + tabBarHeight
-      : 0;
+  // No tab bar here (it's a pushed screen): just clear the home indicator.
+  const bottomInset = insets.bottom;
 
   const handleSelectPreference = (opt: 'system' | 'light' | 'dark') => {
     hapticLight();
@@ -345,10 +321,8 @@ export default function SettingsScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={type.title}>Settings</Text>
-      </View>
+    // Opened from the Profile tab's gear; the stack draws the title and back button.
+    <SafeAreaView style={styles.screen} edges={[]}>
       <ScrollView
         style={styles.screen}
         contentContainerStyle={[
@@ -356,37 +330,10 @@ export default function SettingsScreen({ navigation }: Props) {
           { paddingBottom: bottomInset + spacing.xxl },
         ]}
       >
-        {/* Your profile first: it's what people come to Settings for most. */}
-        <Text style={[styles.sectionLabel, styles.firstSectionLabel]}>Account</Text>
+        {/* You, first, like the phone's own Settings. The Profile tab has the same. */}
         <View style={styles.card}>
           <View style={styles.profileHeaderRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Change profile photo"
-              onPress={handleAvatarPress}
-              style={({ pressed }) => [
-                styles.avatarPressable,
-                pressed && { opacity: 0.8, transform: [{ scale: 0.96 }] },
-              ]}
-            >
-              <Avatar
-                userId={profile?.id}
-                name={profile?.display_name}
-                username={profile?.username}
-                avatarUrl={profile?.avatar_url}
-                size={64}
-              />
-              {uploadingAvatar ? (
-                <View style={styles.avatarLoadingOverlay}>
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                </View>
-              ) : (
-                <View style={styles.cameraBadge}>
-                  <CameraIcon size={12} color="#FFFFFF" />
-                </View>
-              )}
-            </Pressable>
-
+            <EditableAvatar size={64} backdrop={colors.card} />
             <View style={styles.profileInfoCol}>
               <Text style={styles.profileDisplayName} numberOfLines={1}>
                 {profile?.display_name}
@@ -396,73 +343,29 @@ export default function SettingsScreen({ navigation }: Props) {
                   @{profile.username}
                 </Text>
               ) : null}
-              <Text style={styles.profileEmail} numberOfLines={1}>
-                {session?.user.email}
-              </Text>
             </View>
           </View>
-
+          <Button
+            title="Edit profile"
+            variant="secondary"
+            onPress={() => navigation.navigate('EditProfile')}
+            style={styles.editProfile}
+          />
           <View style={styles.rowDivider} />
-          {profile?.is_pro ? (
-            <Pressable
-              style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
-              onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
-            >
-              <View style={styles.rowText}>
-                <Text style={type.body}>RollCal Pro</Text>
-                <Text style={type.caption}>You’re on Pro</Text>
-              </View>
-              <ChevronRightIcon size={16} color={colors.inkMuted} />
-            </Pressable>
-          ) : (
-            <View style={styles.planRow}>
-              <Text style={type.body}>You’re on the free plan.</Text>
-              <Text style={type.caption}>
-                Pro adds unlimited receipt scans, videos, photos kept for good and more.
-              </Text>
-              <Button
-                title="See Pro features"
-                onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
-                style={styles.planButton}
-              />
+          <Pressable
+            style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
+            onPress={() => navigation.navigate('Upgrade', { reason: 'settings' })}
+            accessibilityRole="button"
+          >
+            <View style={styles.rowText}>
+              <Text style={type.body}>Plan</Text>
+              <Text style={type.caption}>{PLAN_NAMES[planOf(profile)]}</Text>
             </View>
-          )}
-
-          <View style={styles.accountActions}>
-            <Button
-              title="Edit profile"
-              variant="secondary"
-              onPress={() => navigation.navigate('EditProfile')}
-              style={{ flex: 1 }}
-            />
-            <Button
-              title="Log out"
-              variant="secondary"
-              onPress={() => setConfirmLogout(true)}
-              style={{ flex: 1 }}
-              textStyle={{ color: colors.danger }}
-            />
-          </View>
-
-          {/* Plain text rather than a button, so it's clearly the rarer action. */}
-          <View style={styles.deleteSection}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={deleting}
-              onPress={() => setConfirmDelete(true)}
-              hitSlop={8}
-              style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.7 }]}
-            >
-              {deleting ? (
-                <ActivityIndicator size="small" color={colors.danger} />
-              ) : (
-                <Text style={styles.deleteText}>Delete account</Text>
-              )}
-            </Pressable>
-          </View>
+            <ChevronRightIcon size={16} color={colors.inkMuted} />
+          </Pressable>
         </View>
 
-        <Text style={styles.sectionLabel}>Appearance</Text>
+        <SectionLabel style={styles.sectionGap}>Appearance</SectionLabel>
         <View style={styles.card}>
           <Text style={type.body}>Theme</Text>
           <Text style={[type.caption, { marginTop: 2, marginBottom: spacing.md }]}>
@@ -495,7 +398,10 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
         </View>
 
-        <Text style={styles.sectionLabel}>Notifications</Text>
+        <View style={[styles.sectionLabelRow]}>
+          <SectionLabel style={{ marginBottom: 0 }}>Notifications</SectionLabel>
+          <InfoTip title="Notifications" text="Reminders are scheduled on this phone for events you're part of. Pushes for messages and friend requests come from RollCal." />
+        </View>
         <View style={styles.card}>
           {osAllowed === false && (
             <>
@@ -503,7 +409,7 @@ export default function SettingsScreen({ navigation }: Props) {
                 <View style={styles.rowText}>
                   <Text style={type.body}>Notifications are off</Text>
                   <Text style={type.caption}>
-                    Turn them on to hear about invites, messages and when the roll opens.
+                    Turn them on to hear about invites, messages and when you can add photos.
                   </Text>
                 </View>
                 <Button title="Turn on" variant="secondary" onPress={enableNotifications} style={styles.notifOffButton} />
@@ -529,7 +435,7 @@ export default function SettingsScreen({ navigation }: Props) {
             onPress={() => setOpenSheet('album')}
           >
             <View style={styles.rowText}>
-              <Text style={type.body}>Photo roll reminders</Text>
+              <Text style={type.body}>Photo reminders</Text>
               <Text style={type.caption}>
                 {countOn([...ALBUM_PREF_KEYS])} of {ALBUM_PREF_KEYS.length} on
               </Text>
@@ -568,13 +474,13 @@ export default function SettingsScreen({ navigation }: Props) {
           back here.
         </Text>
       )}
-      <Text style={[type.caption, { marginTop: spacing.sm }]}>
-        {notificationsAvailable
-          ? "Reminders are scheduled on this device for events you're part of."
-          : "Expo Go on Android can't deliver notifications. Your choices are saved and will start working in a development build."}
-      </Text>
+      {!notificationsAvailable && (
+        <Text style={[type.caption, { marginTop: spacing.sm }]}>
+          Expo Go on Android can't deliver notifications. Your choices are saved and will start working in a development build.
+        </Text>
+      )}
 
-      <Text style={styles.sectionLabel}>Payments</Text>
+      <SectionLabel style={styles.sectionGap}>Payments</SectionLabel>
       <View style={styles.card}>
         <Pressable
           style={({ pressed }) => [styles.linkRow, pressed && { opacity: 0.6 }]}
@@ -607,37 +513,30 @@ export default function SettingsScreen({ navigation }: Props) {
         <ErrorText message={currencyError} />
       </View>
 
-      <Text style={styles.sectionLabel}>Privacy</Text>
+      <SectionLabel style={styles.sectionGap}>Privacy</SectionLabel>
       <View style={styles.card}>
-        {profile?.is_pro ? (
-          <SettingRow
-            label="Quiet mode"
-            caption={QUIET_CAPTION}
-            value={quietOn}
-            onToggle={toggleQuiet}
-          />
-        ) : (
-          // Free accounts see it greyed out with a Pro label; tapping it
-          // anywhere shows what Pro adds.
-          <Pressable
-            onPress={() => showProPrompt('quiet')}
-            accessibilityRole="button"
-            accessibilityLabel="Quiet mode, a Pro feature"
-            style={({ pressed }) => [rowStyles.row, pressed && { opacity: 0.7 }]}
-          >
-            <View style={[rowStyles.text, styles.locked]}>
-              <Text style={styles.proTag}>Pro feature</Text>
-              <Text style={type.body}>Quiet mode</Text>
-              <Text style={type.caption}>{QUIET_CAPTION}</Text>
-            </View>
-            <View style={styles.locked} pointerEvents="none">
-              <ThemedSwitch value={false} onValueChange={() => {}} />
-            </View>
-          </Pressable>
-        )}
+        <SettingRow
+          label="Quiet mode"
+          info={QUIET_CAPTION}
+          value={quietOn}
+          onToggle={toggleQuiet}
+        />
         {quietError && (
           <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm }]}>
             {quietError}
+          </Text>
+        )}
+        <View style={styles.rowDivider} />
+        <SettingRow
+          label="Show my photo to everyone"
+          caption={photoPublic ? 'Everyone' : 'Friends only'}
+          info="Off: only your friends see your profile photo; everyone else sees your initials. On: anyone on RollCal can see it."
+          value={photoPublic}
+          onToggle={togglePhotoPublic}
+        />
+        {photoError && (
+          <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm }]}>
+            {photoError}
           </Text>
         )}
         <View style={styles.rowDivider} />
@@ -653,7 +552,7 @@ export default function SettingsScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
-      <Text style={styles.sectionLabel}>About</Text>
+      <SectionLabel style={styles.sectionGap}>About</SectionLabel>
       <View style={styles.card}>
         <Pressable
           accessibilityRole="button"
@@ -697,11 +596,44 @@ export default function SettingsScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
+      {/* Signing in: log out and delete account, last, below About. */}
+      <SectionLabel style={styles.sectionGap}>Signing in</SectionLabel>
+      <View style={styles.card}>
+        {session?.user.email ? (
+          <Text style={[type.caption, styles.signedInAs]} numberOfLines={1}>
+            Signed in as {session.user.email}
+          </Text>
+        ) : null}
+        <Button
+          title="Log out"
+          variant="secondary"
+          onPress={() => setConfirmLogout(true)}
+          textStyle={{ color: colors.danger }}
+        />
+
+        {/* Plain text rather than a button, so it's clearly the rarer action. */}
+        <View style={styles.deleteSection}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={deleting}
+            onPress={() => setConfirmDelete(true)}
+            hitSlop={8}
+            style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.7 }]}
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color={colors.danger} />
+            ) : (
+              <Text style={styles.deleteText}>Delete account</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+
       {/* Reminder toggles live in their own slide-up sheet, one per group. */}
       <CurrencyPicker
         visible={pickingCurrency}
         selected={profile?.currency ?? null}
-        intro="New bills you split and Pro prices are shown in it. Bills already shared stay in their own currency."
+        intro="New bills you split and plan prices are shown in it. Bills already shared stay in their own currency."
         onSelect={chooseCurrency}
         onClose={() => setPickingCurrency(false)}
       />
@@ -733,7 +665,7 @@ export default function SettingsScreen({ navigation }: Props) {
             <View style={styles.sheetHeader}>
               <Text style={type.h2}>
                 {openSheet === 'album'
-                  ? 'Roll reminders'
+                  ? 'Photo reminders'
                   : openSheet === 'friend'
                     ? 'Friend notifications'
                     : openSheet === 'chat'
@@ -747,7 +679,7 @@ export default function SettingsScreen({ navigation }: Props) {
           <ScrollView contentContainerStyle={styles.content}>
             <Text style={[type.bodyMuted, { marginBottom: spacing.md }]}>
               {openSheet === 'album'
-                ? 'Nudges around the 48 hours the roll stays open for uploads.'
+                ? 'Nudges while everyone can still add photos (until 2 days after an event).'
                 : openSheet === 'friend'
                   ? 'When people add you, accept your request or invite you to something.'
                   : openSheet === 'chat'
@@ -795,21 +727,12 @@ export default function SettingsScreen({ navigation }: Props) {
       <ConfirmDialog
         visible={confirmDelete}
         title="Delete your account?"
-        message="This permanently deletes your profile, friends, RSVPs, messages and photos, plus every event you created and its album. This can't be undone."
+        message="This permanently deletes your profile, friends, RSVPs, messages and photos, plus every event you created and its photos. This can't be undone."
         confirmLabel="Delete forever"
         cancelLabel="Keep account"
         destructive
         onConfirm={handleDeleteAccount}
         onCancel={() => setConfirmDelete(false)}
-      />
-      <ActionMenuSheet
-        visible={photoMenu !== null}
-        title="Profile photo"
-        options={[
-          { label: 'Choose photo', onPress: () => photoMenu?.upload() },
-          { label: 'Remove photo', onPress: () => photoMenu?.remove(), destructive: true },
-        ]}
-        onClose={() => setPhotoMenu(null)}
       />
     </ScrollView>
   </SafeAreaView>
@@ -822,34 +745,29 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flex: 1,
       backgroundColor: c.paper,
     },
-    header: {
-      paddingHorizontal: spacing.lg,
-      paddingTop: spacing.md,
-      paddingBottom: spacing.xs,
-    },
     content: {
       paddingHorizontal: spacing.lg,
       paddingBottom: spacing.xxl,
     },
-    sectionLabel: {
-      ...t.body,
-      fontSize: 15,
-      color: c.inkMuted,
-      marginBottom: spacing.sm,
-      marginTop: spacing.lg,
+    sectionLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginTop: SECTION_GAP,
+      marginBottom: spacing.sm + 2,
     },
-    firstSectionLabel: {
-      marginTop: 0,
+    sectionGap: {
+      marginTop: SECTION_GAP,
     },
     card: {
       backgroundColor: c.card,
-      borderRadius: 16,
+      borderRadius: radii.card,
       padding: spacing.md,
     },
     themeToggle: {
       flexDirection: 'row',
       backgroundColor: c.paper,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       overflow: 'hidden',
@@ -885,14 +803,6 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       gap: spacing.md,
       paddingVertical: 4,
     },
-    // A Pro feature on a free account: readable, but clearly not available.
-    locked: { opacity: 0.45 },
-    proTag: {
-      ...t.caption,
-      fontFamily: fonts.bodySemiBold,
-      color: c.accentText,
-      marginBottom: 2,
-    },
     planRow: { gap: 2, paddingVertical: 4 },
     planButton: { marginTop: spacing.md },
     profileHeaderRow: {
@@ -900,29 +810,6 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       alignItems: 'center',
       gap: spacing.md,
       marginBottom: spacing.xs,
-    },
-    avatarPressable: {
-      position: 'relative',
-    },
-    cameraBadge: {
-      position: 'absolute',
-      bottom: -2,
-      right: -2,
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      backgroundColor: c.accent,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 2,
-      borderColor: c.card,
-    },
-    avatarLoadingOverlay: {
-      ...StyleSheet.absoluteFill,
-      borderRadius: 32,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      alignItems: 'center',
-      justifyContent: 'center',
     },
     profileInfoCol: {
       flex: 1,
@@ -938,16 +825,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       color: c.inkMuted,
       marginTop: 1,
     },
-    profileEmail: {
-      ...t.caption,
-      color: c.inkMuted,
-      marginTop: 2,
-    },
-    accountActions: {
-      flexDirection: 'row',
-      gap: spacing.sm,
-      marginTop: spacing.md,
-    },
+    editProfile: { marginTop: spacing.md, marginBottom: spacing.sm },
+    signedInAs: { marginBottom: spacing.md },
     deleteSection: {
       marginTop: spacing.md,
     },
@@ -966,8 +845,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     androidSheetCard: {
       marginTop: (RNStatusBar.currentHeight ?? 24) + 12,
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
+      borderTopLeftRadius: radii.sheet,
+      borderTopRightRadius: radii.sheet,
       overflow: 'hidden',
     },
     sheetHandleBar: {

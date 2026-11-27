@@ -35,7 +35,7 @@ import { deviceCurrency } from '../lib/fx';
 import { cleanUsername, USERNAME_MAX, usernameProblem } from '../lib/username';
 import { isUsernameAvailable } from '../lib/usernameCheck';
 import { AuthStackParamList } from '../navigation/types';
-import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { NAME_MAX } from '../lib/limits';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
@@ -51,7 +51,7 @@ export default function SignUpScreen({ navigation }: Props) {
   const [availability, setAvailability] = useState<{ name: string; free: boolean | null } | null>(
     null
   );
-  // Starts on the phone's region; bills and Pro prices are shown in it.
+  // Starts on the phone's region; bills and plan prices are shown in it.
   const [currency, setCurrency] = useState(deviceCurrency);
   const [pickingCurrency, setPickingCurrency] = useState(false);
   const [birthYear, setBirthYear] = useState('');
@@ -214,7 +214,7 @@ export default function SignUpScreen({ navigation }: Props) {
           label="Currency"
           value={currencyLabel(currency)}
           onPress={() => setPickingCurrency(true)}
-          accessibilityHint="Bills you split and Pro prices are shown in it"
+          accessibilityHint="Bills you split and plan prices are shown in it"
         />
         <Field
           label="Email"
@@ -313,7 +313,7 @@ export default function SignUpScreen({ navigation }: Props) {
       <CurrencyPicker
         visible={pickingCurrency}
         selected={currency}
-        intro="Bills you split and Pro prices are shown in it. You can change it later in Settings."
+        intro="Bills you split and plan prices are shown in it. You can change it later in Settings."
         onSelect={(code) => {
           setCurrency(code);
           setPickingCurrency(false);
@@ -406,7 +406,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     checkbox: {
       width: 20,
       height: 20,
-      borderRadius: 4,
+      borderRadius: radii.tag,
       borderWidth: 1.5,
       borderColor: c.line,
       backgroundColor: c.card,
@@ -437,7 +437,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     modalCard: {
       backgroundColor: c.paper,
-      borderRadius: 16,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       padding: spacing.lg,

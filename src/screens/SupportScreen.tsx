@@ -23,13 +23,16 @@ type Props = NativeStackScreenProps<AppStackParamList, 'Support'>;
 
 // Ask for help or report a problem. The message is emailed to support with
 // the person's email as the reply-to, so answers come straight back to them.
-export default function SupportScreen({ navigation }: Props) {
+export default function SupportScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const insets = useSafeAreaInsets();
-  const [category, setCategory] = useState<SupportCategory | null>(null);
-  const [message, setMessage] = useState('');
+  // A prefilled message only comes from the plans screen.
+  const [category, setCategory] = useState<SupportCategory | null>(
+    route.params?.message ? 'pro' : null
+  );
+  const [message, setMessage] = useState(route.params?.message ?? '');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentRef, setSentRef] = useState<string | null>(null);
@@ -57,7 +60,8 @@ export default function SupportScreen({ navigation }: Props) {
       <View style={[styles.screen, styles.done, { paddingBottom: insets.bottom + spacing.xl }]}>
         <Text style={type.title}>Sent</Text>
         <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>
-          Thanks. We’ll reply to {email ?? 'your email'}, usually within two business days. If you
+          Thanks. We’ll reply to {email ?? 'your email'}, usually within 5–7 business days.
+          Reports of abuse or anything involving a child are looked at within 24 hours. If you
           write to us about it again, mention {sentRef}.
         </Text>
         <Button title="Done" onPress={() => navigation.goBack()} style={{ marginTop: spacing.xl }} />
@@ -143,7 +147,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     label: { ...t.caption, fontSize: 13, color: c.inkMuted, marginBottom: spacing.xs },
     card: {
       backgroundColor: c.card,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       paddingHorizontal: spacing.md,
@@ -172,7 +176,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       paddingHorizontal: spacing.md,
       paddingTop: spacing.sm,
       paddingBottom: spacing.sm,

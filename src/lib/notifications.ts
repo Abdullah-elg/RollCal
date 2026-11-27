@@ -176,16 +176,22 @@ export async function notificationsAllowed(): Promise<boolean | null> {
 // push and the scheduled reminders start right away.
 export async function turnOnNotifications(
   userId: string | undefined
-): Promise<'allowed' | 'settings' | 'unavailable'> {
+): Promise<'allowed' | 'denied' | 'settings' | 'unavailable'> {
   const Notifications = getNotifications();
   if (!Notifications) return 'unavailable';
+  // Android 13+ shows no prompt until a channel exists.
+  await ensureAndroidChannel(Notifications);
   let perm = await Notifications.getPermissionsAsync();
-  if (!perm.granted && perm.canAskAgain) perm = await Notifications.requestPermissionsAsync();
+  const couldAsk = perm.canAskAgain;
+  if (!perm.granted && couldAsk) perm = await Notifications.requestPermissionsAsync();
   if (perm.granted) {
     if (userId) await registerForPush(userId);
     syncEventReminders();
     return 'allowed';
   }
+  // They just tapped "Don't Allow": leave it. Only when the phone won't
+  // ask any more is Settings the way to turn them on.
+  if (couldAsk) return 'denied';
   await Linking.openSettings();
   return 'settings';
 }
@@ -202,7 +208,29 @@ async function ensureAndroidChannel(Notifications: NotificationsModule) {
 // Recompute the full schedule from current prefs + events. Cancel-all then
 // reschedule keeps it idempotent - safe to call after any change, and stale
 // reminders for deleted or moved events disappear on their own.
-export async function syncEventReminders(): Promise<void> {
+// One run at a time: two overlapping runs (switching tabs quickly) each
+// cancel and then schedule, so every reminder ended up scheduled twice. A
+// call during a run asks for one more run after it.
+let syncing: Promise<void> | null = null;
+let syncAgain = false;
+
+export function syncEventReminders(): Promise<void> {
+  if (syncing) {
+    syncAgain = true;
+    return syncing;
+  }
+  syncing = (async () => {
+    do {
+      syncAgain = false;
+      await syncRemindersOnce();
+    } while (syncAgain);
+  })().finally(() => {
+    syncing = null;
+  });
+  return syncing;
+}
+
+async function syncRemindersOnce(): Promise<void> {
   const Notifications = getNotifications();
   if (!Notifications) return;
   try {
@@ -246,26 +274,26 @@ export async function syncEventReminders(): Promise<void> {
       // The roll opens at the start too, so the two share one notification.
       const rollOpening = prefs.albumOpen && !pushed;
       if (prefs.atStart && rollOpening) {
-        plan(starts, e.title, 'Starting now. The roll is open - add your photos.');
+        plan(starts, e.title, 'Starting now. Add your photos.');
       } else if (prefs.atStart) {
         plan(starts, e.title, 'Starting now.');
       } else if (rollOpening) {
-        plan(starts, e.title, 'The roll is open - add your photos.');
+        plan(starts, e.title, 'You can add your photos now.');
       }
       if (prefs.albumDayLeft) {
-        plan(closes - DAY, e.title, 'One day left to add photos to the roll.');
+        plan(closes - DAY, e.title, 'One day left to add photos.');
       }
       if (prefs.albumHourLeft) {
-        plan(closes - HOUR, e.title, 'Last hour to add photos to the roll.');
+        plan(closes - HOUR, e.title, 'Last hour to add photos.');
       }
       if (prefs.albumClosed) {
-        plan(closes, e.title, 'The roll is closed. Save the photos you want to keep.');
+        plan(closes, e.title, 'Adding photos is closed. Save the ones you want to keep.');
       }
 
       const expiresAt = expiry[e.id]?.expiresAt;
       if (expiresAt && !expiry[e.id]?.expiredAt) {
         const at = new Date(expiresAt).getTime();
-        const proNote = e.creator_id === me ? ' Get Pro to keep them for good.' : '';
+        const proNote = e.creator_id === me ? ' Get Plus or an Event Pass to keep them for good.' : '';
         plan(at - 7 * DAY, e.title, `The photos will be deleted in a week. Save the ones you want.${proNote}`);
         plan(at - DAY, e.title, `The photos will be deleted tomorrow. Save the ones you want.${proNote}`);
       }
@@ -500,7 +528,23 @@ export async function markChatSeen(timestamp: string): Promise<void> {
   }
 }
 
+// Two overlapping checks would both announce the same new messages.
+let checkingChats = false;
+
 export async function notifyChatMessages(
+  userId: string,
+  events: { id: string; title: string }[]
+): Promise<void> {
+  if (checkingChats) return;
+  checkingChats = true;
+  try {
+    await notifyChatMessagesOnce(userId, events);
+  } finally {
+    checkingChats = false;
+  }
+}
+
+async function notifyChatMessagesOnce(
   userId: string,
   events: { id: string; title: string }[]
 ): Promise<void> {
@@ -790,6 +834,8 @@ export type NotificationTarget =
   | { kind: 'bill'; billId: string }
   | { kind: 'chat'; eventId: string; title: string }
   | { kind: 'event'; eventId: string }
+  // A photo reported to you as the event's host.
+  | { kind: 'hostReport'; reportId: string }
   | { kind: 'friends' };
 
 export function targetOf(data: unknown): NotificationTarget | null {
@@ -799,6 +845,9 @@ export function targetOf(data: unknown): NotificationTarget | null {
     return { kind: 'chat', eventId: d.eventId, title: typeof d.title === 'string' ? d.title : '' };
   }
   if (d.type === 'event' && typeof d.eventId === 'string') return { kind: 'event', eventId: d.eventId };
+  if (d.type === 'hostReport' && typeof d.reportId === 'string') {
+    return { kind: 'hostReport', reportId: d.reportId };
+  }
   if (d.type === 'friends') return { kind: 'friends' };
   return null;
 }
@@ -809,6 +858,10 @@ export function onNotificationTap(open: (target: NotificationTarget) => void): (
   const Notifications = getNotifications();
   if (!Notifications) return () => {};
   const handle = (response: { notification: { request: { content: { data?: unknown } } } }) => {
+    // Handled once: otherwise the launch tap is handed back again whenever
+    // this is set up anew (it was, on every hourly session refresh), and the
+    // app jumped back to that chat on its own.
+    Notifications.clearLastNotificationResponseAsync().catch(() => {});
     const target = targetOf(response.notification.request.content.data);
     if (target) open(target);
   };
@@ -831,7 +884,10 @@ export function onNotificationTap(open: (target: NotificationTarget) => void): (
 // The kinds the server sends; each phone can turn them off in Settings.
 const PUSH_KINDS = ['friendRequest', 'friendAccepted', 'chatMessage', 'albumOpen'] as const;
 const PUSH_TOKEN_KEY = 'rollcal.pushToken';
-const PUSH_ASKED_KEY = 'rollcal.pushAsked';
+// Android 13+ shows no prompt until a channel exists, and older builds
+// asked before making one, so Android phones were marked "asked" without
+// ever seeing it. A new key there lets them be asked once, properly.
+const PUSH_ASKED_KEY = Platform.OS === 'android' ? 'rollcal.pushAsked.2' : 'rollcal.pushAsked';
 
 type StoredPush = { userId: string; token: string };
 
@@ -874,19 +930,37 @@ async function sendPushSettings(userId: string, token: string): Promise<void> {
 
 // Gets this phone's push token and registers it for the signed-in person.
 // Asks for permission the first time only; after that, Settings does.
-export async function registerForPush(userId: string): Promise<void> {
+// One registration at a time: the launch, the app coming to the front and a
+// token change can all ask at once.
+let registering: { userId: string; done: Promise<void> } | null = null;
+
+export function registerForPush(userId: string): Promise<void> {
+  if (registering?.userId === userId) return registering.done;
+  // A different person (signed out and in again): wait for the old call,
+  // then register for them.
+  const before = registering?.done ?? Promise.resolve();
+  const done = before
+    .then(() => registerOnce(userId))
+    .finally(() => {
+      if (registering?.done === done) registering = null;
+    });
+  registering = { userId, done };
+  return done;
+}
+
+async function registerOnce(userId: string): Promise<void> {
   const Notifications = getNotifications();
   const projectId = easProjectId();
   if (!Notifications || !projectId) return;
   try {
+    // Android 13+ won't show the prompt or issue a token without a channel.
+    await ensureAndroidChannel(Notifications);
     let perm = await Notifications.getPermissionsAsync();
     if (!perm.granted && perm.canAskAgain && !(await AsyncStorage.getItem(PUSH_ASKED_KEY))) {
       await AsyncStorage.setItem(PUSH_ASKED_KEY, '1');
       perm = await Notifications.requestPermissionsAsync();
     }
     if (!perm.granted) return;
-    // Android needs the channel before a token can be issued.
-    await ensureAndroidChannel(Notifications);
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
     await sendPushSettings(userId, token);
   } catch (err) {
@@ -915,11 +989,21 @@ export async function syncPushSettings(): Promise<void> {
 }
 
 // Re-registers if the system hands the app a new token. Returns an unsubscribe.
+// The listener also fires every time the app fetches its own token, which
+// registering does, so it acts only on a token it hasn't seen; otherwise
+// it loops forever (expo-notifications warns about this).
+let lastDeviceToken: string | null = null;
+
 export function onPushTokenChange(userId: string): () => void {
   const Notifications = getNotifications();
   if (!Notifications || !easProjectId()) return () => {};
-  const sub = Notifications.addPushTokenListener(() => {
-    registerForPush(userId);
+  const sub = Notifications.addPushTokenListener((token) => {
+    const value = typeof token.data === 'string' ? token.data : JSON.stringify(token.data);
+    if (value === lastDeviceToken) return;
+    const first = lastDeviceToken === null;
+    lastDeviceToken = value;
+    // The first one is just the token registering already fetched.
+    if (!first) registerForPush(userId);
   });
   return () => sub.remove();
 }

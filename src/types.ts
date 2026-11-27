@@ -1,17 +1,30 @@
 // App-wide row types mirroring the Supabase schema. Only the tables a stage
 // actually uses get added here, to keep this honest.
 
+export type Plan = 'free' | 'plus' | 'pro';
+
 export type Profile = {
   id: string;
   display_name: string;
+  // Joined an event from a web browser without the app (guest-web.sql).
+  // Missing on databases before that file ran.
+  is_guest?: boolean;
+  // Profile photo visible to everyone signed in, not just friends
+  // (avatar-visibility.sql). Missing on old rows: friends only.
+  avatar_public?: boolean;
   first_name: string | null;
   last_name: string | null;
   // Chosen at sign-up; unique, how people find each other.
   username: string | null;
   avatar_url?: string | null;
-  // Set by hand in the dashboard until in-app purchases are live.
+  // Set by hand in the dashboard until in-app purchases are live. Always
+  // plan !== 'free' (plans.sql keeps them in step); kept for older builds.
   is_pro: boolean;
-  // Pro: friend requests to them are kept but hidden.
+  // Admin-only. Use planOf (lib/pro.ts), which respects plan_expires_at.
+  plan: Plan;
+  // When the plan ends; null for no end.
+  plan_expires_at: string | null;
+  // Friend requests to them are kept but hidden.
   quiet_mode: boolean;
   // Preferred currency for bills and prices; null until they choose one.
   currency: string | null;
@@ -70,6 +83,12 @@ export type Event = {
   // Who can join from the link: see lib/joinRequests. Missing on rows read
   // before join-modes.sql ran, which behave as 'open' or 'invite'.
   join_mode?: 'open' | 'approval' | 'invite';
+  // Who can add photos / chat: everyone, or the host and people they pick
+  // (post-permissions.sql). Missing on rows from before it ran: everyone.
+  photos_by?: 'everyone' | 'host';
+  chat_by?: 'everyone' | 'host';
+  // Bill splitting on/off (bills-toggle.sql). Missing on old rows: on.
+  bills_enabled?: boolean;
   uploads_closed: boolean;
   uploads_reopened_until?: string | null;
   cover_photo_id?: string | null;

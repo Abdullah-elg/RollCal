@@ -84,7 +84,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.paper,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       padding: spacing.lg,
     },
     buttonRow: {
@@ -94,10 +94,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     cancelButton: {
       flex: 1,
-      height: 44,
+      height: 48,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       backgroundColor: c.card,
@@ -108,10 +108,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     confirmButton: {
       flex: 1,
-      height: 44,
+      height: 48,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
     },
     accentButton: {
       backgroundColor: c.accent,

@@ -17,26 +17,42 @@ export async function setCoverPhoto(
   return { error: error ? error.message : null };
 }
 
-// Host picks one image from their library; it becomes the event's cover.
-export async function pickAndUploadCover(
-  eventId: string,
-  userId: string
-): Promise<{ photoId: string | null; error: string | null }> {
+// Host picks one image from their library for the cover. Null if they
+// cancel. Kept apart from the upload so a new event can hold the photo
+// until the event exists.
+export async function pickCoverAsset(): Promise<ImagePicker.ImagePickerAsset | null> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: 'images',
     allowsEditing: true,
     aspect: [4, 3],
     quality: 1,
   });
-  if (result.canceled || result.assets.length === 0) return { photoId: null, error: null };
+  return result.canceled || result.assets.length === 0 ? null : result.assets[0];
+}
 
+// Uploads a picked image and makes it the event's cover.
+export async function uploadCoverAsset(
+  eventId: string,
+  userId: string,
+  asset: ImagePicker.ImagePickerAsset
+): Promise<{ photoId: string | null; error: string | null }> {
   try {
-    const photoId = await uploadPhotoAsset(eventId, userId, result.assets[0], 0.8);
+    const photoId = await uploadPhotoAsset(eventId, userId, asset, 0.8);
     const { error } = await setCoverPhoto(eventId, photoId);
     return { photoId, error };
   } catch (err) {
     return { photoId: null, error: err instanceof Error ? err.message : 'Upload failed.' };
   }
+}
+
+// Pick and upload in one go, for an event that already exists.
+export async function pickAndUploadCover(
+  eventId: string,
+  userId: string
+): Promise<{ photoId: string | null; error: string | null }> {
+  const asset = await pickCoverAsset();
+  if (!asset) return { photoId: null, error: null };
+  return uploadCoverAsset(eventId, userId, asset);
 }
 
 // Photos (cover included) only show up in the roll, counts and activity once

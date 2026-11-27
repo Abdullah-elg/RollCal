@@ -82,6 +82,7 @@ export default function NotificationsScreen({ navigation }: Props) {
     if (t.kind === 'chat') navigation.navigate('EventChat', { eventId: t.eventId, title: t.title });
     else if (t.kind === 'event') navigation.navigate('EventDetail', { eventId: t.eventId });
     else if (t.kind === 'bill') navigation.navigate('Bill', { billId: t.billId });
+    else if (t.kind === 'hostReport') navigation.navigate('HostReport', { reportId: t.reportId });
     else if (t.kind === 'invitations') navigation.navigate('EventInvitations');
     else if (t.kind === 'friendRequests') navigation.navigate('FriendRequests');
     else navigation.navigate('Tabs', { screen: 'FriendsTab' });

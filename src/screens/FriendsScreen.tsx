@@ -14,9 +14,9 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { InboxIcon, SearchIcon, SendIcon } from '../components/icons';
+import { InboxIcon, SearchIcon } from '../components/icons';
 import PersonActionsSheet from '../components/PersonActionsSheet';
-import { MoreAction, PersonList, PersonRow, RowAction } from '../components/PersonRow';
+import { MoreAction, PersonList, PersonRow } from '../components/PersonRow';
 import { SectionLabel } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -27,6 +27,7 @@ import {
   tabBarHeight,
   fonts,
   Palette,
+  radii,
   spacing,
   TypeTokens,
 } from '../theme';
@@ -51,7 +52,7 @@ export default function FriendsScreen({ navigation }: Props) {
     reload();
   };
 
-  // The three ways into the rest of the friends flow. Counts come along so
+  // The two ways into the rest of the friends flow. Counts come along so
   // you can see there's something waiting without opening anything.
   const destinations = [
     {
@@ -62,18 +63,12 @@ export default function FriendsScreen({ navigation }: Props) {
     },
     {
       label: 'Requests',
-      caption: data.incoming.length > 0 ? `${data.incoming.length} waiting` : 'none',
+      caption: data.incoming.length > 0 ? `${data.incoming.length} new` : 'none',
       icon: InboxIcon,
       // A waiting request earns the filled treatment - it's the one thing
       // on this screen that wants acting on.
       highlight: data.incoming.length > 0,
       onPress: () => navigation.navigate('FriendRequests'),
-    },
-    {
-      label: 'Sent',
-      caption: data.outgoing.length > 0 ? `${data.outgoing.length} pending` : 'none',
-      icon: SendIcon,
-      onPress: () => navigation.navigate('SentRequests'),
     },
   ];
 
@@ -144,11 +139,6 @@ export default function FriendsScreen({ navigation }: Props) {
           <PersonList>
             {data.friends.map((link) => (
               <PersonRow key={link.friendshipId} person={link.profile}>
-                <RowAction
-                  label="Remove"
-                  tone="danger"
-                  onPress={() => setUnfriend(link)}
-                />
                 <MoreAction
                   name={link.profile.display_name}
                   onPress={() => setActing(link)}
@@ -175,6 +165,7 @@ export default function FriendsScreen({ navigation }: Props) {
 
       <PersonActionsSheet
         person={acting && { id: acting.profile.id, name: acting.profile.display_name }}
+        extra={acting ? { label: 'Remove friend', onPress: () => setUnfriend(acting) } : undefined}
         onClose={() => setActing(null)}
         // Blocking ends the friendship in the database.
         onBlocked={reload}
@@ -205,10 +196,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     navButton: {
       flex: 1,
-      backgroundColor: c.card,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.line,
-      borderRadius: 16,
+      backgroundColor: c.ink + '0D',
+      borderRadius: radii.card,
       paddingVertical: spacing.md,
       paddingHorizontal: spacing.sm,
       alignItems: 'center',

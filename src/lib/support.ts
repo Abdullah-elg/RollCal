@@ -11,7 +11,7 @@ export type SupportCategory = 'account' | 'problem' | 'pro' | 'other';
 export const SUPPORT_CATEGORIES: { value: SupportCategory; label: string; hint: string }[] = [
   { value: 'account', label: 'Change something on my account', hint: 'Your email, your name, or deleting data' },
   { value: 'problem', label: 'Something isn’t working', hint: 'A bug, a crash, or something that looks wrong' },
-  { value: 'pro', label: 'RollCal Pro', hint: 'Your subscription or a Pro feature' },
+  { value: 'pro', label: 'Plans and subscriptions', hint: 'Your plan, an Event Pass or a paid feature' },
   { value: 'other', label: 'Something else', hint: 'Questions, ideas, anything' },
 ];
 

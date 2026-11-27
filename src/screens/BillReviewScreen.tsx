@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CurrencyPicker from '../components/CurrencyPicker';
 import RatesCredit from '../components/RatesCredit';
 import { CloseIcon, PlusIcon } from '../components/icons';
-import { Button, ErrorText, Field, FormScreen } from '../components/ui';
+import { Button, ErrorText, Field, FormScreen, SECTION_GAP } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useProPrompt } from '../context/ProPromptContext';
@@ -28,10 +28,10 @@ import { convertBill, currencyLabel, describeRate, rateBetween, Rates } from '..
 import { deviceCurrency, loadRates } from '../lib/fx';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { centsToInput, formatCents, parseCents } from '../lib/money';
-import { loadScansLeft } from '../lib/pro';
+import { loadScansLeft, planOf } from '../lib/pro';
 import { scanReceipt, ScanSource } from '../lib/receiptScan';
 import { AppStackParamList } from '../navigation/types';
-import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'BillReview'>;
 
@@ -95,15 +95,16 @@ export default function BillReviewScreen({ navigation, route }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
-  // Free scans left this month; null when Pro or not known yet.
-  const isPro = !!profile?.is_pro;
+  // Scans left this month; null on Pro (no limit) or not known yet.
+  const plan = planOf(profile);
+  const isPro = plan === 'pro';
   const [scansLeft, setScansLeft] = useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       if (isPro) return;
       loadScansLeft().then(setScansLeft);
-    }, [isPro])
+    }, [isPro, plan])
   );
 
   const parsed = lines.map((l) => ({
@@ -233,7 +234,7 @@ export default function BillReviewScreen({ navigation, route }: Props) {
     setScanning(false);
     if ('error' in result) {
       setScanError(result.error);
-      // A photo that wasn't a receipt still used a free scan.
+      // The server says how many scans are left after a photo it couldn't read.
       if (result.scansLeft !== undefined) setScansLeft(result.scansLeft);
     }
     if ('limitReached' in result) {
@@ -249,8 +250,8 @@ export default function BillReviewScreen({ navigation, route }: Props) {
     isPro || scansLeft === null
       ? 'Scan the receipt and the lines fill in, or type them below.'
       : scansLeft > 0
-        ? `${scansLeft} free ${scansLeft === 1 ? 'scan' : 'scans'} left this month. Or type the lines below.`
-        : 'You’ve used this month’s free scans. Type the lines below, or get Pro to keep scanning.';
+        ? `${scansLeft} ${scansLeft === 1 ? 'scan' : 'scans'} left this month. Or type the lines below.`
+        : `You’ve used this month’s scans. Type the lines below, or get ${plan === 'plus' ? 'Pro' : 'Plus'} to keep scanning.`;
 
   const lineError = (l: Line, i: number): string | null => {
     if (!submitted) return null;
@@ -304,7 +305,7 @@ export default function BillReviewScreen({ navigation, route }: Props) {
                 onPress={() => navigation.navigate('Upgrade', { reason: 'scan' })}
                 style={styles.proLink}
               >
-                <Text style={styles.proLinkText}>Get Pro</Text>
+                <Text style={styles.proLinkText}>{plan === 'plus' ? 'Get Pro' : 'Get Plus'}</Text>
               </Pressable>
             )}
             <ErrorText message={scanError} />
@@ -551,13 +552,13 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       paddingVertical: spacing.md,
       marginBottom: spacing.md,
     },
-    sectionHeader: { ...t.sectionLabel, marginBottom: spacing.sm },
+    sectionHeader: { fontFamily: fonts.headingMedium, fontSize: 17, color: c.ink, marginBottom: spacing.sm + 2 },
     label: { ...t.caption, fontFamily: fonts.bodyMedium },
     input: {
       ...t.body,
       borderWidth: 1,
       borderColor: c.line,
-      borderRadius: 8,
+      borderRadius: radii.control,
       paddingHorizontal: spacing.sm + 4,
       paddingVertical: 10,
       backgroundColor: c.card,
@@ -586,7 +587,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       paddingVertical: spacing.sm,
     },
     addLineText: { ...t.body, fontFamily: fonts.bodySemiBold },
-    divider: { height: 1, backgroundColor: c.line, marginVertical: spacing.md },
+    divider: { height: SECTION_GAP },
     tipHead: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -595,7 +596,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     segmented: {
       flexDirection: 'row',
-      borderRadius: 4,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       overflow: 'hidden',

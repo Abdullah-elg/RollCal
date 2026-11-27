@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import Avatar from '../components/Avatar';
-import { CameraIcon } from '../components/icons';
+import { CameraIcon, ChevronRightIcon } from '../components/icons';
 import { Button, ErrorText, Field, FormScreen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -23,7 +23,7 @@ import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { cleanUsername, usernameProblem } from '../lib/username';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
-import { Palette, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, spacing, TypeTokens } from '../theme';
 import { NAME_MAX } from '../lib/limits';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'EditProfile'>;
@@ -192,6 +192,18 @@ export default function EditProfileScreen({ navigation }: Props) {
           loading={busy}
           disabled={!firstName.trim() || !lastName.trim() || !username.trim()}
         />
+
+        <Pressable
+          onPress={() => navigation.navigate('ChangePassword')}
+          style={({ pressed }) => [styles.passwordRow, pressed && { opacity: 0.6 }]}
+          accessibilityRole="button"
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.passwordTitle}>Password</Text>
+            <Text style={type.caption}>Change it or reset it</Text>
+          </View>
+          <ChevronRightIcon color={colors.inkMuted} />
+        </Pressable>
       </ScrollView>
       <ActionMenuSheet
         visible={photoMenu !== null}
@@ -246,8 +258,22 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     changePhotoText: {
       ...t.button,
-      color: c.accent,
+      color: c.accentText,
       marginTop: 4,
+    },
+    passwordRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginTop: spacing.xl,
+      paddingTop: spacing.lg,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.line,
+    },
+    passwordTitle: {
+      ...t.body,
+      fontFamily: fonts.bodySemiBold,
+      color: c.ink,
     },
     nameRow: {
       flexDirection: 'row',

@@ -33,6 +33,7 @@ import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Event, RsvpStatus } from '../types';
+import { placeLabel } from '../lib/place';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'JoinEvent'>;
 
@@ -175,7 +176,7 @@ export default function JoinEventScreen({ navigation, route }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Paste invite code"
             >
-              <CopyIcon size={14} color={colors.accent} />
+              <CopyIcon size={14} color={colors.accentText} />
               <Text style={styles.inlinePasteText}>Paste</Text>
             </Pressable>
           </View>
@@ -205,7 +206,7 @@ export default function JoinEventScreen({ navigation, route }: Props) {
                 {formatSpan(preview.starts_at, preview.ends_at)}
               </Text>
               {preview.location ? (
-                <Text style={type.bodyMuted}>{preview.location}</Text>
+                <Text style={type.bodyMuted}>{placeLabel(preview.location)}</Text>
               ) : null}
               {hostName ? (
                 <Text style={[type.caption, { marginTop: spacing.sm }]}>
@@ -293,7 +294,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: 1,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       paddingLeft: spacing.md,
       paddingRight: spacing.sm,
       height: 54,
@@ -315,19 +316,19 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       gap: 5,
       paddingHorizontal: 10,
       paddingVertical: 6,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       backgroundColor: c.accent + '18',
     },
     inlinePasteText: {
       fontFamily: fonts.bodyMedium,
       fontSize: 13,
-      color: c.accent,
+      color: c.accentText,
     },
     previewCard: {
       backgroundColor: c.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: 16,
+      borderRadius: radii.card,
       padding: spacing.md,
       marginBottom: spacing.lg,
     },
@@ -335,7 +336,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: 16,
+      borderRadius: radii.card,
       padding: spacing.md,
     },
     cancelRequest: {

@@ -1,0 +1,10 @@
+{
+  "name": "recap-video",
+  "version": "1.0.0",
+  "description": "Writes RollCal's event recap to an MP4 on the device",
+  "main": "index.ts",
+  "private": true,
+  "license": "UNLICENSED",
+  "author": "RollCal",
+  "homepage": "https://rollcal.app"
+}

@@ -1,0 +1,186 @@
+// Ask for help or report a problem. The message goes to support by email
+// with the user's address as reply-to.
+
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Button, ErrorText, FormScreen } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { hapticLight, hapticSuccess } from '../lib/haptics';
+import {
+  sendSupportTicket,
+  SUPPORT_CATEGORIES,
+  SUPPORT_MESSAGE_MAX,
+  SUPPORT_MESSAGE_MIN,
+  SupportCategory,
+} from '../lib/support';
+import { AppStackParamList } from '../navigation/types';
+import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'Support'>;
+
+// Ask for help or report a problem. The message is emailed to support with
+// the person's email as the reply-to, so answers come straight back to them.
+export default function SupportScreen({ navigation, route }: Props) {
+  const { session } = useAuth();
+  const { colors, type } = useTheme();
+  const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
+  const insets = useSafeAreaInsets();
+  // A prefilled message only comes from the plans screen.
+  const [category, setCategory] = useState<SupportCategory | null>(
+    route.params?.message ? 'pro' : null
+  );
+  const [message, setMessage] = useState(route.params?.message ?? '');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sentRef, setSentRef] = useState<string | null>(null);
+
+  const email = session?.user.email;
+  const length = message.trim().length;
+  const ready = !!category && length >= SUPPORT_MESSAGE_MIN && !sending;
+
+  const send = async () => {
+    if (!session || !category || !ready) return;
+    setError(null);
+    setSending(true);
+    const result = await sendSupportTicket(session.user.id, category, message);
+    setSending(false);
+    if ('error' in result) {
+      setError(result.error);
+      return;
+    }
+    hapticSuccess();
+    setSentRef(result.ref);
+  };
+
+  if (sentRef) {
+    return (
+      <View style={[styles.screen, styles.done, { paddingBottom: insets.bottom + spacing.xl }]}>
+        <Text style={type.title}>Sent</Text>
+        <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>
+          Thanks. We’ll reply to {email ?? 'your email'}, usually within 5–7 business days.
+          Reports of abuse or anything involving a child are looked at within 24 hours. If you
+          write to us about it again, mention {sentRef}.
+        </Text>
+        <Button title="Done" onPress={() => navigation.goBack()} style={{ marginTop: spacing.xl }} />
+      </View>
+    );
+  }
+
+  return (
+    <FormScreen style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+      >
+        <Text style={[type.bodyMuted, { marginBottom: spacing.lg }]}>
+          Ask us to change something on your account, or tell us what’s not working. We’ll reply to{' '}
+          <Text style={styles.email}>{email ?? 'your email'}</Text>.
+        </Text>
+
+        <Text style={styles.label}>What’s it about?</Text>
+        <View style={styles.card}>
+          {SUPPORT_CATEGORIES.map((c, i) => {
+            const selected = category === c.value;
+            return (
+              <View key={c.value}>
+                {i > 0 && <View style={styles.divider} />}
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  onPress={() => {
+                    hapticLight();
+                    setCategory(c.value);
+                  }}
+                  style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={type.body}>{c.label}</Text>
+                    <Text style={type.caption}>{c.hint}</Text>
+                  </View>
+                  <View style={styles.radio}>{selected && <View style={styles.radioFill} />}</View>
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
+
+        <Text style={[styles.label, { marginTop: spacing.lg }]}>Your message</Text>
+        <TextInput
+          style={styles.input}
+          value={message}
+          onChangeText={setMessage}
+          placeholder={
+            category === 'account'
+              ? 'For example: please change my email to …'
+              : category === 'problem'
+                ? 'What happened, and what were you doing when it did?'
+                : 'How can we help?'
+          }
+          placeholderTextColor={colors.inkMuted}
+          multiline
+          maxLength={SUPPORT_MESSAGE_MAX}
+          accessibilityLabel="Your message"
+        />
+        <Text style={[type.caption, { marginTop: spacing.xs }]}>
+          {length > 0 && length < SUPPORT_MESSAGE_MIN
+            ? `A little more detail, please (at least ${SUPPORT_MESSAGE_MIN} characters).`
+            : 'Your phone type and app version are included, to help with problems.'}
+        </Text>
+
+        <ErrorText message={error} />
+        <Button title="Send" onPress={send} loading={sending} disabled={!ready} style={{ marginTop: spacing.lg }} />
+      </ScrollView>
+    </FormScreen>
+  );
+}
+
+const makeStyles = (c: Palette, t: TypeTokens) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: c.paper },
+    content: { padding: spacing.lg },
+    done: { padding: spacing.lg, justifyContent: 'center' },
+    email: { fontFamily: fonts.bodySemiBold, color: c.ink },
+    label: { ...t.caption, fontSize: 13, color: c.inkMuted, marginBottom: spacing.xs },
+    card: {
+      backgroundColor: c.card,
+      borderRadius: radii.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.line,
+      paddingHorizontal: spacing.md,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      minHeight: 56,
+      paddingVertical: spacing.sm,
+    },
+    divider: { height: StyleSheet.hairlineWidth, backgroundColor: c.line },
+    radio: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      borderColor: c.ink,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    radioFill: { width: 20, height: 20, borderRadius: 10, backgroundColor: c.ink, margin: -1.5 },
+    input: {
+      ...t.body,
+      minHeight: 140,
+      backgroundColor: c.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.line,
+      borderRadius: radii.control,
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.sm,
+      textAlignVertical: 'top',
+      color: c.ink,
+    },
+  });

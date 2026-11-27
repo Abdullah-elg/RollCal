@@ -98,10 +98,21 @@ export function Button({
 
   // flex sizes the outer wrapper only. On the inner Pressable it would
   // override the fixed height, and a button in a row collapsed to nothing.
-  const { flex, ...innerStyle } = StyleSheet.flatten(style) ?? {};
+  // Width settings size the wrapper too, or a "full width" button would
+  // stay as wide as its label.
+  const { flex, flexBasis, ...innerStyle } = StyleSheet.flatten(style) ?? {};
+  const { width, alignSelf } = innerStyle;
 
   return (
-    <Animated.View style={[{ transform: [{ scale }] }, flex !== undefined ? { flex } : null]}>
+    <Animated.View
+      style={[
+        { transform: [{ scale }] },
+        flex !== undefined ? { flex } : null,
+        flexBasis !== undefined ? { flexBasis } : null,
+        width !== undefined ? { width } : null,
+        alignSelf !== undefined ? { alignSelf } : null,
+      ]}
+    >
       <Pressable
         onPress={() => {
           hapticLight();
@@ -367,12 +378,15 @@ export function ThemedSwitch({
     <Switch
       value={value}
       onValueChange={handleChange}
-      trackColor={{ true: switchTint }}
+      trackColor={{ true: switchTrackTint }}
     />
   );
 }
 
 // Sentence-case section header, normal weight, muted color (15pt).
+// Space between sections of a screen, in place of divider lines.
+export const SECTION_GAP = spacing.xl;
+
 export function SectionLabel({
   children,
   count,
@@ -445,7 +459,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
   StyleSheet.create({
     button: {
       height: 48,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: spacing.md,
@@ -479,7 +493,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: 1,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       paddingHorizontal: spacing.md,
       height: 48,
     },
@@ -493,13 +507,15 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     truncatedOverlay: {
       justifyContent: 'center',
     },
+    // The one section heading style for the whole app. Sections are
+    // separated by space (SECTION_GAP), not lines.
     sectionHead: {
-      marginBottom: spacing.sm,
+      marginBottom: spacing.sm + 2,
     },
     sectionLabel: {
-      fontFamily: fonts.body,
-      fontSize: 15,
-      color: c.inkMuted,
+      fontFamily: fonts.headingMedium,
+      fontSize: 17,
+      color: c.ink,
     },
     intro: {
       flexDirection: 'row',

@@ -14,14 +14,29 @@ OUT = Path(__file__).resolve().parent.parent / 'assets'
 PREVIEWS = OUT / 'previews'
 PREVIEWS.mkdir(exist_ok=True)
 
+import os
+
 SS = 4
 N = 1024 * SS
-GREEN = (31, 92, 74, 255)
-INK = (22, 26, 23, 255)
-CREAM = (246, 244, 238, 255)
 WHITE = (255, 255, 255, 255)
-TOP = np.array([40, 112, 90], float)  # background gradient, top
-BOT = np.array([26, 78, 63], float)   # and bottom
+CREAM = (246, 244, 238, 255)   # the app's paper
+# The app's film-camera palette: paper behind, the frame in film ink, the
+# window cut through to the paper, and coral only on the lens.
+# ICON_VARIANT=ink renders a dark alternative into previews only.
+VARIANT = os.environ.get('ICON_VARIANT', 'paper')
+if VARIANT == 'paper':
+    TOP = np.array([250, 247, 240], float)
+    BOT = np.array([232, 226, 214], float)
+    CREAM = (42, 36, 32, 255)     # frame in film ink
+    INK = (246, 244, 238, 255)    # window in paper
+    HUB = (200, 82, 54, 255)
+    SHADOW = (60, 40, 20, 60)
+else:
+    TOP = np.array([64, 55, 48], float)    # background gradient, top
+    BOT = np.array([33, 28, 25], float)    # and bottom (film ink)
+    INK = (24, 20, 18, 255)        # the window, darker than the background
+    HUB = (226, 104, 72, 255)      # the one coral touch: the lens
+    SHADOW = (0, 0, 0, 120)
 
 
 def px(v):
@@ -56,8 +71,8 @@ def mark(scale=1.0, mono=False):
     if not mono:
         shadow = Image.new('RGBA', (N, N), (0, 0, 0, 0))
         ImageDraw.Draw(shadow).rounded_rectangle(
-            box(fl, ft + 26, fr, fb + 26), radius=px(fr_r * k), fill=(6, 28, 22, 85))
-        layer = Image.alpha_composite(layer, shadow.filter(ImageFilter.GaussianBlur(px(34 * k))))
+            box(fl, ft + 26, fr, fb + 26), radius=px(fr_r * k), fill=SHADOW)
+        shadow = shadow.filter(ImageFilter.GaussianBlur(px(34 * k)))
 
     frame = Image.new('RGBA', (N, N), (0, 0, 0, 0))
     fd = ImageDraw.Draw(frame)
@@ -72,20 +87,28 @@ def mark(scale=1.0, mono=False):
             y0 = ft + 98 + i * 136
             cd.rounded_rectangle(box(x0, y0, x0 + hw, y0 + hh), radius=px(hr * k), fill=255)
     wl, wt, wr, wb, wrad = fl + 150, ft + 96, fr - 150, fb - 96, 60
-    if mono:
+    # The window is a hole (one colour, and the paper version): the
+    # background shows through it.
+    if mono or VARIANT == 'paper':
         cd.rounded_rectangle(box(wl, wt, wr, wb), radius=px(wrad * k), fill=255)
     a = np.array(frame)
     a[..., 3] = np.minimum(a[..., 3], 255 - np.array(cut))
     frame = Image.fromarray(a, 'RGBA')
     fd = ImageDraw.Draw(frame)
+    if not mono:
+        # No shadow inside the holes, so they match the background exactly.
+        sa = np.array(shadow)
+        sa[..., 3] = np.minimum(sa[..., 3], 255 - np.array(cut))
+        layer = Image.alpha_composite(layer, Image.fromarray(sa, 'RGBA'))
 
     # The window and the lens in it.
     lcx, lcy = 0, (wt + wb) / 2
     R, hub = 104, 56
     if not mono:
-        fd.rounded_rectangle(box(wl, wt, wr, wb), radius=px(wrad * k), fill=INK)
+        if VARIANT != 'paper':
+            fd.rounded_rectangle(box(wl, wt, wr, wb), radius=px(wrad * k), fill=INK)
         fd.ellipse(box(lcx - R, lcy - R, lcx + R, lcy + R), fill=CREAM)
-        fd.ellipse(box(lcx - hub, lcy - hub, lcx + hub, lcy + hub), fill=GREEN)
+        fd.ellipse(box(lcx - hub, lcy - hub, lcx + hub, lcy + hub), fill=HUB)
     else:
         # A white ring in the empty window.
         fd.ellipse(box(lcx - R, lcy - R, lcx + R, lcy + R), fill=WHITE)
@@ -124,6 +147,12 @@ def rounded(img, radius_frac=0.2237):
 ANDROID_SCALE = 0.66
 
 full = Image.alpha_composite(gradient(), mark())
+if VARIANT != 'paper':
+    paper = (246, 244, 238, 255)
+    v = Image.alpha_composite(Image.new('RGBA', (N, N), paper), rounded(full))
+    down(v, 512).save(PREVIEWS / f'preview-ios-{VARIANT}.png')
+    print('preview only')
+    raise SystemExit
 down(full, 1024).convert('RGB').save(OUT / 'icon.png')  # iOS: square, no transparency
 down(rounded(full), 1024).save(OUT / 'splash-icon.png')
 down(rounded(full), 48).save(OUT / 'favicon.png')

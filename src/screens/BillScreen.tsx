@@ -25,7 +25,7 @@ import Avatar from '../components/Avatar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import RatesCredit from '../components/RatesCredit';
 import { CheckIcon, ChevronRightIcon } from '../components/icons';
-import { Button, ErrorText } from '../components/ui';
+import { Button, ErrorText, SECTION_GAP } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -399,15 +399,23 @@ export default function BillScreen({ navigation, route }: Props) {
 
   // This bill's part plus each other bill's, sent as one payment per bill
   // (so each bill keeps its own record), stopping at the first that fails.
+  // What was already sent leaves the list, so trying again never sends a
+  // bill twice.
   const submitBundle = (others: OtherOwed[], thisCents: number) =>
     run(
       'send',
       async () => {
         const first = await sendPayment(bill.id, thisCents, picks, goingCount);
         if (first) return first;
-        for (const o of others) {
+        changePicks({});
+        for (const [i, o] of others.entries()) {
           const failed = await sendPayment(o.billId, o.cents, o.picks, goingCount);
-          if (failed) return `${o.title}: ${failed}`;
+          if (failed) {
+            // The rest go on as a "together" send of just what's left.
+            setBundle(null);
+            setTogetherSend(others.slice(i));
+            return `${o.title}: ${failed}`;
+          }
           await savePicks(myId, o.billId, {});
         }
         return null;
@@ -427,9 +435,13 @@ export default function BillScreen({ navigation, route }: Props) {
     run(
       'send',
       async () => {
-        for (const e of entries) {
+        for (const [i, e] of entries.entries()) {
           const failed = await sendPayment(e.billId, e.cents, e.picks, goingCount);
-          if (failed) return `${e.title}: ${failed}`;
+          if (failed) {
+            // Keep only what wasn't sent, so trying again can't double up.
+            setTogetherSend(entries.slice(i));
+            return `${e.title}: ${failed}`;
+          }
           if (e.billId === bill.id) changePicks({});
           else await savePicks(myId, e.billId, {});
         }
@@ -1575,7 +1587,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       letterSpacing: -0.5,
       marginTop: spacing.md,
     },
-    divider: { height: 1, backgroundColor: c.line, marginVertical: spacing.md },
+    divider: { height: SECTION_GAP },
     rowDivider: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: c.line,
@@ -1591,7 +1603,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     box: {
       width: 24,
       height: 24,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: 1.5,
       borderColor: c.ink,
       alignItems: 'center',
@@ -1679,7 +1691,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.paper,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       padding: spacing.lg,
       gap: spacing.sm,
     },
@@ -1688,7 +1700,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: 1,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       paddingHorizontal: spacing.md,
       height: 48,
       marginTop: spacing.sm,
@@ -1703,7 +1715,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     tick: {
       width: 24,
       height: 24,
-      borderRadius: 6,
+      borderRadius: radii.control,
       borderWidth: 1.5,
       borderColor: c.inkMuted,
       alignItems: 'center',
@@ -1715,7 +1727,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       height: 44,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       backgroundColor: c.card,
@@ -1726,11 +1738,11 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       height: 44,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       backgroundColor: c.accent,
     },
     dialogConfirmText: { ...t.button, color: c.onAccent },
-    sectionHeader: { ...t.sectionLabel, marginBottom: spacing.sm },
+    sectionHeader: { fontFamily: fonts.headingMedium, fontSize: 17, color: c.ink, marginBottom: spacing.sm + 2 },
     paidHeader: {
       ...t.caption,
       color: c.ink,

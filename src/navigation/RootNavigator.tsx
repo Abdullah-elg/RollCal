@@ -31,7 +31,7 @@ import { WEB_ORIGIN } from '../lib/links';
 import { ProPromptProvider } from '../context/ProPromptContext';
 import { useUnread } from '../context/UnreadContext';
 import { ArrowIcon } from '../components/icons';
-import { CalendarBlank, Gear, Ticket, Users } from 'phosphor-react-native';
+import { CalendarBlank, Ticket, UserCircle, Users } from 'phosphor-react-native';
 import CreateActionSheet from '../components/CreateActionSheet';
 import AgePrompt, { needsAgeCheck } from '../components/AgePrompt';
 import CurrencyPrompt from '../components/CurrencyPrompt';
@@ -50,8 +50,12 @@ import BillShareScreen from '../screens/BillShareScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import CreateEventScreen from '../screens/CreateEventScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
+import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import EventChatScreen from '../screens/EventChatScreen';
 import EventDetailScreen from '../screens/EventDetailScreen';
+import EventPhotosScreen from '../screens/EventPhotosScreen';
+import RecapScreen from '../screens/RecapScreen';
+import VideoRecapScreen from '../screens/VideoRecapScreen';
 import BlockedPeopleScreen from '../screens/BlockedPeopleScreen';
 import FindPeopleScreen from '../screens/FindPeopleScreen';
 import FriendRequestsScreen from '../screens/FriendRequestsScreen';
@@ -63,8 +67,10 @@ import PaymentMethodsScreen from '../screens/PaymentMethodsScreen';
 import SentRequestsScreen from '../screens/SentRequestsScreen';
 import EventInvitationsScreen from '../screens/EventInvitationsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import HostReportScreen from '../screens/HostReportScreen';
 import HomeScreen from '../screens/HomeScreen';
 import JoinEventScreen from '../screens/JoinEventScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
@@ -73,7 +79,9 @@ import LicensesScreen from '../screens/LicensesScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
-import { fonts } from '../theme';
+import UpdateRequiredScreen from '../screens/UpdateRequiredScreen';
+import { useMustUpdate } from '../lib/minVersion';
+import { fonts, radii } from '../theme';
 import { AppStackParamList, AuthStackParamList, TabParamList } from './types';
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -113,11 +121,11 @@ const TabButton = (props: BottomTabBarButtonProps) => (
   <PlatformPressable {...props} android_ripple={{ color: 'transparent' }} />
 );
 
-// Five tabs: Events, Calendar, +, Friends, Settings.
+// Five tabs: Events, Calendar, +, Friends, Profile (Settings behind its gear).
 // Tapping + intercepts navigation to open CreateActionSheet without switching tabs.
 function TabsNavigator() {
   const { colors } = useTheme();
-  const { unreadChats, friendRequests, pendingInvites } = useUnread();
+  const { unreadChats, friendRequests, pendingInvites, hostReports } = useUnread();
   const insets = useSafeAreaInsets();
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const navigation = useNavigation<any>();
@@ -160,7 +168,7 @@ function TabsNavigator() {
           options={{
             title: 'Events',
             tabBarIcon: ({ focused, color }) => (
-              <IconDot show={unreadChats.length > 0 || pendingInvites > 0}>
+              <IconDot show={unreadChats.length > 0 || pendingInvites > 0 || hostReports.length > 0}>
                 <Ticket
                   size={22}
                   color={color}
@@ -223,12 +231,12 @@ function TabsNavigator() {
           }}
         />
         <Tabs.Screen
-          name="SettingsTab"
-          component={SettingsScreen}
+          name="ProfileTab"
+          component={ProfileScreen}
           options={{
-            title: 'Settings',
+            title: 'Profile',
             tabBarIcon: ({ focused, color }) => (
-              <Gear
+              <UserCircle
                 size={22}
                 color={color}
                 weight={focused ? 'fill' : 'regular'}
@@ -284,7 +292,7 @@ function NewTabIcon({ tile, mark }: { tile: string; mark: string }) {
       style={{
         width: TILE,
         height: TILE,
-        borderRadius: 9,
+        borderRadius: radii.control,
         backgroundColor: tile,
         alignItems: 'center',
         justifyContent: 'center',
@@ -321,6 +329,7 @@ function NewTabIcon({ tile, mark }: { tile: string; mark: string }) {
 export default function RootNavigator() {
   const { session, loading, recovering, ageBlocked } = useAuth();
   const { mode, colors } = useTheme();
+  const updateRequired = useMustUpdate();
 
   // Paper background everywhere, including during screen transitions.
   const navTheme = useMemo(() => {
@@ -360,7 +369,7 @@ export default function RootNavigator() {
   }, [loading]);
 
   // Tapping a notification opens what it's about: a bill, an event's chat,
-  // the event (roll opening) or Friends. If the tap launched the app,
+  // the event (roll opening), a report to review as host, or Friends. If the tap launched the app,
   // navigation isn't ready yet, so it waits for onReady.
   const navRef = useNavigationContainerRef<AppStackParamList>();
   const pendingTarget = useRef<NotificationTarget | null>(null);
@@ -373,17 +382,22 @@ export default function RootNavigator() {
       navRef.navigate('EventChat', { eventId: target.eventId, title: target.title });
     } else if (target.kind === 'event') {
       navRef.navigate('EventDetail', { eventId: target.eventId });
+    } else if (target.kind === 'hostReport') {
+      navRef.navigate('HostReport', { reportId: target.reportId });
     } else navRef.navigate('Tabs', { screen: 'FriendsTab' });
   };
+  // Keyed on the user, not the session object, which is replaced on every
+  // token refresh.
+  const tapUserId = session?.user.id;
   useEffect(() => {
-    if (!session) return;
+    if (!tapUserId) return;
     return onNotificationTap((target) => {
       pendingTarget.current = target;
       openPendingTarget();
     });
     // openPendingTarget only reads refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [tapUserId]);
 
   // Register this phone for push once signed in, and again if its token
   // changes.
@@ -403,6 +417,9 @@ export default function RootNavigator() {
 
   // The native splash is still covering the screen while this renders.
   if (loading) return null;
+
+  // This build is older than app_config's min_version.
+  if (updateRequired) return <UpdateRequiredScreen />;
 
   return (
     <NavigationContainer
@@ -451,12 +468,27 @@ export default function RootNavigator() {
               component={CreateEventScreen}
               options={({ route }) => ({
                 presentation: 'modal',
-                title: route.params?.editEventId ? 'Edit event' : 'New event',
+                title: route.params?.editEventId ? 'Manage event' : 'New event',
               })}
             />
             <AppStack.Screen
               name="EventDetail"
               component={EventDetailScreen}
+              options={{ title: '' }}
+            />
+            <AppStack.Screen
+              name="Recap"
+              component={RecapScreen}
+              options={{ title: 'Recap' }}
+            />
+            <AppStack.Screen
+              name="VideoRecap"
+              component={VideoRecapScreen}
+              options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade' }}
+            />
+            <AppStack.Screen
+              name="EventPhotos"
+              component={EventPhotosScreen}
               options={{ title: '' }}
             />
             <AppStack.Screen
@@ -478,6 +510,11 @@ export default function RootNavigator() {
               options={{ title: 'Edit profile' }}
             />
             <AppStack.Screen
+              name="ChangePassword"
+              component={ChangePasswordScreen}
+              options={{ title: 'Password' }}
+            />
+            <AppStack.Screen
               name="PaymentMethods"
               component={PaymentMethodsScreen}
               options={{ title: 'Receiving methods' }}
@@ -485,7 +522,7 @@ export default function RootNavigator() {
             <AppStack.Screen
               name="Upgrade"
               component={UpgradeScreen}
-              options={{ title: 'RollCal Pro' }}
+              options={{ title: 'Plans' }}
             />
             <AppStack.Screen
               name="Legal"
@@ -551,9 +588,19 @@ export default function RootNavigator() {
               options={{ title: 'Invitations' }}
             />
             <AppStack.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{ title: 'Settings' }}
+            />
+            <AppStack.Screen
               name="Notifications"
               component={NotificationsScreen}
               options={{ title: 'Notifications' }}
+            />
+            <AppStack.Screen
+              name="HostReport"
+              component={HostReportScreen}
+              options={{ title: 'Reported to you' }}
             />
           </AppStack.Navigator>
           <CurrencyPrompt />

@@ -5,6 +5,7 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   Animated,
   FlatList,
   KeyboardAvoidingView,
@@ -55,6 +56,9 @@ import { getMutedChats, markChatSeen, setActiveChat, setChatMuted } from '../lib
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Message } from '../types';
+import { supabase } from '../lib/supabase';
+import { loadAllowed } from '../lib/postPermissions';
+import { mayPost, POST_BLOCKED_NOTE } from '../lib/postRules';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'EventChat'>;
 
@@ -73,6 +77,23 @@ export default function EventChatScreen({ navigation, route }: Props) {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [roster, setRoster] = useState<ChatRoster>({});
+  // Whether this person may send (the host can make chat host-only). Starts
+  // true so the box doesn't flicker away; the database decides either way.
+  const [canChat, setCanChat] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      let live = true;
+      (async () => {
+        const { data: ev } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
+        if (!ev || !live) return;
+        const allowed = ev.chat_by === 'host' && ev.creator_id !== userId ? await loadAllowed(eventId) : [];
+        if (live) setCanChat(mayPost(ev, userId, 'chat', allowed));
+      })();
+      return () => {
+        live = false;
+      };
+    }, [eventId, userId])
+  );
   // The event is over, so answers read "Went" and "Didn't go".
   const [ended, setEnded] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -187,7 +208,7 @@ export default function EventChatScreen({ navigation, route }: Props) {
   useEffect(() => {
     loadData();
 
-    const channel = subscribeToMessages(eventId, (message) => {
+    const stopMessages = subscribeToMessages(eventId, (message) => {
       setMessages((prev) => {
         const tempIdx = prev.findIndex(
           (m) =>
@@ -215,16 +236,23 @@ export default function EventChatScreen({ navigation, route }: Props) {
     (deletedId) => setMessages((prev) => prev.filter((m) => m.id !== deletedId))
     );
 
-    const readsChannel = subscribeToChatReads(eventId, (readerId, lastReadAt) => {
+    const stopReads = subscribeToChatReads(eventId, (readerId, lastReadAt) => {
       setReads((prev) =>
         prev[readerId] && prev[readerId] >= lastReadAt ? prev : { ...prev, [readerId]: lastReadAt }
       );
       learnSenders([readerId]);
     });
 
+    // Live updates don't replay what came in while the phone was locked or
+    // in the background, so catch up when it's back.
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') loadData();
+    });
+
     return () => {
-      channel.unsubscribe();
-      readsChannel.unsubscribe();
+      stopMessages();
+      stopReads();
+      appState.remove();
     };
   }, [eventId, userId, loadData, learnSenders, markRead]);
 
@@ -619,6 +647,12 @@ export default function EventChatScreen({ navigation, route }: Props) {
         </View>
       )}
 
+      {!canChat ? (
+        <View style={[styles.composer, styles.chatClosed]}>
+          <Text style={type.caption}>{POST_BLOCKED_NOTE.chat}</Text>
+        </View>
+      ) : (
+      <>
       {replyingTo && !editing && (
         <View style={styles.editBar}>
           <View style={{ flex: 1 }}>
@@ -674,6 +708,8 @@ export default function EventChatScreen({ navigation, route }: Props) {
           />
         </Pressable>
       </View>
+      </>
+      )}
     </>
   );
 
@@ -818,7 +854,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     skeletonBubble: {
       height: 38,
-      borderRadius: 16,
+      borderRadius: radii.card,
       backgroundColor: c.card,
     },
     skeletonTheirs: {
@@ -843,7 +879,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.accent,
       paddingVertical: 9,
       paddingHorizontal: 14,
-      borderRadius: 16,
+      borderRadius: radii.card,
       borderBottomRightRadius: 4,
     },
     bubbleMineText: {
@@ -953,7 +989,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       borderColor: c.line,
       paddingVertical: 9,
       paddingHorizontal: 14,
-      borderRadius: 16,
+      borderRadius: radii.card,
       borderBottomLeftRadius: 4,
     },
     bubbleTheirsText: {
@@ -975,7 +1011,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       paddingVertical: 6,
       paddingHorizontal: 10,
       backgroundColor: c.card,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
     },
@@ -1007,10 +1043,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       color: c.ink,
       marginTop: 1,
     },
-    flash: { backgroundColor: c.accent + '1F', borderRadius: radii.md },
+    flash: { backgroundColor: c.accent + '1F', borderRadius: radii.control },
     // The quoted message at the top of a reply bubble.
     quote: {
-      borderRadius: 10,
+      borderRadius: radii.control,
       paddingVertical: 5,
       paddingHorizontal: 9,
       marginBottom: 6,
@@ -1034,7 +1070,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     menuCard: {
       marginHorizontal: spacing.md,
       backgroundColor: c.paper,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       paddingHorizontal: spacing.lg,
@@ -1047,6 +1083,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       height: StyleSheet.hairlineWidth,
       backgroundColor: c.line,
     },
+    chatClosed: { paddingVertical: spacing.md, justifyContent: 'center' },
     composer: {
       flexDirection: 'row',
       alignItems: 'flex-end',
@@ -1066,7 +1103,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: 19,
+      borderRadius: radii.full,
       paddingHorizontal: 14,
       paddingTop: Platform.OS === 'ios' ? 9 : 6,
       paddingBottom: Platform.OS === 'ios' ? 9 : 6,

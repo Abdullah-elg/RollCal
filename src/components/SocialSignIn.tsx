@@ -52,7 +52,7 @@ export default function SocialSignIn({
               ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
               : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
           }
-          cornerRadius={radii.sm}
+          cornerRadius={radii.control}
           style={styles.apple}
           onPress={apple}
         />
@@ -132,7 +132,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     google: {
       height: 48,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: 1,
       borderColor: c.line,
       backgroundColor: c.card,

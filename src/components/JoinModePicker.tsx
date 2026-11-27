@@ -35,7 +35,6 @@ export default function JoinModePicker({
       >
         <View style={styles.text}>
           <Text style={type.body}>{current.label}</Text>
-          {!open && <Text style={type.caption}>{current.detail}</Text>}
         </View>
         <View style={{ transform: [{ rotate: open ? '270deg' : '90deg' }] }}>
           <ChevronRightIcon size={18} color={colors.inkMuted} />
@@ -79,7 +78,7 @@ const makeStyles = (c: Palette) =>
       backgroundColor: c.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       overflow: 'hidden',
     },
     boxOpen: {

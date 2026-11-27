@@ -91,7 +91,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.paper,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: 16,
+      borderRadius: radii.card,
       padding: spacing.md,
     },
     title: {
@@ -102,7 +102,9 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       paddingHorizontal: spacing.sm,
     },
     option: {
-      paddingVertical: spacing.md,
+      minHeight: 52,
+      justifyContent: 'center',
+      paddingVertical: spacing.sm,
       paddingHorizontal: spacing.sm,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: c.line,
@@ -114,10 +116,10 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     cancel: {
       marginTop: spacing.sm,
-      height: 44,
+      minHeight: 52,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       backgroundColor: c.card,

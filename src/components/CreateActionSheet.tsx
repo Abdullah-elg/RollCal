@@ -21,7 +21,7 @@ import { ProPromptReason } from '../lib/pro';
 import { ArrowIcon, CalendarIcon, CameraIcon, CloseIcon, TicketIcon } from './icons';
 import { hapticLight } from '../lib/haptics';
 import { getOpenUploadEvents, pickRollMedia, uploadBlocker, uploadRollMedia } from '../lib/photos';
-import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Event } from '../types';
 
 type Props = {
@@ -197,13 +197,13 @@ export default function CreateActionSheet({
           {uploading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="small" color={colors.accent} />
-              <Text style={styles.loadingText}>Uploading shots to the roll…</Text>
+              <Text style={styles.loadingText}>Uploading photos…</Text>
             </View>
           ) : viewMode === 'photos' ? (
             /* Multi-event picker view */
             <View style={styles.optionsList}>
               <Text style={styles.subHint}>
-                Which event's roll are you adding photos to?
+                Which event are you adding photos to?
               </Text>
               {openEvents.map((evt) => (
                 <Pressable
@@ -219,7 +219,7 @@ export default function CreateActionSheet({
                   </View>
                   <View style={styles.optionContent}>
                     <Text style={styles.optionLabel}>{evt.title}</Text>
-                    <Text style={styles.optionCaption}>The roll is currently open</Text>
+                    <Text style={styles.optionCaption}>Adding photos is open</Text>
                   </View>
                   <ArrowIcon size={16} color={colors.inkMuted} direction="right" />
                 </Pressable>
@@ -241,7 +241,7 @@ export default function CreateActionSheet({
                 <View style={styles.optionContent}>
                   <Text style={styles.optionLabel}>New event</Text>
                   <Text style={styles.optionCaption}>
-                    Set a date, invite friends, and start a roll
+                    Set a date, invite friends, share photos after
                   </Text>
                 </View>
               </Pressable>
@@ -283,8 +283,8 @@ export default function CreateActionSheet({
                     <Text style={styles.optionLabel}>Add photos</Text>
                     <Text style={styles.optionCaption}>
                       {openEvents.length === 1
-                        ? `Drop shots into ${openEvents[0].title}`
-                        : 'Choose an open roll to drop shots into'}
+                        ? `Add photos to ${openEvents[0].title}`
+                        : 'Choose an event to add photos to'}
                     </Text>
                   </View>
                 </Pressable>
@@ -328,7 +328,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     handle: {
       width: 36,
       height: 4,
-      borderRadius: 2,
+      borderRadius: radii.full,
       backgroundColor: c.line,
     },
     header: {
@@ -352,10 +352,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     closeBtn: {
       padding: spacing.xs,
     },
-    optionsList: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: c.line,
-    },
+    optionsList: {},
     subHint: {
       ...t.caption,
       color: c.inkMuted,
@@ -364,7 +361,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     optionRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: spacing.md,
+      minHeight: 52,
+      paddingVertical: spacing.sm,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: c.line,
       gap: spacing.md,

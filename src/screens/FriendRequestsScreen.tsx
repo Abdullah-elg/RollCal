@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { InboxIcon } from '../components/icons';
 import { PersonList, PersonRow, RowAction } from '../components/PersonRow';
-import { PageIntro } from '../components/ui';
+import { PageIntro, SectionLabel } from '../components/ui';
 import { useTheme } from '../context/ThemeContext';
 import { useFriendData } from '../hooks/useFriendData';
 import { acceptFriendRequest, removeFriendship } from '../lib/friends';
@@ -75,6 +75,27 @@ export default function FriendRequestsScreen() {
             </PersonRow>
           ))}
         </PersonList>
+      )}
+
+      {loaded && data.outgoing.length > 0 && (
+        <>
+          <SectionLabel count={data.outgoing.length}>Sent</SectionLabel>
+          <PersonList>
+            {data.outgoing.map((link) => (
+              <PersonRow key={link.friendshipId} person={link.profile}>
+                <RowAction
+                  label="Cancel"
+                  tone="muted"
+                  onPress={async () => {
+                    hapticLight();
+                    await removeFriendship(link.friendshipId);
+                    reload();
+                  }}
+                />
+              </PersonRow>
+            ))}
+          </PersonList>
+        </>
       )}
     </ScrollView>
   );

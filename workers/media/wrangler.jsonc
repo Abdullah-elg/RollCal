@@ -1,0 +1,27 @@
+// The media Worker: the only way into the R2 bucket that holds RollCal's
+// photos, videos and profile photos. See src/index.ts and supabase/media-r2.sql.
+// Secrets (set with `npx wrangler secret put <NAME>` from this folder):
+//   SUPABASE_SERVICE_ROLE_KEY  for confirming uploads and the clean-up job
+//   LINK_SECRET                signs the viewing links (any long random string)
+//   MEDIA_ADMIN_KEY            the report-email function's key (same value as its secret)
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "rollcal-media",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-19",
+  "observability": { "enabled": true },
+  "routes": [{ "pattern": "media.rollcal.app", "custom_domain": true }],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "rollcal-media" }],
+  // Per person, per Cloudflare location: uploads take about 3 calls a file.
+  "ratelimits": [
+    { "name": "UPLOAD_LIMIT", "namespace_id": "4101", "simple": { "limit": 150, "period": 60 } },
+    { "name": "LINK_LIMIT", "namespace_id": "4102", "simple": { "limit": 120, "period": 60 } }
+  ],
+  "vars": {
+    "SUPABASE_URL": "https://qwtvpmrxmlfuwmnyawcq.supabase.co",
+    // RollCal's own address for the database (Supabase custom domain).
+    "API_URL": "https://api.rollcal.app"
+  },
+  // Every 5 minutes: delete files whose rows are gone, and drop unfinished uploads.
+  "triggers": { "crons": ["*/5 * * * *"] }
+}

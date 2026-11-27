@@ -4,6 +4,7 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -45,6 +46,7 @@ export default function SignInScreen({ navigation }: Props) {
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
       >
+        <Image source={require('../../assets/icon.png')} style={styles.icon} />
         <Text style={styles.wordmark}>RollCal</Text>
         <Text style={[type.bodyMuted, { marginBottom: spacing.xl }]}>
           Every event ends in one shared roll.
@@ -105,6 +107,12 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       justifyContent: 'center',
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.lg,
+    },
+    icon: {
+      width: 72,
+      height: 72,
+      borderRadius: 16,
+      marginBottom: spacing.md,
     },
     wordmark: {
       ...t.title,

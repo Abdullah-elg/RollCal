@@ -1,6 +1,7 @@
 // The notifications inbox (the bell on Home): the latest message in each
 // chat, plus everything else worth knowing - invitations, friend and join
-// requests, new photos, bills and events about to be deleted. It's built
+// requests, new photos, bills, events about to be deleted and photos
+// reported to you as host. It's built
 // from the data each time rather than stored, so it's never out of step
 // with what actually happened. What's been seen is kept on the phone;
 // inboxArrange.ts decides what's new and what's dropped.
@@ -9,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDay, formatTime } from './dates';
 import { arrangeInbox, markSeen, SeenMap } from './inboxArrange';
 import { earliestOf } from './marks';
+import { loadWaitingHostReports } from './hostReports';
 import { NotificationTarget } from './notifications';
 import { loadBlockedIds } from './safety';
 import { loadServerMarks, saveServerMarks } from './seenMarks';
@@ -20,7 +22,16 @@ export type InboxTarget = NotificationTarget | { kind: 'invitations' } | { kind:
 export type InboxItem = {
   key: string;
   // Chats get the chat icon; the rest show the person or a bell.
-  kind: 'chat' | 'invite' | 'friend' | 'join' | 'inviteRequest' | 'photos' | 'bill' | 'deleting';
+  kind:
+    | 'chat'
+    | 'invite'
+    | 'friend'
+    | 'join'
+    | 'inviteRequest'
+    | 'photos'
+    | 'bill'
+    | 'deleting'
+    | 'hostReport';
   title: string;
   body: string;
   at: string;
@@ -103,6 +114,7 @@ async function loadItems(userId: string): Promise<InboxItem[]> {
     { data: bills },
     blocked,
     chatReads,
+    hostReports,
   ] = await Promise.all([
     eventIds.length
       ? supabase
@@ -156,6 +168,7 @@ async function loadItems(userId: string): Promise<InboxItem[]> {
       : none,
     loadBlockedIds(),
     getChatReadMap(userId),
+    hosted.length ? loadWaitingHostReports(userId) : Promise.resolve([]),
   ]);
 
   // Invitations can be to events you can't list yet; fetch those titles.
@@ -233,7 +246,7 @@ async function loadItems(userId: string): Promise<InboxItem[]> {
       key: `photos:${p.event_id}:${p.id}`,
       kind: 'photos',
       title: titleOf(p.event_id),
-      body: `${who.personName} added to the roll.`,
+      body: `${who.personName} added photos.`,
       at: p.created_at,
       ...who,
       target: { kind: 'event', eventId: p.event_id },
@@ -327,6 +340,20 @@ async function loadItems(userId: string): Promise<InboxItem[]> {
       body: `This event will be deleted on ${formatDay(e.delete_at)} at ${formatTime(e.delete_at)}. Save any photos you want to keep.`,
       at: new Date(new Date(e.delete_at).getTime() - 48 * 60 * 60 * 1000).toISOString(),
       target: { kind: 'event', eventId: e.id },
+    });
+  }
+
+  // Reported to you as host: no person shown, since who reported is private.
+  // Waits here until you keep or delete it.
+  for (const r of hostReports) {
+    items.push({
+      key: `hostReport:${r.photo_id}`,
+      kind: 'hostReport',
+      title: titleOf(r.event_id),
+      body: `A ${r.kind === 'video' ? 'video' : 'photo'} was reported to you. Tap to review it.`,
+      at: r.created_at,
+      pending: true,
+      target: { kind: 'hostReport', reportId: r.id },
     });
   }
 

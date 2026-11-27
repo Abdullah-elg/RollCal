@@ -3,25 +3,117 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RollCal</title>
-  <meta name="description" content="Plan events with friends, share one photo roll, and split the bill.">
+  <title>RollCal: plan it, shoot it, share the roll</title>
+  <meta name="description" content="Plan events with friends, share one photo roll, get a video recap of the night, and split the bill.">
+  <meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111513" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/home.css">
 </head>
-<body>
-  <main>
+<body class="home">
+  <header class="nav">
     <a class="brand" href="/"><img src="/icon.png" alt="">RollCal</a>
-    <h1>Plan it. Shoot it. Share the roll.</h1>
-    <p class="muted">Make an event, invite your friends, and everyone adds photos to one shared roll, from the start of the night until two days after. Split the bill in the same place.</p>
-    <!-- Beta install pages. Swap for store links once the apps are public. -->
-    <div class="stores">
-      <a class="secondary" href="/ios/">Get the iPhone beta</a>
-      <a class="secondary" href="/android/">Get the Android beta</a>
-    </div>
+    <a class="nav-link" href="#get">Get the app</a>
+  </header>
+
+  <main class="wide">
+    <section class="hero">
+      <div class="hero-text">
+        <p class="kicker">Events with friends, on film</p>
+        <h1>Plan it. Shoot it.<br>Share the roll.</h1>
+        <p class="lede">Make an event, invite your friends, and everyone adds photos to one shared roll. The morning after, relive the night as a short video recap.</p>
+        <div class="badges" id="get">
+          <!-- Official artwork from Apple and Google: don't edit, recolour or
+               animate it. The links go to the beta install pages for now;
+               swap them for the store listings once the apps are public. -->
+          <a class="badge badge-apple" href="/ios/">
+            <img src="/badges/app-store.svg" alt="Download on the App Store">
+          </a>
+          <a class="badge badge-google" href="/android/">
+            <img src="/badges/google-play.png" alt="Get it on Google Play">
+          </a>
+        </div>
+        <p class="muted small">In beta. Free to start, no ads.</p>
+      </div>
+
+      <!-- A strip of film: the app's look, without anyone's photos. -->
+      <div class="strip" aria-hidden="true">
+        <div class="holes"></div>
+        <div class="frames">
+          <div class="frame f1"><span>8:14 PM</span></div>
+          <div class="frame f2"><span>Dinner by the window</span></div>
+          <div class="frame f3"><span>❤️ 12</span></div>
+          <div class="frame f4"><span>Last dance</span></div>
+        </div>
+        <div class="holes"></div>
+        <div class="exp-tag">EXP <b>36</b></div>
+      </div>
+    </section>
+
+    <section class="how">
+      <h2 class="section-title">How it works</h2>
+      <ol class="how-steps">
+        <li>
+          <span class="num">1</span>
+          <h3>Plan it</h3>
+          <p>Make an event in seconds. Invite friends with a link or QR code, and see who's going.</p>
+        </li>
+        <li>
+          <span class="num">2</span>
+          <h3>Shoot it</h3>
+          <p>Everyone adds photos and short videos to one shared roll during the night. React with ❤️ 😂 🔥.</p>
+        </li>
+        <li>
+          <span class="num">3</span>
+          <h3>Relive it</h3>
+          <p>Get a video recap of the best moments, with captions, ready to share. Split the bill in the same place.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="features">
+      <article class="feature">
+        <h3>One roll for everyone</h3>
+        <p>No more chasing photos across group chats. Every photo from the night lands in one place, and anyone can save them all.</p>
+      </article>
+      <article class="feature">
+        <h3>Video recaps</h3>
+        <p>The highlights or every photo, 15 seconds to a minute, made for you and shared with everyone in the event.</p>
+      </article>
+      <article class="feature">
+        <h3>Split the bill</h3>
+        <p>Scan the receipt, everyone claims what they had, and pays you back with the app they already use.</p>
+      </article>
+      <article class="feature">
+        <h3>Memories</h3>
+        <p>Your nights come back as memories, a month or a year later, right when you want to see them again.</p>
+      </article>
+    </section>
+
+    <section class="plans-teaser">
+      <h2 class="section-title">Free for small hangouts</h2>
+      <div class="plan-cols">
+        <div class="plan-col">
+          <p class="plan-label">For every event</p>
+          <p class="plan-line"><b>Free</b> up to 10 people, 200 photos, kept 30 days</p>
+          <p class="plan-line"><b>Plus</b> $4.99/mo or $34.99/yr: 100 people, kept forever, video recaps</p>
+        </div>
+        <div class="plan-col">
+          <p class="plan-label">For one event</p>
+          <p class="plan-line"><b>Party</b> $5.99 · up to 75 people</p>
+          <p class="plan-line"><b>Big Day</b> $19.99 · up to 300 people</p>
+          <p class="plan-line"><b>Unlimited</b> $29.99 · no limit</p>
+        </div>
+      </div>
+      <p class="muted small">Guests never pay. A pass upgrades the whole event for everyone in it.</p>
+    </section>
+
     <footer>
-      <a href="/terms/">Terms</a><a href="/pro-terms/">Pro Terms</a><a href="/privacy/">Privacy</a><a href="/child-safety/">Child Safety</a><a href="mailto:support@rollcal.app">support@rollcal.app</a>
+      <a href="/terms/">Terms</a><a href="/pro-terms/">Pro Terms</a><a href="/privacy/">Privacy</a><a href="/child-safety/">Child Safety</a><a href="/delete-account/">Delete account</a><a href="mailto:support@rollcal.app">support@rollcal.app</a>
     </footer>
   </main>
 </body>

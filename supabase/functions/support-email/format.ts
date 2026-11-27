@@ -14,7 +14,7 @@ export type TicketForEmail = {
 export const CATEGORY_LABELS: Record<TicketForEmail['category'], string> = {
   account: 'Account change',
   problem: 'Problem with the app',
-  pro: 'RollCal Pro',
+  pro: 'Plans and subscriptions',
   other: 'Something else',
 };
 
@@ -79,7 +79,8 @@ export function buildAckEmail(
   const hello = firstName ? `Hi ${firstName},` : 'Hi,';
   const lead =
     'Thanks for getting in touch. We’ve received your message and we’re looking into it. ' +
-    'We usually reply within two business days.';
+    'We usually reply within 5–7 business days. Reports of abuse or anything involving a ' +
+    'child are looked at within 24 hours.';
   const followUp = `To add anything, just reply to this email and keep ${ref} in the subject.`;
 
   const text = [

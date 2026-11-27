@@ -25,6 +25,7 @@ const REASONS: Record<string, string> = {
   nudity: 'Nudity or sexual content',
   violence: 'Violence or threats',
   impersonation: 'Impersonation',
+  child_safety: 'Involves a child',
   other: 'Something else',
 };
 

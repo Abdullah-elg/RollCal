@@ -6,11 +6,15 @@
 // Gemini, the answer is checked and turned into whole cents, and the draft
 // comes back for the person to check before they share it.
 //
-// Pro users scan as much as they like; everyone else gets two free scans a
-// month (receipt_scans_left() in scan-allowance.sql sets the number). Every
-// photo the model reads counts, receipt or not, so the allowance can't be
-// used to read other things for free. A scan that fails on our side (the
-// model is down or its answer can't be read) isn't counted.
+// Plus and Pro scan as much as they like; free accounts get two scans a
+// month that read a receipt, and six tries in all (receipt_scans_left() in
+// plans.sql sets the numbers). Every photo the model reads is a try, receipt
+// or not, so the allowance can't be used to read other things for free. The
+// scan is claimed before the photo is read (claim_receipt_scan() in
+// plans.sql), so many requests at once can't all get through on the last
+// free try. A scan that fails on our side (a bad request, the model is down
+// or its answer can't be read) is given back; one that reads a receipt is
+// marked succeeded.
 //
 // Secrets: GEMINI_API_KEY (required), GEMINI_MODEL (optional, to switch
 // the first-choice model without a code change).
@@ -88,7 +92,7 @@ Write every amount as printed digits with a decimal point, without currency symb
 
 // The user id from a signed-in user's token. The gateway has already checked
 // the token's signature (JWT verification is on), and the database checks it
-// again on the allowance lookup below, so this skips a round trip to Auth, which
+// again when the scan is claimed below, so this skips a round trip to Auth, which
 // was taking up to 40 seconds.
 function userIdFrom(authorization: string): string | null {
   try {
@@ -113,31 +117,68 @@ Deno.serve(async (req: Request) => {
   const supabase = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { Authorization: authorization } },
   });
-  // null means Pro (no limit). Asked as the user, so the database also
-  // checks their token here.
-  const { data: scansLeft, error: allowanceError } = await supabase.rpc('receipt_scans_left');
-  step('checked the allowance');
-  if (allowanceError) return json(401, { error: 'Not signed in' });
-  if (scansLeft === 0) {
+  // Takes one free scan now, before the slow part, so requests sent at the
+  // same time can't all use the last one. scans_left is what's left after
+  // this one, or null for Pro (no limit, nothing recorded). Asked as the
+  // user, so the database also checks their token here.
+  const { data: claim, error: claimError } = await supabase.rpc('claim_receipt_scan').single();
+  step('claimed a scan');
+  if (claimError || !claim) return json(401, { error: 'Not signed in' });
+  const { allowed, scan_id: scanId, scans_left: left } = claim as {
+    allowed: boolean;
+    scan_id: number | null;
+    scans_left: number | null;
+  };
+  if (!allowed) {
     return json(403, {
       error: 'You’ve used your free scans this month. Get Pro to scan as many as you like.',
       code: 'scan_limit',
     });
   }
 
+  // Gives the claimed scan back when we stop before the photo was read.
+  // People can't write receipt_scans themselves, so it's removed here.
+  const release = async () => {
+    if (scanId === null) return;
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const { error } = await admin
+      .from('receipt_scans')
+      .delete()
+      .eq('id', scanId)
+      .eq('user_id', userId);
+    if (error) console.error('Could not give the scan back', error.message);
+  };
+  // Marks the claimed scan as one that read a receipt; only those use up the
+  // free scans (the rest only use a try).
+  const markSucceeded = async () => {
+    if (scanId === null) return;
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const { error } = await admin
+      .from('receipt_scans')
+      .update({ succeeded: true })
+      .eq('id', scanId)
+      .eq('user_id', userId);
+    if (error) console.error('Could not mark the scan as read', error.message);
+  };
+  const notCounted = async (status: number, body: unknown) => {
+    await release();
+    return json(status, body);
+  };
+  const unreadable = { error: 'Couldn’t read the receipt right now. Try again, or type it in.' };
+
   let body: { image?: unknown; mimeType?: unknown };
   try {
     body = await req.json();
   } catch {
-    return json(400, { error: 'Send the photo as JSON.' });
+    return notCounted(400, { error: 'Send the photo as JSON.' });
   }
   const image = typeof body.image === 'string' ? body.image : '';
   const mimeType =
     typeof body.mimeType === 'string' && /^image\/(jpeg|png|webp|heic|heif)$/.test(body.mimeType)
       ? body.mimeType
       : 'image/jpeg';
-  if (!image) return json(400, { error: 'No photo was sent.' });
-  if (image.length > MAX_IMAGE_CHARS) return json(413, { error: 'That photo is too large.' });
+  if (!image) return notCounted(400, { error: 'No photo was sent.' });
+  if (image.length > MAX_IMAGE_CHARS) return notCounted(413, { error: 'That photo is too large.' });
   step(`photo received (${image.length} chars)`);
 
   const request = JSON.stringify({
@@ -169,42 +210,45 @@ Deno.serve(async (req: Request) => {
     }
     step(`${model} answered ${res.status}`);
     if (res.ok) break;
-    failure = `${model} ${res.status}: ${await res.text()}`;
+    failure = `${model} ${res.status}: ${await res.text().catch(() => '')}`;
     if (!BUSY.has(res.status)) break;
     console.warn(failure);
   }
   if (!res?.ok) {
     console.error('Gemini error', failure);
-    return json(502, { error: 'Couldn’t read the receipt right now. Try again, or type it in.' });
+    return notCounted(502, unreadable);
   }
 
-  const answer = await res.json();
-  step('read the answer');
-  const text = answer?.candidates?.[0]?.content?.parts?.find((p: { text?: string }) => p.text)?.text;
+  type Answer = { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  let answer: Answer | null = null;
   let scan: Scan;
+  let draft: ReturnType<typeof toDraft>;
   try {
-    scan = JSON.parse(text);
+    answer = (await res.json()) as Answer;
+    step('read the answer');
+    const text = answer?.candidates?.[0]?.content?.parts?.find((p) => p.text)?.text;
+    scan = JSON.parse(text ?? '');
+    draft = toDraft(scan);
   } catch {
-    console.error('Unreadable Gemini answer', JSON.stringify(answer).slice(0, 2000));
-    return json(502, { error: 'Couldn’t read the receipt right now. Try again, or type it in.' });
+    console.error('Unreadable Gemini answer', JSON.stringify(answer ?? null).slice(0, 2000));
+    return notCounted(502, unreadable);
   }
 
-  const draft = toDraft(scan);
-  // The photo was read, so it counts, receipt or not. People can't write
-  // receipt_scans themselves, so the scan is counted here.
-  const left = scansLeft === null ? null : scansLeft - 1;
-  if (scansLeft !== null) {
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-    const { error: countError } = await admin.from('receipt_scans').insert({ user_id: userId });
-    if (countError) console.error('Could not count the scan', countError.message);
-  }
+  // The photo was read, so the claimed scan is a try, receipt or not. It
+  // isn't one of the free scans, so the count is asked for again.
   if (!scan.is_receipt || draft.items.length === 0) {
+    let after = left;
+    if (left !== null) {
+      const { data, error } = await supabase.rpc('receipt_scans_left');
+      if (!error && typeof data === 'number') after = data;
+    }
     const allowance =
-      left === null ? '' : left === 0 ? ' That was your last free scan this month.' : ` ${left} free ${left === 1 ? 'scan' : 'scans'} left this month.`;
+      after === null ? '' : after === 0 ? ' You’re out of free scans this month.' : ` ${after} free ${after === 1 ? 'scan' : 'scans'} left this month.`;
     return json(422, {
       error: `That doesn’t look like a receipt. Try a clearer photo, flat and in good light.${allowance}`,
-      scansLeft: left,
+      scansLeft: after,
     });
   }
+  await markSucceeded();
   return json(200, { draft, scansLeft: left });
 });

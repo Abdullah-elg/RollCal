@@ -3,6 +3,7 @@
 //   open      anyone with the link, QR or code joins straight away
 //   approval  joining from the link sends the host a request to approve
 //   invite    only people the host invites; the link, QR and code don't work
+import { guestFacing, HOST_FULL_MESSAGE, isEventFull, notifyHostFull } from './planLimits';
 import { RsvpStatus } from '../types';
 import { supabase } from './supabase';
 
@@ -33,7 +34,10 @@ export async function joinEvent(
   status: RsvpStatus
 ): Promise<{ result: 'joined' | 'requested' } | { error: string }> {
   const { data, error } = await supabase.rpc('join_event', { p_event: eventId, p_status: status });
-  if (error) return { error: error.message };
+  if (error) {
+    if (isEventFull(error.message)) notifyHostFull(eventId);
+    return { error: guestFacing(error.message) ?? error.message };
+  }
   return { result: data === 'requested' ? 'requested' : 'joined' };
 }
 
@@ -96,7 +100,8 @@ export async function answerJoinRequest(
   const { error } = await supabase.rpc(approve ? 'approve_join_request' : 'decline_join_request', {
     p_request: requestId,
   });
-  return error ? error.message : null;
+  // The host approving: tell them how to make room.
+  return error ? (isEventFull(error.message) ? HOST_FULL_MESSAGE : error.message) : null;
 }
 
 export async function setJoinMode(eventId: string, mode: JoinMode): Promise<string | null> {

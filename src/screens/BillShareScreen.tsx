@@ -8,7 +8,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckIcon } from '../components/icons';
-import { Button, ErrorText } from '../components/ui';
+import { Button, ErrorText, SECTION_GAP } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { createAndShareBill, itemsTotal } from '../lib/bills';
@@ -175,7 +175,7 @@ const makeStyles = (c: Palette, _t: TypeTokens) =>
       backgroundColor: c.line,
       marginVertical: spacing.sm,
     },
-    divider: { height: 1, backgroundColor: c.line, marginVertical: spacing.lg },
+    divider: { height: SECTION_GAP },
     total: { fontFamily: fonts.display, fontSize: 36, color: c.ink, letterSpacing: -0.5 },
     footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   });

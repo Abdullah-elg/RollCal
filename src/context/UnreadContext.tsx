@@ -1,5 +1,5 @@
 // App-wide counts of what's waiting: unread chats, new photos, friend
-// requests and event invitations. The tab bar reads them, and screens call
+// requests, event invitations and photos reported to you as host. The tab bar reads them, and screens call
 // the mark-as-read functions to clear a dot right away.
 
 import {
@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react';
 import { AppState } from 'react-native';
+import { loadWaitingHostReports } from '../lib/hostReports';
 import { setAppBadge } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import {
@@ -32,12 +33,16 @@ type UnreadContextValue = {
   friendRequests: number;
   // Invitations waiting on an answer.
   pendingInvites: number;
+  // Photos reported to you as host, until you keep or delete them.
+  hostReports: WaitingHostReport[];
   refresh: () => Promise<void>;
   // Called when a chat is read, clearing its dot immediately.
   markRead: (eventId: string, timestamp: string) => Promise<void>;
   // Called when event photos are viewed, clearing new photos mark.
   markPhotosRead: (eventId: string, timestamp: string) => Promise<void>;
 };
+
+export type WaitingHostReport = { id: string; event_id: string; photo_id: string };
 
 const UnreadContext = createContext<UnreadContextValue | null>(null);
 
@@ -48,6 +53,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
   const [unreadPhotos, setUnreadPhotos] = useState<string[]>([]);
   const [friendRequests, setFriendRequests] = useState(0);
   const [pendingInvites, setPendingInvites] = useState(0);
+  const [hostReports, setHostReports] = useState<WaitingHostReport[]>([]);
 
   const refresh = useCallback(async () => {
     if (!userId) {
@@ -55,9 +61,10 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
       setUnreadPhotos([]);
       setFriendRequests(0);
       setPendingInvites(0);
+      setHostReports([]);
       return;
     }
-    const [{ data: events }, { data: requests }, { data: invites }] =
+    const [{ data: events }, { data: requests }, { data: invites }, waiting] =
       await Promise.all([
         supabase.from('events').select('id'),
         supabase
@@ -70,10 +77,12 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
           .select('id')
           .eq('invited_user_id', userId)
           .eq('status', 'pending'),
+        loadWaitingHostReports(userId),
       ]);
 
     setFriendRequests(requests?.length ?? 0);
     setPendingInvites(invites?.length ?? 0);
+    setHostReports(waiting.map(({ id, event_id, photo_id }) => ({ id, event_id, photo_id })));
     const eventIds = (events ?? []).map((e) => e.id);
     const [unreadChatSet, unreadPhotoSet] = await Promise.all([
       loadUnreadChats(userId, eventIds),
@@ -92,9 +101,11 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     return () => sub.remove();
   }, [refresh]);
 
-  // The app-icon number: unread chats, friend requests and invites, the same
-  // things the server counts for notifications. Zero when signed out.
-  const badge = userId ? unreadChats.length + friendRequests + pendingInvites : 0;
+  // The app-icon number: unread chats, friend requests, invites and reports
+  // waiting on you as host. Zero when signed out.
+  const badge = userId
+    ? unreadChats.length + friendRequests + pendingInvites + hostReports.length
+    : 0;
   useEffect(() => {
     setAppBadge(badge);
   }, [badge]);
@@ -124,6 +135,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
         unreadPhotos,
         friendRequests,
         pendingInvites,
+        hostReports,
         refresh,
         markRead,
         markPhotosRead,

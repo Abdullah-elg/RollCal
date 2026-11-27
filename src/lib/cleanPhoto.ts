@@ -13,14 +13,41 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 // in a row doesn't run the phone out of memory (iOS closes the app when it
 // does, which looks like a crash).
 
-export type CleanPhoto = { body: ArrayBuffer; mimeType: 'image/jpeg'; ext: 'jpg' };
+export type CleanPhoto = {
+  body: ArrayBuffer;
+  mimeType: 'image/jpeg';
+  ext: 'jpg';
+  // The small preview, when thumbSide was given (null if it couldn't be made).
+  thumb?: ArrayBuffer | null;
+};
+
+// The album grid's previews: this many pixels on the longer side, which is
+// sharp at three across on any phone.
+export const THUMB_SIDE = 480;
+const THUMB_QUALITY = 0.7;
+
+// Reads a saved JPEG and deletes it from the cache folder.
+async function takeFile(uri: string): Promise<ArrayBuffer> {
+  const file = new File(uri);
+  try {
+    return await file.arrayBuffer();
+  } finally {
+    try {
+      file.delete();
+    } catch {
+      // A leftover file in the cache folder is harmless; iOS clears it.
+    }
+  }
+}
 
 // maxSide shrinks the photo so its longer side is at most that many pixels;
-// leave it out to keep the full size.
+// leave it out to keep the full size. thumbSide also makes a small preview
+// from the same picture.
 export async function cleanPhoto(
   uri: string,
   quality: number,
-  maxSide?: number
+  maxSide?: number,
+  thumbSide?: number
 ): Promise<CleanPhoto> {
   const context = ImageManipulator.manipulate(uri);
   let image: Awaited<ReturnType<typeof context.renderAsync>> | null = null;
@@ -32,20 +59,27 @@ export async function cleanPhoto(
       image.release();
       image = await context.resize(resize).renderAsync();
     }
+    const wide = image.width >= image.height;
+    const longest = Math.max(image.width, image.height);
     const saved = await image.saveAsync({ compress: quality, format: SaveFormat.JPEG });
     image.release();
     image = null;
+    const body = await takeFile(saved.uri);
 
-    const file = new File(saved.uri);
-    try {
-      return { body: await file.arrayBuffer(), mimeType: 'image/jpeg', ext: 'jpg' };
-    } finally {
+    let thumb: ArrayBuffer | null | undefined;
+    if (thumbSide) {
       try {
-        file.delete();
+        if (longest > thumbSide) context.resize(wide ? { width: thumbSide } : { height: thumbSide });
+        image = await context.renderAsync();
+        const small = await image.saveAsync({ compress: THUMB_QUALITY, format: SaveFormat.JPEG });
+        image.release();
+        image = null;
+        thumb = await takeFile(small.uri);
       } catch {
-        // A leftover file in the cache folder is harmless; iOS clears it.
+        thumb = null;
       }
     }
+    return { body, mimeType: 'image/jpeg', ext: 'jpg', thumb };
   } finally {
     image?.release();
     context.release();

@@ -20,6 +20,7 @@ import { useTheme } from '../context/ThemeContext';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { lookupPlace, OSM_CREDIT } from '../lib/geocode';
 import { Button } from './ui';
+import { PINNED_LABEL } from '../lib/place';
 
 export type PickedLocation = {
   lat: number;
@@ -227,7 +228,7 @@ export default function LocationPicker({ visible, initial, onPick, onClose }: Pr
     }
 
     if (label === 'Dropped pin' && pin) {
-      label = `Pinned location (${pin.lat.toFixed(4)}, ${pin.lng.toFixed(4)})`;
+      label = PINNED_LABEL;
     }
 
     setBusy(false);
@@ -350,7 +351,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     map: {
       flex: 1,
       marginHorizontal: spacing.lg,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       overflow: 'hidden',
     },
     notice: {

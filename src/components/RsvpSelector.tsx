@@ -144,10 +144,10 @@ const makeStyles = (c: Palette) =>
     },
     option: {
       flex: 1,
-      height: 44,
+      height: 48,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: 1,
       borderColor: c.line,
       backgroundColor: c.card,

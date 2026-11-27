@@ -12,6 +12,7 @@ import {
   Easing,
   Image,
   Modal,
+  PixelRatio,
   Platform,
   Pressable,
   RefreshControl,
@@ -27,7 +28,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Avatar from '../components/Avatar';
 import ConfirmDialog from '../components/ConfirmDialog';
-import EventAlbum, { LoadedPhoto } from '../components/EventAlbum';
+import EventAlbum, { filmColors, LoadedPhoto } from '../components/EventAlbum';
 import EventQrPanel from '../components/EventQrPanel';
 import {
   ArrowIcon,
@@ -39,14 +40,17 @@ import {
   ShareIcon,
 } from '../components/icons';
 import InviteFriendsPanel from '../components/InviteFriendsPanel';
-import JoinModePicker from '../components/JoinModePicker';
+import { loadAllowed, setAllowed as saveAllowed } from '../lib/postPermissions';
+import { Allowed, PostKind, ruleOf } from '../lib/postRules';
 import NavAppSheet from '../components/NavAppSheet';
 import PersonActionsSheet, { ActionsPerson } from '../components/PersonActionsSheet';
 import { MoreAction } from '../components/PersonRow';
 import ReportSheet from '../components/ReportSheet';
 import RsvpSelector from '../components/RsvpSelector';
-import { Button, ThemedSwitch } from '../components/ui';
+import { Button, SECTION_GAP, SectionLabel, ThemedSwitch } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
+import { useProPrompt } from '../context/ProPromptContext';
+import { EventLimits, loadEventLimits, peopleMeter } from '../lib/planLimits';
 import { useTheme } from '../context/ThemeContext';
 import { useUnread } from '../context/UnreadContext';
 import { animateNext } from '../lib/animate';
@@ -61,22 +65,21 @@ import {
   loadEventInvitations,
   removeInvitation,
 } from '../lib/invitations';
-import { pickAndUploadCover, setCoverPhoto } from '../lib/coverPhoto';
-import { removeEventFiles } from '../lib/photos';
+import { setCoverPhoto } from '../lib/coverPhoto';
 import { reopenRoll, rollState } from '../lib/roll';
 import {
   answerJoinRequest,
-  JoinMode,
   JoinRequest,
   loadJoinRequests,
-  setJoinMode,
 } from '../lib/joinRequests';
 import { setRsvp } from '../lib/rsvp';
 import { eventEnded, rsvpLabel } from '../lib/rsvpLabels';
+import { guestName } from '../lib/guests';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Event, RsvpStatus } from '../types';
+import { placeLabel } from '../lib/place';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'EventDetail'>;
 
@@ -165,13 +168,16 @@ function billStatusLabel(b: BillSummary): string {
 export default function EventDetailScreen({ navigation, route }: Props) {
   const { eventId } = route.params;
   const { session } = useAuth();
-  const { colors, type } = useTheme();
+  const { colors, type, mode } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
   const { unreadChats, markPhotosRead } = useUnread();
-  const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
+  const styles = useMemo(() => makeStyles(colors, type, mode === 'dark'), [colors, type, mode]);
 
   const [event, setEvent] = useState<Event | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
+  // The event's plan limits (people, photos); null when not loaded.
+  const [limits, setLimits] = useState<EventLimits | null>(null);
+  const { showProPrompt } = useProPrompt();
   const [myStatus, setMyStatus] = useState<RsvpStatus | null>(null);
   const [justRsvpdGoing, setJustRsvpdGoing] = useState(false);
   const [activityLine, setActivityLine] = useState<string | null>(null);
@@ -181,10 +187,15 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [savingRsvp, setSavingRsvp] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  // True once event_plan says the album is already kept forever. Any error
+  // (the function may not exist yet) leaves it false, so the row shows.
+  const [albumPremium, setAlbumPremium] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'leave' | 'cancel' | 'delete' | null>(null);
   const [showNavApps, setShowNavApps] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<Attendee | null>(null);
   const [actingOn, setActingOn] = useState<ActionsPerson | null>(null);
+  // People the host let add photos / chat (only loaded for the host).
+  const [allowed, setAllowedList] = useState<Allowed[]>([]);
   const [reportingEvent, setReportingEvent] = useState(false);
   const [bills, setBills] = useState<BillSummary[]>([]);
   // Only loaded for the host, on events that need approval.
@@ -217,6 +228,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   }, [screenAnim]);
 
   const load = useCallback(async () => {
+    loadEventLimits(eventId).then(setLimits);
     const { data: ev, error: eventError } = await supabase
       .from('events')
       .select('*')
@@ -269,13 +281,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       ...(latestMsg ? [latestMsg.sender_id] : []),
     ];
 
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, display_name, avatar_url')
-      .in('id', ids);
+    // Whole rows: is_guest only exists once guest-web.sql has run.
+    const { data: profiles } = await supabase.from('profiles').select('*').in('id', ids);
 
-    const nameOf = (id: string) =>
-      profiles?.find((p) => p.id === id)?.display_name ?? 'Someone';
+    const nameOf = (id: string) => guestName(profiles?.find((p) => p.id === id));
     const avatarOf = (id: string) =>
       profiles?.find((p) => p.id === id)?.avatar_url ?? null;
 
@@ -309,6 +318,9 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
     animateNext(hasLoadedRef.current);
     setEvent(ev);
+    if (ev.creator_id === session?.user.id && (ev.photos_by === 'host' || ev.chat_by === 'host')) {
+      setAllowedList(await loadAllowed(ev.id));
+    }
     setActivityLine(activity);
     setUploadsClosed(ev.uploads_closed);
     setCoverPhotoId(ev.cover_photo_id ?? null);
@@ -355,19 +367,18 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     if (approve) load();
   };
 
-  const changeJoinMode = async (mode: JoinMode) => {
-    if (!event || event.join_mode === mode) return;
+
+
+  // Host: let one person add photos / chat, or stop them.
+  const toggleAllowed = async (userId: string, kind: PostKind, on: boolean) => {
+    if (!event) return;
     hapticLight();
-    const before = event;
-    setEvent({ ...event, join_mode: mode, is_link_enabled: mode !== 'invite' });
-    const error = await setJoinMode(event.id, mode);
-    if (error) {
-      setEvent(before);
-      Alert.alert('Could not change who can join', error);
+    const result = await saveAllowed(event.id, allowed, userId, kind, on);
+    if (result.error) {
+      Alert.alert('Could not change that', result.error);
       return;
     }
-    // Requests only show for approval events; load them when switching to it.
-    if (mode === 'approval') setJoinRequests(await loadJoinRequests(event.id));
+    setAllowedList(result.allowed);
   };
 
   const openInfo = () => {
@@ -375,6 +386,14 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     setInfoPage('info');
     setShowInfo(true);
     load();
+    supabase.rpc('event_plan', { eid: eventId }).then(({ data, error }) => {
+      if (error) return;
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | { tier: string | null; keep_forever: boolean | null }
+        | null
+        | undefined;
+      setAlbumPremium(!!row && (row.tier !== null || row.keep_forever === true));
+    });
   };
 
   // Straight to the share page (link, QR code and invite code).
@@ -399,20 +418,6 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     if (error) Alert.alert('Could not update the event photo', error);
   };
 
-  const [uploadingCover, setUploadingCover] = useState(false);
-  const uploadCover = async () => {
-    if (!event || !session?.user.id) return;
-    setUploadingCover(true);
-    const { photoId, error } = await pickAndUploadCover(event.id, session.user.id);
-    setUploadingCover(false);
-    if (error) {
-      Alert.alert('Upload failed', error);
-    } else if (photoId) {
-      hapticLight();
-      // Reload so the album fetches the new photo and the header shows it.
-      load();
-    }
-  };
 
   if (!loaded || !event) {
     return (
@@ -448,17 +453,48 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   }
 
   const isLeader = event.creator_id === session?.user.id;
+  const spots = peopleMeter(limits);
+  const iconScale = Math.min(1.4, Math.max(1, PixelRatio.getFontScale()));
   // Once it's over, RSVPs are final and read in the past tense.
   const ended = eventEnded(event.ends_at);
+  const started = Date.now() >= new Date(event.starts_at).getTime();
   const hostName = attendees.find((a) => a.status === 'host')?.name;
   // The host can remove anyone but themselves, from the person's ··· menu.
   const removableActingOn = isLeader
     ? attendees.find((a) => a.userId === actingOn?.id && a.status !== 'host') ?? null
     : null;
+  // Host, on events where only they can add photos or chat: let this
+  // person in, or stop them.
+  const postActions = removableActingOn
+    ? (['photos', 'chat'] as const)
+        .filter((kind) => ruleOf(event ?? {}, kind) === 'host')
+        .map((kind) => {
+          const on = !!allowed.find((a) => a.user_id === removableActingOn.userId)?.[kind];
+          const what = kind === 'photos' ? 'add photos' : 'chat';
+          return {
+            label: on ? `Stop letting them ${what}` : `Let them ${what}`,
+            onPress: () => toggleAllowed(removableActingOn.userId, kind, !on),
+          };
+        })
+    : undefined;
   const goingAttendees = attendees.filter(
     (a) => a.status === 'going' || a.status === 'host'
   );
   const goingCount = goingAttendees.length;
+  // Where you stand, said in the people tile instead of on its own line.
+  const others = goingCount - 1;
+  const meLine =
+    isLeader || myStatus === 'going'
+      ? others > 0
+        ? `You + ${others}`
+        : isLeader
+          ? 'Just you so far'
+          : 'You'
+      : myStatus === 'maybe'
+        ? ended ? 'You said maybe' : "You're a maybe"
+        : myStatus === 'not_going'
+          ? ended ? "You didn't go" : "You're not going"
+          : 'See who';
 
   const isMember =
     isLeader ||
@@ -467,6 +503,22 @@ export default function EventDetailScreen({ navigation, route }: Props) {
       (row) =>
         row.profile.id === session?.user.id && row.invitation.status === 'accepted'
     );
+
+  const openInvite = () => {
+    setShareOnly(false);
+    setInfoPage('invite');
+    setShowInfo(true);
+  };
+  const mainButton =
+    !started && isMember ? (
+      <Button title="Invite friends" onPress={openInvite} style={styles.mainButton} />
+    ) : ended && albumPhotos.length > 0 ? (
+      <Button
+        title="Share a recap"
+        onPress={() => navigation.navigate('Recap', { eventId: event.id })}
+        style={styles.mainButton}
+      />
+    ) : null;
 
   const waitingInvites = invitations.filter(
     (row) =>
@@ -503,7 +555,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     hapticLight();
     const { until, error } = await reopenRoll(event.id);
     if (error) {
-      Alert.alert('Could not reopen the roll', error);
+      Alert.alert('Could not reopen adding photos', error);
       return;
     }
     setUploadsClosed(false);
@@ -594,31 +646,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     load();
   };
 
-  const cancelEvent = async () => {
-    setConfirmAction(null);
-    await removeEventFiles(event.id);
-    const { error } = await supabase.from('events').delete().eq('id', event.id);
-    if (error) {
-      Alert.alert('Could not cancel', error.message);
-      return;
-    }
-    syncEventReminders();
-    setShowInfo(false);
-    navigation.goBack();
-  };
 
-  // An event that's over goes in 48 hours, so people can save what they want.
-  const deleteEvent = async () => {
-    setConfirmAction(null);
-    const { error } = await supabase.rpc('schedule_event_deletion', { p_event: event.id });
-    if (error) {
-      Alert.alert('Could not delete', error.message);
-      return;
-    }
-    hapticMedium();
-    setShowInfo(false);
-    load();
-  };
 
   const keepEvent = async () => {
     const { error } = await supabase.rpc('keep_event', { p_event: event.id });
@@ -678,45 +706,45 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         )}
 
         <View style={styles.bodyWrap}>
+          {started && !ended && (
+            <View style={styles.livePill}>
+              <Text style={styles.livePillText}>Live now</Text>
+            </View>
+          )}
           <View style={styles.titleRow}>
             <Text
-              style={coverPhoto ? styles.titleWithCover : styles.bigDisplayTitle}
+              style={[
+                coverPhoto ? styles.titleWithCover : styles.bigDisplayTitle,
+                { flex: 1 },
+              ]}
             >
               {event.title}
             </Text>
-            {isLeader && (
-              <Pressable
-                style={styles.editButton}
-                onPress={() =>
-                  navigation.navigate('CreateEvent', { editEventId: event.id })
-                }
-                hitSlop={12}
-              >
-                <EditIcon size={19} color={colors.inkMuted} />
-              </Pressable>
-            )}
-            <View style={{ flex: 1 }} />
             <View style={styles.headerActions}>
+              {isLeader && (
+                <Pressable
+                  style={({ pressed }) => [styles.headerButton, pressed && { opacity: 0.6 }]}
+                  onPress={() =>
+                    navigation.navigate('CreateEvent', { editEventId: event.id })
+                  }
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Manage event"
+                >
+                  <EditIcon size={Math.round(19 * iconScale)} color={colors.inkMuted} />
+                </Pressable>
+              )}
               {event.is_link_enabled && (
                 <Pressable
-                  style={({ pressed }) => [styles.infoButton, pressed && { opacity: 0.6 }]}
+                  style={({ pressed }) => [styles.headerButton, pressed && { opacity: 0.6 }]}
                   onPress={openShare}
                   hitSlop={8}
                   accessibilityRole="button"
                   accessibilityLabel="Share event"
                 >
-                  <ShareIcon size={12} color={colors.inkMuted} />
+                  <ShareIcon size={Math.round(20 * iconScale)} color={colors.inkMuted} />
                 </Pressable>
               )}
-              <Pressable
-                style={({ pressed }) => [styles.infoButton, pressed && { opacity: 0.6 }]}
-                onPress={openInfo}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Event info"
-              >
-                <Text style={styles.infoGlyph}>i</Text>
-              </Pressable>
             </View>
           </View>
 
@@ -737,7 +765,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 onPress={() => setShowNavApps(true)}
               >
                 <MapPinIcon size={15} color={colors.inkMuted} />
-                <Text style={styles.locationText}>{event.location}</Text>
+                <Text style={styles.locationText}>{placeLabel(event.location)}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -757,6 +785,11 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 It goes for good on {formatDay(event.delete_at)} at {formatTime(event.delete_at)}.
                 Save any photos you want to keep before then.
               </Text>
+              {isLeader && (
+                <Pressable onPress={keepEvent} hitSlop={8} accessibilityRole="button">
+                  <Text style={styles.keepText}>Keep event</Text>
+                </Pressable>
+              )}
             </View>
           ) : null}
 
@@ -765,7 +798,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             <View style={styles.urgentRollBanner}>
               <View style={styles.urgentRollDot} />
               <Text style={styles.urgentRollText}>
-                The roll closes in {timeLeftCopy}. Add your photos before it closes.
+                Adding photos closes in {timeLeftCopy}. Add yours before then.
               </Text>
             </View>
           )}
@@ -774,46 +807,124 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             <Text style={[type.body, styles.descriptionText]}>{event.description}</Text>
           ) : null}
 
-          {goingCount > 0 && (
+          {mainButton}
+
+          {/* Before the event: who's coming and the plan come first, photos
+              last. Once it starts, the photos are the point, so they lead. */}
+          {started && (
             <>
-              <View style={styles.divider} />
-              <Pressable
-                style={({ pressed }) => [
-                  styles.whosGoingRow,
-                  pressed && { opacity: 0.7 },
-                ]}
-                onPress={openInfo}
-              >
-                <View style={styles.avatarStack}>
-                  {goingAttendees.slice(0, 5).map((a, i) => {
-                    const isMe = a.userId === session?.user.id;
-                    return (
-                      <SlideInAvatar
-                        key={a.userId}
-                        name={a.name}
-                        userId={a.userId}
-                        avatarUrl={a.avatarUrl}
-                        size={28}
-                        shouldSlideIn={justRsvpdGoing && isMe}
-                        style={[
-                          styles.avatarStackRing,
-                          { marginLeft: i === 0 ? 0 : -8, zIndex: 10 - i },
-                        ]}
-                      />
-                    );
-                  })}
+          <View style={styles.albumGap} />
+          <EventAlbum
+            event={event}
+            isLeader={isLeader}
+            userId={session!.user.id}
+            refreshSeq={refreshSeq}
+            onPhotosChange={setAlbumPhotos}
+            uploadsClosedOverride={uploadsClosed}
+            onReopenRoll={reopen}
+            coverPhotoId={coverPhotoId}
+            onSetCoverPhoto={handleSetCoverPhoto}
+            previewCount={9}
+            onShowAll={() => navigation.navigate('EventPhotos', { eventId: event.id })}
+          />
+            </>
+          )}
+          {/* Who's going and the chat, side by side as two tiles. */}
+          {(goingCount > 0 || isMember) && (
+            <>
+              <View style={styles.sectionGap} />
+              <View style={styles.tileRow}>
+                {goingCount > 0 && (
+                  <Pressable
+                    style={({ pressed }) => [styles.tile, pressed && styles.pressedRow]}
+                    onPress={openInfo}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${goingCount} ${ended ? 'went' : 'going'}. See who`}
+                  >
+                    <View style={styles.avatarStack}>
+                      {goingAttendees.slice(0, 3).map((a, i) => {
+                        const isMe = a.userId === session?.user.id;
+                        return (
+                          <SlideInAvatar
+                            key={a.userId}
+                            name={a.name}
+                            userId={a.userId}
+                            avatarUrl={a.avatarUrl}
+                            size={26}
+                            shouldSlideIn={justRsvpdGoing && isMe}
+                            style={[
+                              styles.avatarStackRing,
+                              { marginLeft: i === 0 ? 0 : -10, zIndex: 10 - i },
+                            ]}
+                          />
+                        );
+                      })}
+                    </View>
+                    <View style={styles.tileText}>
+                      <Text style={styles.tileTitle} numberOfLines={1}>
+                        {goingCount} {ended ? 'went' : 'going'}
+                      </Text>
+                      <Text style={styles.chatPreview} numberOfLines={1}>
+                        {meLine}
+                      </Text>
+                    </View>
+                  </Pressable>
+                )}
+                {isMember && (
+                  <Pressable
+                    style={({ pressed }) => [styles.tile, pressed && styles.pressedRow]}
+                    onPress={() =>
+                      navigation.navigate('EventChat', {
+                        eventId: event.id,
+                        title: event.title,
+                      })
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel="Event chat"
+                  >
+                    <View style={styles.chatIconWrap}>
+                      <ChatIcon size={Math.round(18 * iconScale)} color={colors.inkMuted} />
+                    </View>
+                    <View style={styles.tileText}>
+                      <View style={styles.tileTitleRow}>
+                        <Text style={styles.tileTitle} numberOfLines={1}>
+                          Chat
+                        </Text>
+                        {unreadChats.includes(event.id) && <View style={styles.unreadDot} />}
+                      </View>
+                      <Text style={styles.chatPreview} numberOfLines={1}>
+                        {latestMessage
+                          ? `${latestMessage.senderName}: ${latestMessage.body}`
+                          : 'Say hello'}
+                      </Text>
+                    </View>
+                  </Pressable>
+                )}
+              </View>
+              {/* The host's spots: "8 of 10 spots taken", and a way to make
+                  room once it's nearly full. Guests never see this. */}
+              {isLeader && !ended && spots ? (
+                <View style={styles.spotsRow}>
+                  <Text style={[type.caption, { color: colors.inkMuted }]}>{spots.text}</Text>
+                  {spots.nearlyFull ? (
+                    <Pressable
+                      onPress={() => showProPrompt('people')}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      style={({ pressed }) => pressed && { opacity: 0.6 }}
+                    >
+                      <Text style={styles.spotsLink}>Make room</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
-                <Text style={styles.goingCountText}>{goingCount} {ended ? 'went' : 'going'}</Text>
-                <View style={{ flex: 1 }} />
-                <ChevronRightIcon size={16} color={colors.inkMuted} />
-              </Pressable>
+              ) : null}
             </>
           )}
 
           {isLeader && joinRequests.length > 0 && (
             <>
-              <View style={styles.divider} />
-              <Text style={styles.sectionHeader}>Requests to join</Text>
+              <View style={styles.sectionGap} />
+              <SectionLabel>Requests to join</SectionLabel>
               {joinRequests.map((r) => (
                 <View key={r.id} style={styles.requestRow}>
                   <Avatar name={r.name} userId={r.userId} avatarUrl={r.avatarUrl} size={36} />
@@ -849,12 +960,12 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             </>
           )}
 
-          {!isLeader && (
+          {!isLeader && !ended && (
             <>
-              <View style={styles.divider} />
+              <View style={styles.sectionGap} />
               <View style={styles.rsvpHeaderRow}>
-                <Text style={styles.sectionHeader}>Your RSVP</Text>
-                {myStatus === 'going' && !ended && (
+                <SectionLabel>Your RSVP</SectionLabel>
+                {myStatus === 'going' && (
                   <View style={styles.youreInBadge}>
                     <Text style={styles.youreInText}>You're in.</Text>
                   </View>
@@ -866,55 +977,18 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                 disabled={savingRsvp}
                 ended={ended}
               />
-              {ended && (
-                <Text style={[type.caption, { marginTop: spacing.sm }]}>
-                  This event is over, so RSVPs can't change.
-                </Text>
-              )}
             </>
           )}
 
-          {isMember && (
+          {isMember && (event.bills_enabled !== false || bills.length > 0) && (
             <>
-              <View style={styles.divider} />
-              <Pressable
-                style={({ pressed }) => [
-                  styles.chatRow,
-                  pressed && { opacity: 0.7 },
-                ]}
-                onPress={() =>
-                  navigation.navigate('EventChat', {
-                    eventId: event.id,
-                    title: event.title,
-                  })
-                }
-              >
-                <View style={styles.chatIconWrap}>
-                  <ChatIcon size={18} color={colors.inkMuted} />
-                </View>
-                <View style={styles.chatInfoWrap}>
-                  <Text style={styles.chatTitle}>Event chat</Text>
-                  <Text style={styles.chatPreview} numberOfLines={1}>
-                    {latestMessage
-                      ? `${latestMessage.senderName}: ${latestMessage.body}`
-                      : 'No messages yet. Say hello.'}
-                  </Text>
-                </View>
-                {unreadChats.includes(event.id) && <View style={styles.unreadDot} />}
-                <ChevronRightIcon size={16} color={colors.inkMuted} />
-              </Pressable>
-            </>
-          )}
-
-          {isMember && (
-            <>
-              <View style={styles.divider} />
-              <Text style={styles.sectionHeader}>Bills</Text>
+              <View style={bills.length > 0 ? styles.sectionGap : styles.splitGap} />
+              {bills.length > 0 && <SectionLabel>Bills</SectionLabel>}
               {bills.map((b) => (
                 <Pressable
                   key={b.bill.id}
                   accessibilityRole="button"
-                  style={({ pressed }) => [styles.billRow, pressed && { opacity: 0.7 }]}
+                  style={({ pressed }) => [styles.billRow, pressed && styles.pressedRow]}
                   onPress={() => navigation.navigate('Bill', { billId: b.bill.id })}
                 >
                   <View style={styles.chatInfoWrap}>
@@ -926,22 +1000,28 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     </Text>
                   </View>
                   <Text style={styles.chatPreview}>{billStatusLabel(b)}</Text>
-                  <ChevronRightIcon size={16} color={colors.inkMuted} />
+                  <ChevronRightIcon size={Math.round(16 * iconScale)} color={colors.inkMuted} />
                 </Pressable>
               ))}
-              <Pressable
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.billRow, pressed && { opacity: 0.7 }]}
-                onPress={() => navigation.navigate('BillReview', { eventId: event.id })}
-              >
-                <PlusIcon size={18} color={colors.ink} />
-                <Text style={[styles.chatTitle, { flex: 1 }]}>Split a bill</Text>
-              </Pressable>
+              {event.bills_enabled !== false && (
+                <Pressable
+                  accessibilityRole="button"
+                  style={({ pressed }) => [styles.billRow, pressed && styles.pressedRow]}
+                  onPress={() => navigation.navigate('BillReview', { eventId: event.id })}
+                >
+                  <View style={styles.chatIconWrap}>
+                    <PlusIcon size={Math.round(18 * iconScale)} color={colors.inkMuted} />
+                  </View>
+                  <Text style={[styles.chatTitle, { flex: 1 }]}>Split a bill</Text>
+                  <ChevronRightIcon size={Math.round(16 * iconScale)} color={colors.inkMuted} />
+                </Pressable>
+              )}
             </>
           )}
 
-          <View style={styles.divider} />
-
+          {!started && (
+            <>
+          <View style={styles.albumGap} />
           <EventAlbum
             event={event}
             isLeader={isLeader}
@@ -952,7 +1032,11 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             onReopenRoll={reopen}
             coverPhotoId={coverPhotoId}
             onSetCoverPhoto={handleSetCoverPhoto}
+            previewCount={9}
+            onShowAll={() => navigation.navigate('EventPhotos', { eventId: event.id })}
           />
+            </>
+          )}
         </View>
       </ScrollView>
     </Animated.View>
@@ -994,7 +1078,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               {infoPage === 'invite' ? (
                 <Pressable
                   style={styles.modalBack}
-                  onPress={() => setInfoPage('info')}
+                  onPress={() => setInfoPage(shareOnly ? 'share' : 'info')}
                   hitSlop={8}
                 >
                   <ArrowIcon size={20} color={colors.ink} direction="left" />
@@ -1012,7 +1096,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                   <Text style={type.h2}>Share</Text>
                 </Pressable>
               ) : (
-                <Text style={type.h2}>Event info</Text>
+                <Text style={type.h2}>{ended ? 'Who went' : "Who's going"}</Text>
               )}
               <Pressable onPress={() => setShowInfo(false)} hitSlop={8}>
                 <Text style={styles.modalDone}>Done</Text>
@@ -1028,89 +1112,38 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                   onChanged={load}
                 />
               ) : infoPage === 'share' ? (
-                <EventQrPanel event={event} />
-              ) : (
                 <>
-                  {isLeader && withinUploadWindow && (
-                    <View style={styles.sheetSection}>
-                      <Text style={styles.sectionHeader}>Photo uploads</Text>
-                      <View style={styles.switchRow}>
-                        <View style={{ flex: 1, paddingRight: spacing.md }}>
-                          <Text style={type.body}>Allow uploads</Text>
-                          <Text style={type.caption}>
-                            {uploadsClosed
-                              ? `The roll was closed early. ${hoursLeft} hours left in the window.`
-                              : `The roll is open. ${hoursLeft} hours left to add photos.`}
-                          </Text>
-                        </View>
-                        <ThemedSwitch
-                          value={!uploadsClosed}
-                          onValueChange={toggleUploads}
+                  {isMember && (
+                    <>
+                      <Button title="Invite friends" onPress={() => setInfoPage('invite')} />
+                      <View style={styles.sheetGap} />
+                    </>
+                  )}
+                  {/* Once it's over, the photos are what's worth sharing;
+                      the invite link stays below. */}
+                  {ended && albumPhotos.length > 0 && (
+                    <>
+                      <View style={styles.sheetSection}>
+                        <SectionLabel>Share a recap</SectionLabel>
+                        <Text style={[type.body, { marginBottom: spacing.md }]}>
+                          One picture of the night with the event’s photos, sized for stories.
+                        </Text>
+                        <Button
+                          title="Make a recap"
+                          onPress={() => {
+                            setShowInfo(false);
+                            // After the sheet has faded out.
+                            setTimeout(() => navigation.navigate('Recap', { eventId: event.id }), 300);
+                          }}
                         />
                       </View>
-                      <View style={styles.divider} />
-                    </View>
+                      <View style={styles.sheetGap} />
+                    </>
                   )}
-
-                  {isLeader && !beforeOpen && !withinUploadWindow && (
-                    <View style={styles.sheetSection}>
-                      <Text style={styles.sectionHeader}>Photo uploads</Text>
-                      <Text style={type.caption}>
-                        The roll is closed. Reopen it and everyone can add photos for the
-                        next 24 hours.
-                      </Text>
-                      <Button
-                        title="Reopen for 24 hours"
-                        variant="secondary"
-                        onPress={reopen}
-                        style={{ marginTop: spacing.md }}
-                      />
-                      <View style={styles.divider} />
-                    </View>
-                  )}
-
-                  {isLeader && (
-                    <View style={styles.sheetSection}>
-                      <Text style={styles.sectionHeader}>Event photo</Text>
-                      {coverPhoto ? (
-                        <View style={styles.coverPreviewWrap}>
-                          <Image
-                            source={{ uri: coverPhoto }}
-                            style={styles.coverSheetThumb}
-                          />
-                          <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                            <Text style={type.body}>Photo selected</Text>
-                            <Text style={type.caption}>
-                              Shows at the top of the event and in past events
-                            </Text>
-                          </View>
-                          <Pressable
-                            onPress={() => handleSetCoverPhoto(null)}
-                            hitSlop={8}
-                            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
-                          >
-                            <Text style={styles.removeText}>Remove</Text>
-                          </Pressable>
-                        </View>
-                      ) : (
-                        <Text style={type.caption}>
-                          Shows at the top of the event. Guests only see it in the roll once
-                          the roll opens.
-                        </Text>
-                      )}
-                      <Button
-                        title={coverPhoto ? 'Upload a different photo' : 'Upload a photo'}
-                        variant="secondary"
-                        onPress={uploadCover}
-                        loading={uploadingCover}
-                        style={{ marginTop: spacing.md }}
-                      />
-                      <View style={styles.divider} />
-                    </View>
-                  )}
-
-                  <Text style={styles.sectionHeader}>{ended ? 'Who went' : "Who's coming"}</Text>
-
+                  <EventQrPanel event={event} />
+                </>
+              ) : (
+                <>
                   <View style={{ gap: spacing.md }}>
                     {(
                       [
@@ -1178,10 +1211,10 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
                   {waitingInvites.length > 0 && (
                     <>
-                      <View style={styles.divider} />
-                      <Text style={styles.sectionHeader}>
+                      <View style={styles.sheetGap} />
+                      <SectionLabel>
                         Invited · waiting on {waitingInvites.length}
-                      </Text>
+                      </SectionLabel>
                       {waitingInvites.map((row) => (
                         <View key={row.invitation.id} style={styles.personRow}>
                           <Avatar
@@ -1212,81 +1245,107 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                     </>
                   )}
 
-                  {isLeader && (
+                  {isMember && (
                     <>
-                      <View style={styles.divider} />
-                      <Text style={styles.sectionHeader}>Who can join</Text>
-                      <JoinModePicker
-                        value={event.join_mode ?? (event.is_link_enabled ? 'open' : 'invite')}
-                        onChange={changeJoinMode}
+                      <View style={styles.sheetGap} />
+                      <Button
+                        title="Invite friends"
+                        variant="secondary"
+                        onPress={() => setInfoPage('invite')}
+                      />
+                    </>
+                  )}
+                  {isLeader && withinUploadWindow && (
+                    <View style={styles.sheetSection}>
+                      <View style={styles.sheetGap} />
+                      <SectionLabel>Adding photos</SectionLabel>
+                      <View style={styles.switchRow}>
+                        <View style={{ flex: 1, paddingRight: spacing.md }}>
+                          <Text style={type.body}>Allow uploads</Text>
+                          <Text style={type.caption}>
+                            {uploadsClosed
+                              ? `Closed early. ${hoursLeft} hours left if you reopen it.`
+                              : `Open for ${hoursLeft} more hours.`}
+                          </Text>
+                        </View>
+                        <ThemedSwitch
+                          value={!uploadsClosed}
+                          onValueChange={toggleUploads}
+                        />
+                      </View>
+                    </View>
+                  )}
+
+                  {isLeader && !beforeOpen && !withinUploadWindow && (
+                    <View style={styles.sheetSection}>
+                      <View style={styles.sheetGap} />
+                      <SectionLabel>Adding photos</SectionLabel>
+                      <Button
+                        title="Reopen for 24 hours"
+                        variant="secondary"
+                        onPress={reopen}
+                        style={{ marginTop: spacing.md }}
+                      />
+                    </View>
+                  )}
+
+
+
+                  {isMember && !albumPremium && (
+                    <>
+                      <View style={styles.sheetGap} />
+                      <Button
+                        title="Keep these photos forever"
+                        variant="secondary"
+                        onPress={() => {
+                          setShowInfo(false);
+                          navigation.navigate('Upgrade', { plan: 'party', eventId: event.id });
+                        }}
                       />
                     </>
                   )}
 
-                  {(isMember || event.is_link_enabled) && (
-                    <>
-                      <View style={styles.divider} />
-                      {isMember && (
-                        <Button
-                          title="Invite friends"
-                          variant="secondary"
-                          onPress={() => setInfoPage('invite')}
-                        />
-                      )}
-                      {event.is_link_enabled && (
-                        <Button
-                          title="Share"
-                          variant="secondary"
-                          onPress={() => setInfoPage('share')}
-                          style={isMember ? { marginTop: spacing.sm } : undefined}
-                        />
-                      )}
-                    </>
-                  )}
-
-                  {!isLeader && myStatus !== null && (
-                    <>
-                      <View style={styles.divider} />
-                      <Pressable
-                        onPress={() => setConfirmAction('leave')}
-                        hitSlop={8}
-                      >
-                        <Text style={styles.leaveText}>Leave event</Text>
-                      </Pressable>
-                    </>
-                  )}
-
+                  {/* Guests' two rarer actions, side by side. */}
                   {!isLeader && (
-                    <Pressable
-                      onPress={() => setReportingEvent(true)}
-                      hitSlop={8}
-                      accessibilityRole="button"
-                      style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-                    >
-                      <Text style={styles.reportEventText}>Report event</Text>
-                    </Pressable>
+                    <>
+                      <View style={styles.sheetGap} />
+                      <View style={styles.guestActions}>
+                        <Pressable
+                          onPress={() => setReportingEvent(true)}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          style={({ pressed }) => [styles.guestAction, pressed && { opacity: 0.7 }]}
+                        >
+                          <Text style={styles.reportEventText}>Report event</Text>
+                        </Pressable>
+                        {myStatus !== null && (
+                          <Pressable
+                            onPress={() => setConfirmAction('leave')}
+                            hitSlop={8}
+                            accessibilityRole="button"
+                            style={({ pressed }) => [styles.guestAction, pressed && { opacity: 0.7 }]}
+                          >
+                            <Text style={styles.leaveText}>Leave event</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    </>
                   )}
 
                   {isLeader && (
                     <>
-                      <View style={styles.divider} />
-                      {event.delete_at ? (
-                        <Pressable onPress={keepEvent} hitSlop={8} accessibilityRole="button">
-                          <Text style={styles.keepText}>Keep event</Text>
-                        </Pressable>
-                      ) : (
-                        <Pressable
-                          onPress={() => setConfirmAction(ended ? 'delete' : 'cancel')}
-                          hitSlop={8}
-                          accessibilityRole="button"
-                        >
-                          <Text style={styles.leaveText}>
-                            {ended ? 'Delete event' : 'Cancel event'}
-                          </Text>
-                        </Pressable>
-                      )}
+                      <View style={styles.sheetGap} />
+                      <Button
+                        title="Manage event"
+                        variant="secondary"
+                        onPress={() => {
+                          setShowInfo(false);
+                          navigation.navigate('CreateEvent', { editEventId: event.id });
+                        }}
+                      />
                     </>
                   )}
+
                 </>
               )}
             </ScrollView>
@@ -1347,6 +1406,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
             <PersonActionsSheet
               person={actingOn}
+              actions={postActions}
               extra={
                 removableActingOn
                   ? {
@@ -1368,27 +1428,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
               onClose={() => setReportingEvent(false)}
             />
 
-            <ConfirmDialog
-              visible={confirmAction === 'cancel'}
-              title="Cancel this event?"
-              message="This deletes the event for everyone, RSVPs included. It can't be undone."
-              confirmLabel="Cancel event"
-              cancelLabel="Keep event"
-              destructive
-              onConfirm={cancelEvent}
-              onCancel={() => setConfirmAction(null)}
-            />
 
-            <ConfirmDialog
-              visible={confirmAction === 'delete'}
-              title="Delete this event?"
-              message="Everything in it will be lost: photos, videos, chat, bills and RSVPs. Everyone in the event gets a notice to save what they want, and it's deleted for good in 48 hours."
-              confirmLabel="Delete event"
-              cancelLabel="Keep event"
-              destructive
-              onConfirm={deleteEvent}
-              onCancel={() => setConfirmAction(null)}
-            />
           </SafeAreaView>
         </View>
       </Modal>
@@ -1396,7 +1436,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   );
 }
 
-const makeStyles = (c: Palette, t: TypeTokens) =>
+const makeStyles = (c: Palette, t: TypeTokens, dark = false) =>
   StyleSheet.create({
     screen: {
       flex: 1,
@@ -1420,7 +1460,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     titleRow: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       gap: spacing.sm,
     },
     bigDisplayTitle: {
@@ -1439,17 +1479,36 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       color: c.ink,
       flexShrink: 1,
     },
-    editButton: {
-      width: 24,
-      height: 24,
+    headerButton: {
+      minWidth: 36,
+      minHeight: 36,
       alignItems: 'center',
       justifyContent: 'center',
-      marginTop: 2,
     },
     headerActions: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.md,
+    },
+    livePill: {
+      alignSelf: 'flex-start',
+      backgroundColor: c.live,
+      borderRadius: radii.full,
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+      marginBottom: spacing.xs,
+    },
+    livePillText: {
+      fontFamily: fonts.bodySemiBold,
+      fontSize: 12,
+      color: c.onLive,
+    },
+    mainButton: {
+      alignSelf: 'stretch',
+      marginTop: spacing.md,
+    },
+    pressedRow: {
+      opacity: 0.7,
+      transform: [{ scale: 0.98 }],
     },
     infoButton: {
       width: 22,
@@ -1518,7 +1577,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       gap: spacing.sm,
       paddingVertical: 9,
       paddingHorizontal: 12,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       backgroundColor: c.accent + '15',
       borderWidth: 1,
       borderColor: c.accent + '35',
@@ -1544,10 +1603,34 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       marginTop: spacing.md,
       color: c.ink,
     },
+    // A little wider than the text column, so the pair reads as one band.
+    tileRow: { flexDirection: 'row', gap: spacing.sm, marginHorizontal: -spacing.md },
+    spotsRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
+    spotsLink: { fontFamily: fonts.bodySemiBold, fontSize: 13, color: c.accentText },
+    // Compact rows: picture on the left, two short lines beside it.
+    tile: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      // The same stock as the photo strip, so the page reads as one set.
+      backgroundColor: filmColors(c, dark).base,
+      borderRadius: radii.card,
+      paddingVertical: spacing.sm + 2,
+      paddingHorizontal: spacing.md - 4,
+    },
+    tileText: { flex: 1, minWidth: 0 },
+    tileTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+    tileTitle: {
+      ...t.body,
+      fontFamily: fonts.bodySemiBold,
+      color: c.ink,
+      fontSize: 15,
+    },
     whosGoingRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: spacing.xs,
+      paddingVertical: spacing.sm,
     },
     avatarStack: {
       flexDirection: 'row',
@@ -1556,7 +1639,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     avatarStackRing: {
       borderWidth: 2,
       borderColor: c.paper,
-      borderRadius: 16,
+      borderRadius: radii.full,
     },
     goingCountText: {
       ...t.body,
@@ -1574,12 +1657,6 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     requestText: { flex: 1, minWidth: 0 },
     requestDecline: { paddingHorizontal: spacing.xs, paddingVertical: spacing.sm },
     requestApprove: { height: 36, paddingHorizontal: spacing.md },
-    sectionHeader: {
-      fontSize: 15,
-      fontFamily: fonts.body,
-      color: c.inkMuted,
-      marginBottom: spacing.sm,
-    },
     rsvpHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1590,7 +1667,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.accent + '15',
       paddingHorizontal: 8,
       paddingVertical: 2,
-      borderRadius: radii.sm,
+      borderRadius: radii.tag,
     },
     youreInText: {
       color: c.accentText,
@@ -1601,7 +1678,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
-      paddingVertical: spacing.xs,
+      paddingVertical: spacing.sm,
     },
     billRow: {
       flexDirection: 'row',
@@ -1640,11 +1717,14 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       borderRadius: 4,
       backgroundColor: c.danger,
     },
-    divider: {
-      height: 1,
-      backgroundColor: c.line,
-      marginVertical: spacing.md,
-    },
+    sectionGap: { height: SECTION_GAP },
+    // The photo strip is a strong shape of its own; it needs less air above.
+    albumGap: { height: spacing.lg },
+    // Between rows of the same group (who's going, chat, split a bill).
+    rowGap: { height: spacing.xs },
+    // Split a bill on its own, under the tiles: a little more air.
+    splitGap: { height: spacing.lg },
+    sheetGap: { height: spacing.lg },
     center: {
       flex: 1,
       alignItems: 'center',
@@ -1713,7 +1793,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.paper,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: 16,
+      borderRadius: radii.card,
       padding: spacing.lg,
     },
     removeOption: {
@@ -1721,7 +1801,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       padding: spacing.md,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       backgroundColor: c.card,
       gap: 2,
     },
@@ -1734,7 +1814,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       height: 44,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       backgroundColor: c.card,
@@ -1743,6 +1823,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       ...t.button,
       color: c.ink,
     },
+    guestActions: { flexDirection: 'row', gap: spacing.sm },
+    guestAction: { flex: 1, alignItems: 'center' },
     reportEventText: {
       ...t.body,
       color: c.inkMuted,
@@ -1754,7 +1836,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       fontFamily: fonts.bodySemiBold,
       color: c.danger,
       textAlign: 'center',
-      paddingVertical: spacing.sm,
+      paddingVertical: spacing.md,
     },
     keepText: {
       ...t.body,
@@ -1821,7 +1903,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     coverSheetThumb: {
       width: 44,
       height: 44,
-      borderRadius: radii.sm,
+      borderRadius: radii.card,
       backgroundColor: c.card,
     },
   });

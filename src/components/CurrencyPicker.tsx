@@ -133,7 +133,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       overflow: 'hidden',
     },
     handleBar: { alignItems: 'center', paddingTop: spacing.sm, paddingBottom: 2 },
-    handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: c.line },
+    handle: { width: 36, height: 4, borderRadius: radii.full, backgroundColor: c.line },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -156,7 +156,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
     },
     list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
     row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 52 },

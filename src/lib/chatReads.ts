@@ -1,4 +1,4 @@
-import { RealtimeChannel } from '@supabase/supabase-js';
+import { listen } from './live';
 import { supabase } from './supabase';
 
 // "Seen by" in event chat: when each member last read the chat, shared with
@@ -24,22 +24,22 @@ export async function loadChatReads(eventId: string): Promise<ChatReads> {
 }
 
 // Live read marks for one event, so "Seen by" fills in while the chat is
-// open. Returns the channel to unsubscribe on unmount.
+// open. Returns the function that stops listening, for unmount.
 export function subscribeToChatReads(
   eventId: string,
   onRead: (userId: string, lastReadAt: string) => void
-): RealtimeChannel {
-  return supabase
-    .channel(`event-chat-reads-${eventId}`)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'chat_reads', filter: `event_id=eq.${eventId}` },
-      (payload) => {
-        const row = payload.new as { user_id?: string; last_read_at?: string };
-        if (row?.user_id && row.last_read_at) onRead(row.user_id, row.last_read_at);
-      }
-    )
-    .subscribe();
+): () => void {
+  return listen(`event-chat-reads-${eventId}`, [
+    {
+      table: 'chat_reads',
+      event: '*',
+      match: { column: 'event_id', value: eventId },
+      onChange: (c) => {
+        const row = c.new as { user_id?: string; last_read_at?: string };
+        if (row.user_id && row.last_read_at) onRead(row.user_id, row.last_read_at);
+      },
+    },
+  ]);
 }
 
 export { seenBy, seenPositions } from './seenBy';

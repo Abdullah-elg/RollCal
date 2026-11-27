@@ -10,7 +10,8 @@ const escape = (text) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 // Email addresses in the text become links.
 const linkify = (text) =>
-  escape(text).replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, (email) => `<a href="mailto:${email}">${email}</a>`);
+  // The address ends at a letter, so a sentence's full stop stays outside the link.
+  escape(text).replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}/gi, (email) => `<a href="mailto:${email}">${email}</a>`);
 
 for (const [doc, slug] of Object.entries(PAGES)) {
   const d = LEGAL[doc];

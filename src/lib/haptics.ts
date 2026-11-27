@@ -25,3 +25,7 @@ export function hapticShutter() {
 export function hapticSuccess() {
   if (enabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(ignore);
 }
+
+export function hapticError() {
+  if (enabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(ignore);
+}

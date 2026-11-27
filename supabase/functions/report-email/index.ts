@@ -26,6 +26,27 @@ const PROJECT_REF = new URL(SUPABASE_URL).hostname.split('.')[0];
 const DASHBOARD = `https://supabase.com/dashboard/project/${PROJECT_REF}/editor`;
 // Links to reported photos stay valid this long.
 const PHOTO_LINK_SECONDS = 7 * 24 * 60 * 60;
+const MEDIA_URL = Deno.env.get('MEDIA_URL') || 'https://media.rollcal.app';
+const MEDIA_ADMIN_KEY = Deno.env.get('MEDIA_ADMIN_KEY') ?? '';
+
+// A week-long link to a photo in R2, or null if it isn't there (or the
+// Worker isn't set up), in which case Storage is asked.
+async function mediaLink(path: string): Promise<string | null> {
+  if (!MEDIA_ADMIN_KEY) return null;
+  try {
+    const res = await fetch(`${MEDIA_URL}/v1/links`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${MEDIA_ADMIN_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ bucket: 'event-photos', names: [path], seconds: PHOTO_LINK_SECONDS }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { links?: Record<string, { url: string }> };
+    return body.links?.[path]?.url ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -72,10 +93,14 @@ async function describe(admin: Admin, r: ReportRow): Promise<ReportForEmail> {
   } else if (r.target_type === 'photo') {
     const { data } = await admin.from('photos').select('storage_path').eq('id', r.target_id).maybeSingle();
     if (data?.storage_path) {
-      const { data: signed } = await admin.storage
-        .from('event-photos')
-        .createSignedUrl(data.storage_path, PHOTO_LINK_SECONDS);
-      out.photoUrl = signed?.signedUrl ?? null;
+      // In R2 (through the media Worker), or still in Storage.
+      out.photoUrl = await mediaLink(data.storage_path);
+      if (!out.photoUrl) {
+        const { data: signed } = await admin.storage
+          .from('event-photos')
+          .createSignedUrl(data.storage_path, PHOTO_LINK_SECONDS);
+        out.photoUrl = signed?.signedUrl ?? null;
+      }
     }
   }
   return out;

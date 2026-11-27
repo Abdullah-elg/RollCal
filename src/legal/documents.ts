@@ -8,7 +8,7 @@
 const OPERATOR = 'RollCal';
 const CONTACT = 'support@rollcal.app';
 const PROVINCE = 'Ontario';
-const UPDATED = 'October 27, 2026';
+const UPDATED = 'November 26, 2026';
 
 export type LegalDoc = 'terms' | 'pro' | 'privacy';
 
@@ -71,9 +71,10 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         ],
       },
       {
-        heading: 'Receipt scanning',
+        heading: 'Receipt scanning and recap captions',
         paragraphs: [
           'When you scan a receipt, the photo is sent to an artificial-intelligence service run by Google so it can be read. Readings can be wrong or incomplete; review every line before you share a bill. See the Privacy Policy for how the photo is handled.',
+          'Video recaps can show a short caption on each photo, written by an artificial-intelligence service run by Google from a small preview of the photo. Captions can be wrong; if one is inappropriate, report the photo and we will remove it.',
         ],
       },
       {
@@ -223,6 +224,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
           'When you contact support or report something: what you write, your account email (so we can reply), your phone type and app version, and for reports, what you reported. The person you report is not told who reported them.',
           'If you allow notifications: a notification token for your phone and your notification settings.',
           'Your age: we ask when you were born when you join, to check you are 13 or older. We keep only the fact that you passed, never the date.',
+          'If you join an event from a web browser instead of the app (as a guest): the name you give, the photos you add and reports you send, and a sign-in kept in that browser. We don’t ask for your email. You confirm you are 13 or older by ticking a box. A guest can only see and add photos in the events they joined.',
           'We do not use advertising or analytics tracking, and we do not sell your information.',
         ],
       },
@@ -235,27 +237,31 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Who can see it',
         paragraphs: [
-          'People in an event can see that event’s details, members, chat (including who has seen the latest message), photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name and username, so friends can add you. Only you and your friends can see your profile photo. Your email address is never shown to other people.',
+          'People in an event can see that event’s details, members, chat (including who has seen the latest message), photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name and username, so friends can add you. Only you and your friends can see your profile photo, unless you choose to show it to everyone in Settings → Privacy. Your email address is never shown to other people.',
         ],
       },
       {
         heading: 'Services that handle it for us',
         paragraphs: [
-          'Supabase hosts our database, file storage and sign-in. Your information is stored on servers in the United States, so it may be accessed by authorities there under US law.',
+          'Supabase hosts our database and sign-in. Your information is stored on servers in the United States, so it may be accessed by authorities there under US law.',
+          'Photos, videos and profile photos are stored with Cloudflare (R2) and delivered through Cloudflare’s network, which sees the address your phone or browser connects from.',
           'When you scan a receipt, the photo is sent to Google’s Gemini service to read it, under Google’s terms for that service. We do not keep the photo after it has been read.',
+          'When someone in an event plays its video recap, a small preview of each photo in the recap (up to 12) is sent to Google’s Gemini service to write a short caption describing the moment, such as “Dinner by the window”, and to rate how well it would look in the recap (used, with reactions, to pick the highlights). Only the picture is sent, not names or anything else about you. The caption is saved with the photo and shown to the people in that event; it is deleted when the photo is. Captions are written by a machine and can be wrong.',
           'Apple and Google handle sign-in when you use them, and will handle payment for Pro; we never see your card details.',
-          'Resend sends our emails, such as replies to support messages, from our servers.',
+          'Resend sends our emails, such as replies to support messages, from our servers. Email you send us is kept in our Microsoft 365 mailbox, and may pass through Cloudflare on the way.',
+          'Our website, rollcal.app, is served by Cloudflare, which sees the address your browser connects from, as any website host does.',
           'When you drop a pin on the map, your phone sends its coordinates to OpenStreetMap’s Nominatim service to find the place’s name, under the OpenStreetMap Foundation’s privacy policy. Nothing else about you is sent.',
           'Notifications: if you allow them, we keep a token for your phone and send each notification’s text (for example a friend’s name or a preview of a chat message) through Expo’s push service and Apple’s or Google’s notification service, which deliver it to your phone. You can turn notifications off in the app or in your phone’s settings.',
           'Maps are shown with Apple Maps on iPhone and Google Maps on Android. They receive the area of the map you are looking at, as any map app does, under Apple’s and Google’s privacy policies.',
           'Exchange rates come from ExchangeRate-API’s public feed. Our servers fetch the day’s rates; nothing about you is sent.',
           'When the app crashes or hits an error, Sentry receives a report of what went wrong, with the app version and your phone’s model and system version, so we can fix it. Reports don’t include your name, email, messages or photos.',
+          'Most of these services are based in the United States, and some process information in other countries too, so your information may be stored and used outside Canada, under the laws of those places.',
         ],
       },
       {
         heading: 'How long we keep it',
         paragraphs: [
-          'We keep your information while you have an account. Event photos and videos may be deleted sooner under the storage rules shown in the app. When you delete your account, we delete your profile and the content linked to it, including events you created; copies may remain in backups for up to 30 days before they are overwritten. Reports other people made about you are kept without the link to your account, so we can keep RollCal safe. Copies other people have already saved stay with them.',
+          'Guest sign-ins from a web browser that add no photos are deleted after 7 days; a guest’s photos are kept like everyone else’s. We keep your information while you have an account. Event photos and videos may be deleted sooner under the storage rules shown in the app. When you delete your account, we delete your profile and the content linked to it, including events you created; copies may remain in backups for up to 30 days before they are overwritten. Reports other people made about you are kept without the link to your account, so we can keep RollCal safe. Copies other people have already saved stay with them.',
         ],
       },
       {

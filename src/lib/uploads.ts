@@ -15,6 +15,9 @@ export type UploadAllowance = {
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 // About what fits under MAX_FILE_BYTES at 720p.
 export const VIDEO_MAX_SECONDS = 60;
+// Free accounts: short clips (supabase/plan-limits-2.sql checks the same).
+export const FREE_VIDEO_SECONDS = 15;
+export const FREE_VIDEO_BYTES = 25 * 1024 * 1024;
 
 export async function loadUploadAllowance(): Promise<UploadAllowance | null> {
   const { data, error } = await supabase.rpc('my_upload_allowance').maybeSingle();

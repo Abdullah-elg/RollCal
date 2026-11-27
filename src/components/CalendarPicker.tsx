@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { ArrowIcon } from './icons';
-import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 
 type Props = {
   value: Date;
@@ -138,7 +138,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.paper,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
-      borderRadius: 16,
+      borderRadius: radii.card,
       padding: spacing.sm,
     },
     header: {
@@ -178,7 +178,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       height: 34,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: 17,
+      borderRadius: radii.full,
     },
     dayToday: {
       borderWidth: StyleSheet.hairlineWidth,

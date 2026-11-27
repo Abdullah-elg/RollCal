@@ -28,6 +28,7 @@ import {
 } from '../lib/invitations';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { placeLabel } from '../lib/place';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'EventInvitations'>;
 
@@ -160,7 +161,7 @@ export default function EventInvitationsScreen({ navigation }: Props) {
                   <View style={styles.metaRow}>
                     <MapPinIcon size={14} color={colors.inkMuted} />
                     <Text style={styles.metaText} numberOfLines={1}>
-                      {item.event.location}
+                      {placeLabel(item.event.location)}
                     </Text>
                   </View>
                 ) : null}
@@ -226,7 +227,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderColor: c.line,
       borderWidth: 1,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       padding: spacing.md,
       gap: spacing.sm,
     },

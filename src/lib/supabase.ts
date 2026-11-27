@@ -20,6 +20,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     // Sessions persist on the device between app launches, encrypted with a
     // key kept in the Keychain / Keystore (see secureSession.ts).
     storage: secureSessionStorage,
+    // Fixed name for the saved sign-in. supabase-js names it after the
+    // address (sb-<first part of the host>-auth-token), so moving to
+    // api.rollcal.app, or off Supabase, would otherwise sign everyone out.
+    storageKey: 'sb-qwtvpmrxmlfuwmnyawcq-auth-token',
     autoRefreshToken: true,
     persistSession: true,
     // No browser URL to parse on native.

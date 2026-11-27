@@ -1,10 +1,23 @@
-// The Pro screen: what Pro adds. Once purchases are live (PURCHASES_LIVE in
-// lib/pro) it also shows the yearly and monthly prices in the user's
-// currency; until then it hides them and offers to switch Pro on for free.
+// The Plans screen: a swipeable pager of Free, Plus, Pro and Event Pass cards
+// that all list the same rows (PLAN_COMPARISON), so swiping compares plans.
+// Prices show in the person's currency. While PURCHASES_LIVE is off nobody
+// can buy: paid cards say it's free in the beta and offer to ask for it.
 
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AccessibilityInfo,
+  FlatList,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckIcon } from '../components/icons';
 import RatesCredit from '../components/RatesCredit';
@@ -12,15 +25,32 @@ import { Button } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { LegalDoc } from '../legal/documents';
-import { hapticLight } from '../lib/haptics';
 import { currencyName, Rates } from '../lib/currency';
 import { deviceCurrency, loadRates } from '../lib/fx';
-import { PRO_PERKS, PRO_PRICES, proPriceText, PURCHASES_LIVE } from '../lib/pro';
+import { hapticLight } from '../lib/haptics';
+import { yearlySavingPercent } from '../lib/planPrices';
+import {
+  Billing,
+  PLAN_COMPARISON,
+  isPass,
+  PASS_BLURBS,
+  PLAN_GROUP_BLURBS,
+  PLAN_GROUP_NAMES,
+  PLAN_GROUPS,
+  PlanGroup,
+  PLAN_NAMES,
+  PLAN_PRICES,
+  PlanId,
+  planOf,
+  priceText,
+  PURCHASES_LIVE,
+  UpgradeReason,
+} from '../lib/pro';
+import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'Upgrade'>;
-type Plan = 'yearly' | 'monthly';
 
 const LINKS: { doc: LegalDoc; label: string }[] = [
   { doc: 'terms', label: 'Terms of Service' },
@@ -28,13 +58,50 @@ const LINKS: { doc: LegalDoc; label: string }[] = [
   { doc: 'privacy', label: 'Privacy Policy' },
 ];
 
+// How much of the next card shows at the right edge, and the gap between cards.
+const PEEK = 24;
+const GAP = spacing.sm;
+
+// Which card opens first: the one that fixes what they just ran into.
+function startingPlan(reason: UpgradeReason | undefined, current: PlanId): PlanId {
+  if (reason === 'people') return current === 'plus' || current === 'pro' ? 'bigday' : 'party';
+  if (reason === 'photos' || reason === 'expiry') return current === 'free' ? 'party' : 'bigday';
+  return 'plus';
+}
+
 export default function UpgradeScreen({ navigation, route }: Props) {
-  const { reason } = route.params ?? {};
+  const { reason, plan: planParam, eventId } = route.params ?? {};
   const { profile } = useAuth();
   const { colors, type } = useTheme();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
   const insets = useSafeAreaInsets();
-  const [plan, setPlan] = useState<Plan>('yearly');
+  const { width } = useWindowDimensions();
+
+  const current: PlanId = planOf(profile);
+  // Two groups: a subscription that covers every event you host, or a pass
+  // for one event. Pro isn't on the screen any more; someone on it starts
+  // at Plus.
+  const start = planParam ?? startingPlan(reason, current);
+  const [group, setGroup] = useState<PlanGroup>(isPass(start) ? 'one' : 'every');
+  const ids = PLAN_GROUPS[group];
+  const firstIndex = Math.max(0, PLAN_GROUPS[isPass(start) ? 'one' : 'every'].indexOf(start));
+  const [index, setIndex] = useState(firstIndex);
+  const switchGroup = (g: PlanGroup) => {
+    if (g === group) return;
+    hapticLight();
+    setGroup(g);
+    setIndex(0);
+  };
+  const [billing, setBilling] = useState<Billing>('yearly');
+  const listRef = useRef<FlatList<PlanId>>(null);
+
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then(setReduceMotion)
+      .catch(() => {});
+  }, []);
+
   // Shown in the person's currency at today's rate; US dollars until the
   // rates load, or if they can't.
   const currency = profile?.currency ?? deviceCurrency();
@@ -42,153 +109,248 @@ export default function UpgradeScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (currency !== 'USD') loadRates().then(setRates);
   }, [currency]);
-  const prices = proPriceText(currency, rates);
-  const about = prices.converted ? 'about ' : '';
 
-  const choose = (next: Plan) => {
-    if (next === plan) return;
+  // The event an Event Pass is for, so the ask can name it.
+  const [eventTitle, setEventTitle] = useState<string | null>(null);
+  useEffect(() => {
+    if (!eventId) return;
+    supabase
+      .from('events')
+      .select('title')
+      .eq('id', eventId)
+      .maybeSingle()
+      .then(({ data }) => setEventTitle((data as { title?: string } | null)?.title ?? null));
+  }, [eventId]);
+
+  const cardWidth = width - spacing.lg - GAP - PEEK;
+  const interval = cardWidth + GAP;
+
+  const goTo = (i: number) => {
+    if (i === index) return;
     hapticLight();
-    setPlan(next);
+    setIndex(i);
+    listRef.current?.scrollToOffset({ offset: i * interval, animated: !reduceMotion });
   };
 
-  const perks = (
-    <View style={styles.perks}>
-      {PRO_PERKS.map((perk, i) => (
-        <View key={perk.title}>
-          {i > 0 && <View style={styles.divider} />}
-          <View style={styles.perkRow}>
-            <View style={styles.perkIcon}>
-              <CheckIcon size={16} color={colors.ink} />
-            </View>
-            <View style={styles.perkText}>
-              <Text style={type.body}>{perk.title}</Text>
-              <Text style={type.caption}>{perk.detail}</Text>
-            </View>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
+  const onSettle = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const i = Math.max(0, Math.min(ids.length - 1, Math.round(e.nativeEvent.contentOffset.x / interval)));
+    if (i !== index) setIndex(i);
+  };
 
-  const content = { padding: spacing.lg, paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.lg };
+  const ask = (id: PlanId) => {
+    const message =
+      isPass(id)
+        ? `I’d like the ${PLAN_NAMES[id]}${eventTitle ? ` for “${eventTitle}”` : eventId ? ' for one of my events' : ''}.`
+        : `I’d like to switch to ${PLAN_NAMES[id]}.`;
+    navigation.navigate('Support', { message });
+  };
 
-  if (profile?.is_pro) {
-    return (
-      <ScrollView style={styles.screen} contentContainerStyle={content}>
-        <Text style={type.display}>You’re on Pro.</Text>
-        <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>Thanks for supporting RollCal.</Text>
-        {perks}
-      </ScrollView>
-    );
-  }
-
-  const headline =
-    reason === 'scan'
-      ? 'You’ve used this month’s free scans.'
-      : reason === 'video'
-        ? 'Share videos with Pro.'
-        : reason === 'storage'
-          ? 'You’ve used your storage.'
-          : reason === 'expiry'
-            ? 'Keep your event’s photos.'
-            : reason === 'quiet'
-              ? 'Turn on Quiet mode.'
-              : 'Get more out of RollCal.';
-
-  const price = plan === 'yearly' ? prices.yearly : prices.monthly;
   const store = Platform.OS === 'ios' ? 'Apple ID' : 'Google Play account';
+  const converted = priceText(PLAN_PRICES.plus.monthlyUsdCents, currency, rates).converted;
+  const saving = (id: 'plus' | 'pro') =>
+    yearlySavingPercent(PLAN_PRICES[id].monthlyUsdCents, PLAN_PRICES[id].yearlyUsdCents);
 
-  return (
-    <ScrollView style={styles.screen} contentContainerStyle={content}>
-      <Text style={type.display}>{headline}</Text>
-      <Text style={[type.bodyMuted, { marginTop: spacing.sm }]}>
-        {PURCHASES_LIVE
-          ? `Pro is ${PRO_PRICES.trialDays} days free, then ${about}${prices.monthly} a month or ${prices.yearly} a year.`
-          : 'Here’s what Pro adds.'}
+  const cell = (value: string | boolean, paid: boolean) =>
+    value === true ? (
+      <View accessible accessibilityLabel="Included">
+        <CheckIcon size={16} color={paid ? colors.accent : colors.ink} />
+      </View>
+    ) : value === false ? (
+      <Text style={styles.none} accessibilityLabel="Not included">
+        –
       </Text>
+    ) : (
+      <Text style={styles.value}>{value}</Text>
+    );
 
-      {perks}
-
-      {/* No prices while there's nothing to buy: App Review treats prices
-          for a purchase the app can't make as unfinished. */}
-      {PURCHASES_LIVE && (
-        <View style={styles.plans}>
-          {(['yearly', 'monthly'] as const).map((p, i) => {
-            const selected = plan === p;
-            return (
-              <View key={p}>
-                {i > 0 && <View style={styles.divider} />}
-                <Pressable
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  onPress={() => choose(p)}
-                  style={({ pressed }) => [styles.planRow, pressed && { opacity: 0.6 }]}
-                >
-                  <View style={styles.perkText}>
-                    <Text style={type.body}>
-                      {p === 'yearly'
-                        ? `Yearly · ${about}${prices.yearly} a year`
-                        : `Monthly · ${about}${prices.monthly} a month`}
-                    </Text>
-                    {p === 'yearly' && <Text style={type.caption}>Save {PRO_PRICES.yearlySaving}</Text>}
-                  </View>
-                  <View style={styles.radio}>{selected && <View style={styles.radioFill} />}</View>
-                </Pressable>
-              </View>
-            );
-          })}
+  const renderCard = ({ item: id }: { item: PlanId }) => {
+    const isCurrent = id === current;
+    let amount: string;
+    let per: string;
+    let savingLine: string | null = null;
+    if (id === 'free') {
+      amount = 'Free';
+      per = '';
+    } else if (isPass(id)) {
+      amount = priceText(PLAN_PRICES.passes[id], currency, rates).text;
+      per = 'once';
+    } else {
+      const usd = billing === 'yearly' ? PLAN_PRICES[id].yearlyUsdCents : PLAN_PRICES[id].monthlyUsdCents;
+      amount = priceText(usd, currency, rates).text;
+      per = billing === 'yearly' ? '/ year' : '/ month';
+      if (billing === 'yearly') savingLine = `Save ${saving(id)}% with yearly`;
+    }
+    return (
+      <View style={[styles.card, { width: cardWidth }]}>
+        <View style={styles.cardHead}>
+          <Text style={type.h2}>{PLAN_NAMES[id]}</Text>
+          {isCurrent && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>Your plan</Text>
+            </View>
+          )}
         </View>
-      )}
+        <View style={styles.priceRow}>
+          <Text style={styles.price}>{amount}</Text>
+          {per ? <Text style={styles.per}>{per}</Text> : null}
+        </View>
+        {savingLine && <Text style={styles.saving}>{savingLine}</Text>}
+        {isPass(id) && <Text style={styles.blurb}>{PASS_BLURBS[id]}</Text>}
+        {!PURCHASES_LIVE && id !== 'free' && (
+          <Text style={styles.blurb}>Free while RollCal is in beta. Tap below and we’ll turn it on.</Text>
+        )}
 
-      {PURCHASES_LIVE ? null : (
-        // Nothing to buy yet: say so plainly and offer a way in, rather than a
-        // button that does nothing.
-        <View style={styles.beta}>
-          <Text style={type.h3}>Pro is free during the beta</Text>
-          <Text style={[type.bodyMuted, { marginTop: spacing.xs }]}>
-            Want to try it? Ask us and we’ll switch it on for your account.
-          </Text>
+        <View style={styles.rows}>
+          {PLAN_COMPARISON.map((r) => (
+            <View key={r.feature} style={styles.row}>
+              <Text style={styles.feature}>{r.feature}</Text>
+              <View style={styles.cellWrap}>{cell(r[id], id !== 'free')}</View>
+            </View>
+          ))}
+        </View>
+
+        {isCurrent ? (
+          <Text style={[type.bodyMuted, styles.current]}>You’re on this plan</Text>
+        ) : (
           <Button
-            title="Ask for Pro"
+            title={isPass(id) ? `Get the ${PLAN_NAMES[id]}` : `Switch to ${PLAN_NAMES[id]}`}
             variant="secondary"
-            onPress={() => navigation.navigate('Support')}
+            onPress={() => ask(id)}
             style={{ marginTop: spacing.md }}
           />
-        </View>
-      )}
-      {PURCHASES_LIVE && prices.converted && (
-        <Text style={[type.caption, styles.note]}>
-          Pro is priced in US dollars ({prices.usd.monthly} a month or {prices.usd.yearly} a year).
-          Prices here are converted to {currency} ({currencyName(currency)}) at today’s exchange
-          rate, as a guide.
-          {PURCHASES_LIVE &&
-            ` You’re charged in your ${store}’s currency, at the price shown before you confirm.`}{' '}
-          <RatesCredit />
-        </Text>
-      )}
-      {PURCHASES_LIVE && (
-        <Text style={[type.caption, styles.note]}>
-          {PRO_PRICES.trialDays}-day free trial, then {about}{price} a{' '}
-          {plan === 'yearly' ? 'year' : 'month'} for the plan you picked. Payment is charged to your{' '}
-          {store} when you confirm. Your subscription renews automatically unless you cancel at least
-          24 hours before the end of the current period. Manage or cancel it any time in your
-          account’s subscription settings.
-        </Text>
-      )}
+        )}
+      </View>
+    );
+  };
 
-      <View style={styles.links}>
-        {LINKS.map(({ doc, label }, i) => (
-          <View key={doc} style={styles.linkItem}>
-            {i > 0 && <Text style={type.caption}> · </Text>}
+  return (
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={{ paddingTop: spacing.md, paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.lg }}
+    >
+      <View style={styles.toggleWrap}>
+        <View style={styles.toggle} accessibilityRole="tablist">
+          {(['every', 'one'] as const).map((g) => (
             <Pressable
-              accessibilityRole="link"
-              hitSlop={{ top: 14, bottom: 14, left: 6, right: 6 }}
-              onPress={() => navigation.navigate('Legal', { doc })}
+              key={g}
+              onPress={() => switchGroup(g)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: group === g }}
+              style={[styles.toggleOption, group === g && styles.toggleActive]}
             >
-              <Text style={styles.link}>{label}</Text>
+              <Text style={[styles.toggleText, group === g && styles.toggleTextActive]}>
+                {PLAN_GROUP_NAMES[g]}
+              </Text>
             </Pressable>
-          </View>
+          ))}
+        </View>
+      </View>
+      <Text style={[type.caption, styles.groupBlurb]}>{PLAN_GROUP_BLURBS[group]}</Text>
+
+      <View style={styles.tabs} accessibilityRole="tablist">
+        {ids.map((id, i) => (
+          <Pressable
+            key={id}
+            onPress={() => goTo(i)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: i === index }}
+            hitSlop={{ top: 10, bottom: 10 }}
+            style={({ pressed }) => [styles.tab, pressed && { opacity: 0.6 }]}
+          >
+            <Text style={[styles.tabText, i === index && styles.tabTextActive]}>{PLAN_NAMES[id]}</Text>
+          </Pressable>
         ))}
+      </View>
+
+      {/* Only Plus is billed monthly or yearly; Free and passes aren't. The
+          row keeps its space so the cards don't jump while swiping. */}
+      <View
+        style={[
+          styles.toggleWrap,
+          ids[index] !== 'plus' && { opacity: 0 },
+          // Passes are never monthly or yearly: no gap for the switch there.
+          group === 'one' && { display: 'none' },
+        ]}
+        pointerEvents={ids[index] === 'plus' ? 'auto' : 'none'}
+        accessibilityElementsHidden={ids[index] !== 'plus'}
+      >
+        <View style={styles.toggle}>
+          {(['monthly', 'yearly'] as const).map((opt) => (
+            <Pressable
+              key={opt}
+              onPress={() => {
+                if (opt === billing) return;
+                hapticLight();
+                setBilling(opt);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: billing === opt }}
+              style={[styles.toggleOption, billing === opt && styles.toggleActive]}
+            >
+              <Text style={[styles.toggleText, billing === opt && styles.toggleTextActive]}>
+                {opt === 'monthly' ? 'Monthly' : 'Yearly'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
+      <FlatList
+        ref={listRef}
+        // A new list per group, so it starts at that group's first card.
+        key={group}
+        data={ids}
+        keyExtractor={(id) => id}
+        renderItem={renderCard}
+        extraData={`${billing}|${current}|${currency}|${rates ? 1 : 0}|${eventTitle}`}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={interval}
+        decelerationRate="fast"
+        disableIntervalMomentum
+        initialScrollIndex={group === (isPass(start) ? 'one' : 'every') ? firstIndex : 0}
+        getItemLayout={(_, i) => ({ length: interval, offset: i * interval, index: i })}
+        contentContainerStyle={{ paddingLeft: spacing.lg, paddingRight: spacing.lg, gap: GAP }}
+        onMomentumScrollEnd={onSettle}
+        onScrollEndDrag={onSettle}
+        style={styles.pager}
+      />
+
+      <View style={styles.dots} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        {ids.map((id, i) => (
+          <View key={id} style={[styles.dot, i === index && styles.dotActive]} />
+        ))}
+      </View>
+
+      <View style={styles.footer}>
+        {converted && (
+          <Text style={[type.caption, styles.note]}>
+            Plans are priced in US dollars. Prices here are converted to {currency} ({currencyName(currency)}) at today’s exchange rate, as a guide.
+            {PURCHASES_LIVE && ` You’re charged in your ${store}’s currency, at the price shown before you confirm.`}{' '}
+            <RatesCredit />
+          </Text>
+        )}
+        {PURCHASES_LIVE && (
+          <Text style={[type.caption, styles.note]}>
+            Payment is charged to your {store} when you confirm. Subscriptions renew automatically unless
+            you cancel at least 24 hours before the end of the current period. Manage or cancel any time in
+            your account’s subscription settings.
+          </Text>
+        )}
+        <View style={styles.links}>
+          {LINKS.map(({ doc, label }, i) => (
+            <View key={doc} style={styles.linkItem}>
+              {i > 0 && <Text style={type.caption}> · </Text>}
+              <Pressable
+                accessibilityRole="link"
+                hitSlop={{ top: 14, bottom: 14, left: 6, right: 6 }}
+                onPress={() => navigation.navigate('Legal', { doc })}
+              >
+                <Text style={styles.link}>{label}</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
       </View>
     </ScrollView>
   );
@@ -197,47 +359,76 @@ export default function UpgradeScreen({ navigation, route }: Props) {
 const makeStyles = (c: Palette, t: TypeTokens) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: c.paper },
-    perks: { marginTop: spacing.lg, marginBottom: spacing.lg },
-    divider: { height: StyleSheet.hairlineWidth, backgroundColor: c.line },
-    perkRow: {
+    tabs: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: spacing.md,
-      paddingVertical: spacing.md,
+      justifyContent: 'center',
+      gap: spacing.xl,
+      paddingHorizontal: spacing.lg,
     },
-    perkIcon: { height: 22, justifyContent: 'center' },
-    perkText: { flex: 1, gap: 2 },
-    plans: {
-      marginBottom: spacing.lg,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderColor: c.line,
-    },
-    planRow: {
+    tab: { minHeight: 32, justifyContent: 'center' },
+    tabText: { ...t.body, color: c.inkMuted },
+    tabTextActive: { fontFamily: fonts.bodySemiBold, color: c.ink },
+    toggleWrap: { alignItems: 'center', marginTop: spacing.md, marginBottom: spacing.lg },
+    groupBlurb: { textAlign: 'center', paddingHorizontal: spacing.xl, marginTop: -spacing.sm, marginBottom: spacing.md, color: c.inkMuted },
+    toggle: {
       flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.md,
-      minHeight: 56,
-      paddingVertical: spacing.sm,
+      backgroundColor: c.line,
+      borderRadius: radii.control,
+      padding: 3,
     },
-    radio: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      borderWidth: 1.5,
-      borderColor: c.ink,
+    toggleOption: {
+      minWidth: 104,
+      minHeight: 32,
+      borderRadius: radii.control - 3,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    radioFill: { width: 20, height: 20, borderRadius: 10, backgroundColor: c.ink, margin: -1.5 },
-    note: { marginTop: spacing.md },
-    beta: {
+    toggleActive: { backgroundColor: c.card },
+    toggleText: { ...t.caption, fontFamily: fonts.bodyMedium, color: c.inkMuted },
+    toggleTextActive: { fontFamily: fonts.bodySemiBold, color: c.ink },
+    pager: { flexGrow: 0 },
+    card: {
       backgroundColor: c.card,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       padding: spacing.lg,
     },
+    cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+    badge: {
+      backgroundColor: c.accent,
+      borderRadius: radii.full,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+    },
+    badgeText: { ...t.caption, fontFamily: fonts.bodySemiBold, color: c.onAccent },
+    priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: spacing.md },
+    price: { ...t.display },
+    per: { ...t.bodyMuted },
+    saving: { ...t.caption, fontFamily: fonts.bodySemiBold, color: c.accentText, marginTop: 2 },
+    blurb: { ...t.caption, marginTop: spacing.sm },
+    rows: {
+      marginTop: spacing.lg,
+      paddingTop: spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.line,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      minHeight: 36,
+    },
+    feature: { ...t.bodyMuted, flex: 1 },
+    cellWrap: { flexShrink: 0, maxWidth: '50%', alignItems: 'flex-end' },
+    value: { ...t.body, fontFamily: fonts.bodyMedium, textAlign: 'right' },
+    none: { ...t.bodyMuted, textAlign: 'right' },
+    current: { marginTop: spacing.md, textAlign: 'center' },
+    dots: { flexDirection: 'row', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.md },
+    dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.line },
+    dotActive: { backgroundColor: c.ink },
+    footer: { paddingHorizontal: spacing.lg },
+    note: { marginTop: spacing.md },
     links: {
       flexDirection: 'row',
       flexWrap: 'wrap',

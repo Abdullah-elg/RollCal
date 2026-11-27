@@ -74,7 +74,7 @@ const makeStyles = (c: Palette) =>
     card: {
       marginHorizontal: spacing.md,
       backgroundColor: c.paper,
-      borderRadius: radii.md,
+      borderRadius: radii.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.line,
       paddingHorizontal: spacing.lg,
@@ -86,6 +86,6 @@ const makeStyles = (c: Palette) =>
       elevation: 8,
     },
     titleRow: { minHeight: 36, justifyContent: 'center' },
-    row: { minHeight: 48, justifyContent: 'center' },
+    row: { minHeight: 52, justifyContent: 'center' },
     divider: { height: StyleSheet.hairlineWidth, backgroundColor: c.line },
   });

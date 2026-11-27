@@ -35,11 +35,14 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useProPrompt } from '../context/ProPromptContext';
+import { useUnread } from '../context/UnreadContext';
 import { animateNext } from '../lib/animate';
 import { daysLeft, loadPhotoExpiry, PhotoExpiry, WARN_DAYS } from '../lib/expiry';
 import { pickRollMedia, uploadBlocker, uploadRollMedia } from '../lib/photos';
 import { rollState } from '../lib/roll';
 import { hapticLight } from '../lib/haptics';
+import { badgeFor, loadReactions, REACTION_NAMES, REACTIONS, ReactionSummary, toggleReaction } from '../lib/reactions';
+import { getPhotoReadMap, isRecentMark, previousPhotoMark } from '../lib/unread';
 import { loadBlockedIds } from '../lib/safety';
 import { supabase } from '../lib/supabase';
 import {
@@ -53,16 +56,26 @@ import { AppStackParamList } from '../navigation/types';
 import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
 import { Event, Photo } from '../types';
 import ConfirmDialog from './ConfirmDialog';
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, PlayIcon } from './icons';
+import ActionMenuSheet from './ActionMenuSheet';
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, MoreIcon, PlayIcon } from './icons';
 import ReportSheet from './ReportSheet';
 import { Button, EmptyNote } from './ui';
-import { signedUrls } from '../lib/signedUrls';
+import { guestName } from '../lib/guests';
+import { loadAllowed } from '../lib/postPermissions';
+import { Allowed, mayPost, POST_BLOCKED_NOTE } from '../lib/postRules';
+import { signedLinks, signedUrl } from '../lib/signedUrls';
+import InfoTip from './InfoTip';
 
 const BUCKET = 'event-photos';
 const GRID_GAP = 2;
+// The film border around the photos inside the strip.
+const FILM_FRAME = 8;
 
 export type LoadedPhoto = Photo & {
+  // Full size, for photos; videos are linked when they play (RollVideo).
   url: string | null;
+  // The small preview for the grid: a photo's, or a video's still frame.
+  thumbUrl: string | null;
   uploaderName: string;
 };
 
@@ -77,6 +90,10 @@ type Props = {
   onReopenRoll?: () => void;
   coverPhotoId?: string | null;
   onSetCoverPhoto?: (photoId: string | null) => void;
+  // The event page shows at most this many tiles; past that the last tile
+  // says how many more there are and calls onShowAll (the All photos screen).
+  previewCount?: number;
+  onShowAll?: () => void;
 };
 
 type MediaLibraryModule = typeof import('expo-media-library/legacy');
@@ -94,9 +111,42 @@ function getMediaLibrary(): MediaLibraryModule | null {
   return mediaLibrary;
 }
 
+// Film stock colours: fixed in light and dark mode, it's film.
+// The film strip is a darker shade of the page, with sprocket holes in the
+// page colour so they look punched through.
+type FilmColors = { base: string; hole: string; text: string; textMuted: string; plate: string };
+export function filmColors(c: Palette, dark: boolean): FilmColors {
+  return dark
+    ? { base: '#0A0D0B', hole: c.paper, text: c.ink, textMuted: c.inkMuted, plate: c.card }
+    : { base: '#EAE6DB', hole: c.paper, text: c.ink, textMuted: '#565D55', plate: c.card };
+}
+
+// A row of sprocket holes along the edge of the film strip.
+function Sprockets({ width }: { width: number }) {
+  const { colors, mode } = useTheme();
+  const hole = filmColors(colors, mode === 'dark').hole;
+  const count = Math.max(6, Math.floor(width / 18));
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: 8,
+        height: 4,
+      }}
+    >
+      {Array.from({ length: count }, (_, i) => (
+        <View key={i} style={{ width: 6, height: 4, borderRadius: 1.5, backgroundColor: hole }} />
+      ))}
+    </View>
+  );
+}
+
 // Photo count styled like a film camera's exposure counter.
 function ExposureCounter({ count }: { count: number }) {
   const { colors, mode } = useTheme();
+  const FILM = filmColors(colors, mode === 'dark');
   const formatted = count < 10 ? `0${count}` : String(count);
 
   return (
@@ -104,13 +154,12 @@ function ExposureCounter({ count }: { count: number }) {
       style={{
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: mode === 'dark' ? '#202622' : '#ECE9E1',
+        backgroundColor: FILM.plate,
         borderWidth: 1,
-        borderColor: colors.line,
-        borderRadius: 4,
+        borderColor: FILM.hole,
+        borderRadius: radii.tag,
         paddingHorizontal: 6,
         paddingVertical: 2,
-        marginLeft: spacing.sm,
         gap: 4,
       }}
     >
@@ -119,7 +168,7 @@ function ExposureCounter({ count }: { count: number }) {
           fontSize: 9,
           fontFamily: fonts.bodySemiBold,
           letterSpacing: 0.8,
-          color: colors.inkMuted,
+          color: FILM.textMuted,
           textTransform: 'uppercase',
         }}
       >
@@ -129,7 +178,7 @@ function ExposureCounter({ count }: { count: number }) {
         style={{
           fontSize: 12,
           fontFamily: fonts.headingMedium,
-          color: colors.ink,
+          color: FILM.text,
           fontVariant: ['tabular-nums'],
         }}
       >
@@ -145,12 +194,19 @@ function formatDuration(ms: number): string {
 }
 
 // Stands in for a thumbnail: videos aren't signed until they're opened.
-function VideoTileFace({ durationMs }: { durationMs: number | null }) {
+function VideoTileFace({
+  durationMs,
+  hasStill = false,
+}: {
+  durationMs: number | null;
+  // A still frame shows underneath: dim it a little instead of covering it.
+  hasStill?: boolean;
+}) {
   const { colors, mode, type } = useTheme();
   // Dark in either mode, but lifted off the page in dark mode so the tile
   // still reads as a tile.
-  const bg = mode === 'dark' ? colors.line : colors.ink;
-  const fg = mode === 'dark' ? colors.ink : colors.paper;
+  const bg = hasStill ? 'rgba(0,0,0,0.22)' : mode === 'dark' ? colors.line : colors.ink;
+  const fg = hasStill ? '#FFFFFF' : mode === 'dark' ? colors.ink : colors.paper;
 
   return (
     <View
@@ -185,6 +241,9 @@ function DevelopingPhotoItem({
   style,
   imageStyle,
   isDeveloping,
+  reported,
+  reaction,
+  isNew,
   onPress,
   children,
 }: {
@@ -192,20 +251,80 @@ function DevelopingPhotoItem({
   style: StyleProp<ViewStyle>;
   imageStyle: StyleProp<ImageStyle>;
   isDeveloping?: boolean;
+  // Reported to you as host and not dealt with yet: outlined in red.
+  reported?: boolean;
+  // The most-used reaction and the total, for the badge bottom-left.
+  reaction?: { emoji: string; total: number } | null;
+  // Added by someone else since you last looked: a coral dot top-right.
+  isNew?: boolean;
   onPress: () => void;
   children?: React.ReactNode;
 }) {
-  const { mode } = useTheme();
-  const uri = photo.url;
-  const face =
-    photo.kind === 'video' ? <VideoTileFace durationMs={photo.duration_ms} /> : null;
+  const { mode, colors } = useTheme();
+  const uri = photo.thumbUrl ?? photo.url;
+  const face = (
+    <>
+      {photo.kind === 'video' ? (
+        <VideoTileFace durationMs={photo.duration_ms} hasStill={!!uri} />
+      ) : null}
+      {reported ? (
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { borderWidth: 3, borderColor: colors.danger }]}
+        />
+      ) : null}
+      {reaction ? (
+        <View
+          pointerEvents="none"
+          accessible
+          accessibilityLabel={`${reaction.total} ${reaction.total === 1 ? 'reaction' : 'reactions'}`}
+          style={{
+            position: 'absolute',
+            left: 4,
+            bottom: 4,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 3,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            borderRadius: radii.full,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+          }}
+        >
+          <Text style={{ fontSize: 11 }}>{reaction.emoji}</Text>
+          <Text style={{ fontSize: 11, color: '#FFFFFF', fontFamily: fonts.bodySemiBold }}>
+            {reaction.total}
+          </Text>
+        </View>
+      ) : null}
+      {isNew ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 5,
+            right: 5,
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: colors.live,
+          }}
+        />
+      ) : null}
+    </>
+  );
+  const a11y = reported
+    ? { accessibilityLabel: `Reported ${photo.kind === 'video' ? 'video' : 'photo'}. Opens the report.` }
+    : isNew
+      ? { accessibilityLabel: `New ${photo.kind === 'video' ? 'video' : 'photo'}` }
+      : {};
   const anim = useRef(new Animated.Value(isDeveloping ? 0 : 1)).current;
 
   useEffect(() => {
     if (isDeveloping) {
       Animated.timing(anim, {
         toValue: 1,
-        duration: 550,
+        duration: 250,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
@@ -214,7 +333,11 @@ function DevelopingPhotoItem({
 
   if (!isDeveloping) {
     return (
-      <Pressable onPress={onPress} style={style}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [style, pressed && { transform: [{ scale: 0.97 }] }]}
+        {...a11y}
+      >
         {uri ? <Image source={{ uri }} style={imageStyle} /> : null}
         {face}
         {children}
@@ -236,7 +359,15 @@ function DevelopingPhotoItem({
   const washColor = mode === 'dark' ? '#232A26' : '#FFFEFA';
 
   return (
-    <Pressable onPress={onPress} style={[style, { overflow: 'hidden' }]}>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        style,
+        { overflow: 'hidden' },
+        pressed && { transform: [{ scale: 0.97 }] },
+      ]}
+      {...a11y}
+    >
       {uri ? (
         <Animated.Image
           source={{ uri }}
@@ -280,22 +411,19 @@ function RollVideoPlayer({ uri }: { uri: string }) {
   return <VideoView player={player} nativeControls contentFit="contain" style={{ width: '100%', height: '100%' }} />;
 }
 
-// Signs the video only once its page is showing.
-function RollVideo({ storagePath }: { storagePath: string }) {
+// Signs the video only once its page is showing. Also used by HostReportScreen.
+export function RollVideo({ storagePath }: { storagePath: string }) {
   const { colors, type } = useTheme();
   const [uri, setUri] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(storagePath, 3600)
-      .then(({ data }) => {
-        if (cancelled) return;
-        if (data) setUri(data.signedUrl);
-        else setFailed(true);
-      });
+    signedUrl(BUCKET, storagePath).then((url) => {
+      if (cancelled) return;
+      if (url) setUri(url);
+      else setFailed(true);
+    });
     return () => {
       cancelled = true;
     };
@@ -316,13 +444,23 @@ export default function EventAlbum({
   onReopenRoll,
   coverPhotoId,
   onSetCoverPhoto,
+  previewCount,
+  onShowAll,
 }: Props) {
   const { profile } = useAuth();
   const { showProPrompt } = useProPrompt();
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
-  const { colors, type } = useTheme();
-  const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
+  const { colors, type, mode } = useTheme();
+  const styles = useMemo(() => makeStyles(colors, type, mode === 'dark'), [colors, type, mode]);
   const { width: screenWidth } = useWindowDimensions();
+  // Photos here reported to you as host, still waiting on keep or delete.
+  // Only the host's list has any (they're loaded by host).
+  const { hostReports } = useUnread();
+  const reportByPhoto = useMemo(
+    () =>
+      new Map(hostReports.filter((r) => r.event_id === event.id).map((r) => [r.photo_id, r.id])),
+    [hostReports, event.id]
+  );
   const insets = useSafeAreaInsets();
   const [photos, setPhotos] = useState<LoadedPhoto[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -334,10 +472,19 @@ export default function EventAlbum({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [reporting, setReporting] = useState(false);
   const [busySaving, setBusySaving] = useState(false);
+  // The ⋯ menu in the photo viewer: save, event photo, report, delete.
+  const [viewerMenu, setViewerMenu] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [allowance, setAllowance] = useState<UploadAllowance | null>(null);
   const [developingIds, setDevelopingIds] = useState<Set<string>>(new Set());
   const hasLoadedRef = useRef(false);
+  // null: reactions couldn't be loaded, so the bar and badges stay hidden.
+  const [reactions, setReactions] = useState<Map<string, ReactionSummary> | null>(null);
+  const bounce = useRef(new Animated.Value(1)).current;
+  const [bouncing, setBouncing] = useState<string | null>(null);
+  // When photos were last viewed, read once on mount before this visit marks
+  // them read, so the "new" dots last for the visit.
+  const [lastSeen, setLastSeen] = useState<string | null>(null);
   const flatListRef = useRef<FlatList<LoadedPhoto>>(null);
 
   const uploadsClosed =
@@ -457,22 +604,23 @@ export default function EventAlbum({
     // Photos and videos from people you've blocked stay out of your roll.
     const rows = allRows.filter((r) => !blockedIds.has(r.uploader_id));
 
-    // Videos are signed when opened, not for the grid. Links are reused
-    // (lib/signedUrls), so photos already seen load from the phone's cache.
-    const stills = rows.filter((r) => r.kind !== 'video');
+    // Links are reused (lib/signedUrls), so photos already seen load from
+    // the phone's cache. A video's own link waits until it plays.
     const uploaderIds = [...new Set(rows.map((r) => r.uploader_id))];
-    const [urlByPath, { data: profiles }] = await Promise.all([
-      signedUrls(BUCKET, stills.map((r) => r.storage_path)),
+    // Videos too, for their still frame.
+    const [linkByPath, { data: profiles }] = await Promise.all([
+      signedLinks(BUCKET, rows.map((r) => r.storage_path)),
       uploaderIds.length > 0
-        ? supabase.from('profiles').select('id, display_name').in('id', uploaderIds)
+        ? supabase.from('profiles').select('*').in('id', uploaderIds)
         : Promise.resolve({ data: [] as { id: string; display_name: string }[] }),
     ]);
 
     const loadedList: LoadedPhoto[] = rows.map((r) => ({
       ...r,
-      url: urlByPath.get(r.storage_path) ?? null,
+      url: r.kind === 'video' ? null : (linkByPath.get(r.storage_path)?.url ?? null),
+      thumbUrl: linkByPath.get(r.storage_path)?.thumb ?? null,
       uploaderName:
-        profiles?.find((p) => p.id === r.uploader_id)?.display_name ?? 'Someone',
+        guestName(profiles?.find((p) => p.id === r.uploader_id)),
     }));
 
     animateNext(hasLoadedRef.current);
@@ -522,6 +670,81 @@ export default function EventAlbum({
     load();
   }, [load, refreshSeq]);
 
+  useEffect(() => {
+    let live = true;
+    getPhotoReadMap(userId)
+      .then((map) => {
+        if (!live) return;
+        const at = map[event.id];
+        // A mark written seconds ago is this visit's own; use the one before.
+        setLastSeen(at && isRecentMark(at) ? (previousPhotoMark(event.id) ?? null) : (at ?? null));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // Once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const photoIdsKey = useMemo(() => photos.map((p) => p.id).join(','), [photos]);
+  useEffect(() => {
+    if (!photoIdsKey) return;
+    let live = true;
+    loadReactions(photoIdsKey.split(','), userId).then((m) => {
+      if (live) setReactions(m);
+    });
+    return () => {
+      live = false;
+    };
+  }, [photoIdsKey, userId, refreshSeq]);
+
+  const react = async (photoId: string, emoji: string) => {
+    if (!reactions) return;
+    const was = reactions.get(photoId)?.mine.has(emoji) ?? false;
+    const apply = (on: boolean) =>
+      setReactions((prev) => {
+        if (!prev) return prev;
+        const next = new Map(prev);
+        const cur = next.get(photoId);
+        const counts = { ...(cur?.counts ?? { '❤️': 0, '😂': 0, '🔥': 0 }) };
+        const mine = new Set(cur?.mine ?? []);
+        counts[emoji] = Math.max(0, (counts[emoji] ?? 0) + (on ? 1 : -1));
+        if (on) mine.add(emoji);
+        else mine.delete(emoji);
+        next.set(photoId, { counts, mine });
+        return next;
+      });
+    hapticLight();
+    setBouncing(`${photoId}${emoji}`);
+    bounce.setValue(1);
+    Animated.sequence([
+      Animated.spring(bounce, { toValue: 1.2, speed: 40, bounciness: 0, useNativeDriver: true }),
+      Animated.spring(bounce, { toValue: 1, speed: 40, bounciness: 8, useNativeDriver: true }),
+    ]).start();
+    apply(!was);
+    const ok = await toggleReaction(photoId, userId, emoji, !was);
+    if (!ok) apply(was);
+  };
+
+  const isNewPhoto = (p: LoadedPhoto) =>
+    !!lastSeen && p.uploader_id !== userId && p.created_at > lastSeen;
+  const badgeOf = (p: LoadedPhoto) => badgeFor(reactions?.get(p.id));
+
+  // Who the host let add photos, when only the host may (post-permissions.sql).
+  const [allowed, setAllowed] = useState<Allowed[]>([]);
+  useEffect(() => {
+    if (event.photos_by !== 'host' || isLeader) return;
+    let live = true;
+    loadAllowed(event.id).then((rows) => {
+      if (live) setAllowed(rows);
+    });
+    return () => {
+      live = false;
+    };
+  }, [event.id, event.photos_by, isLeader, refreshSeq]);
+  const canAdd = mayPost(event, userId, 'photos', allowed);
+
   const addPhotos = async () => {
     const isPro = !!profile?.is_pro;
     const blocked = await uploadBlocker(isPro);
@@ -567,7 +790,7 @@ export default function EventAlbum({
     if (!MediaLibrary) {
       Alert.alert(
         'Saving unavailable',
-        "This build can't reach your photo library. Viewing the roll still works."
+        "This build can't reach your photo library. Viewing photos still works."
       );
       return false;
     }
@@ -576,15 +799,14 @@ export default function EventAlbum({
       Alert.alert('Permission needed', 'Allow photo access to save to your camera roll.');
       return false;
     }
-    const { data } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(photo.storage_path, 300);
-    if (!data) return false;
+    // From R2 or, for files not copied there yet, Supabase Storage.
+    const link = await signedUrl(BUCKET, photo.storage_path);
+    if (!link) return false;
     // The extension (.jpg, .mp4, .mov) tells the library what it's saving.
     const filename = photo.storage_path.split('/').pop() ?? (photo.kind === 'video' ? 'video.mp4' : 'photo.jpg');
     const target = new File(Paths.cache, filename);
     if (target.exists) target.delete();
-    const downloaded = await File.downloadFileAsync(data.signedUrl, target);
+    const downloaded = await File.downloadFileAsync(link, target);
     await MediaLibrary.saveToLibraryAsync(downloaded.uri);
     return true;
   };
@@ -668,30 +890,37 @@ export default function EventAlbum({
   let mutedSummaryLine: string | null = null;
 
   if (beforeOpen) {
-    statusLine = 'The roll opens when the event starts.';
+    statusLine = 'Photos open when the event starts.';
   } else if (uploadOpen) {
-    statusLine = `The roll is open. ${timeLeftText} left.`;
+    statusLine = `Add photos for ${timeLeftText}.`;
   } else if (withinWindow && uploadsClosed) {
-    statusLine = isLeader ? 'The roll was closed early.' : 'The host closed the roll.';
+    statusLine = isLeader ? 'You closed adding photos early.' : 'The host closed adding photos.';
     if (photos.length > 0) {
       mutedSummaryLine = photoSummary;
     }
   } else {
     if (photos.length > 0) {
-      statusLine = 'Roll closed.';
+      statusLine = 'Adding photos is closed.';
       mutedSummaryLine = photoSummary;
     } else {
-      statusLine = 'Roll closed. No photos taken.';
+      statusLine = 'Adding photos is closed. No photos were added.';
     }
   }
 
   // Free events: how long the photos are kept, or that they've gone.
   const photosExpired = !!expiry?.expiredAt;
+  const showReopen = isLeader && !beforeOpen && !uploadOpen && !photosExpired && !!onReopenRoll;
   const expiresAt = expiry?.expiresAt ?? null;
+  // Free events can be kept with an Event Pass (or a plan).
+  const canKeepForever = !!expiresAt && !photosExpired;
+  const keepForever = () => {
+    hapticLight();
+    navigation.navigate('Upgrade', { plan: 'party', eventId: event.id });
+  };
   const expiringSoon = !photosExpired && !!expiresAt && daysLeft(expiresAt) <= WARN_DAYS;
   let expiryLine: string | null = null;
   if (photosExpired) {
-    statusLine = 'Roll closed.';
+    statusLine = 'Adding photos is closed.';
     mutedSummaryLine = null;
     expiryLine = 'This event’s photos were deleted 30 days after it ended.';
   } else if (expiresAt && !beforeOpen) {
@@ -712,6 +941,52 @@ export default function EventAlbum({
     const rest = photos.filter((p) => p.id !== coverPhotoId);
     return [cover, ...rest];
   }, [photos, coverPhotoId, hasCover]);
+
+  // Capped: the first previewCount - 1 photos, then a "+N more" tile. The
+  // viewer still swipes through every photo.
+  const capped = !!previewCount && displayPhotos.length > previewCount;
+  const gridPhotos = capped ? displayPhotos.slice(0, previewCount! - 1) : displayPhotos;
+  const morePhotos = displayPhotos.slice(gridPhotos.length);
+
+  // The last tile when capped: the next photo, dimmed, under the count. Red
+  // like the others when a photo reported to you is among the rest.
+  const moreTile = (slot: number) => {
+    const next = morePhotos[0];
+    const uri = next?.thumbUrl ?? next?.url ?? null;
+    return (
+      <Pressable
+        key="more"
+        onPress={() => {
+          hapticLight();
+          onShowAll?.();
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`See all ${displayPhotos.length} photos and videos`}
+        style={({ pressed }) => [
+          styles.moreTile,
+          {
+            width: colWidth,
+            height: colWidth,
+            marginRight: slot % 3 === 2 ? 0 : GRID_GAP,
+            marginBottom: GRID_GAP,
+          },
+          pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
+        ]}
+      >
+        {uri ? (
+          <Image source={{ uri }} blurRadius={10} style={[StyleSheet.absoluteFill, { opacity: 0.45 }]} />
+        ) : null}
+        <Text style={styles.moreCount}>+{morePhotos.length}</Text>
+        <Text style={styles.moreLabel}>more</Text>
+        {morePhotos.some((p) => reportByPhoto.has(p.id)) ? (
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { borderWidth: 3, borderColor: colors.danger }]}
+          />
+        ) : null}
+      </Pressable>
+    );
+  };
 
   const openCoverPicker = () => {
     setSelectedCoverId(coverPhotoId ?? null);
@@ -741,7 +1016,17 @@ export default function EventAlbum({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayPhotos]);
+  // A reported tile opens its report (keep or delete), the same screen as
+  // the notification; any other opens the viewer.
+  const openTile = (index: number) => {
+    const reportId = reportByPhoto.get(displayPhotos[index]?.id ?? '');
+    if (reportId) navigation.navigate('HostReport', { reportId });
+    else setViewerIndex(index);
+  };
   const viewerIsVideo = viewerPhoto?.kind === 'video';
+  // The reactions stay in one place at the bottom, so swiping between
+  // photos doesn't make them jump. Videos: above the player's controls.
+  const reactionBottom = viewerIsVideo ? 96 : spacing.lg;
   const canDeleteViewer =
     viewerPhoto != null && (isLeader || viewerPhoto.uploader_id === userId);
   const canReportViewer = viewerPhoto != null && viewerPhoto.uploader_id !== userId;
@@ -753,107 +1038,143 @@ export default function EventAlbum({
     allowanceNote = `You’ve used ${formatBytes(allowance.stored)} of your ${formatBytes(allowance.storedLimit)} of storage.`;
   }
 
-  const colWidth = Math.floor((screenWidth - GRID_GAP * 2) / 3);
+  // Photos sit inside the film strip with a small border on each side.
+  const gridWidth = screenWidth - FILM_FRAME * 2;
+  const colWidth = Math.floor((gridWidth - GRID_GAP * 2) / 3);
   const featureSize = colWidth * 2 + GRID_GAP;
-  const sideRemainingWidth = screenWidth - featureSize - GRID_GAP;
+  const sideRemainingWidth = gridWidth - featureSize - GRID_GAP;
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <View style={styles.titleWrap}>
-          <Text style={styles.sectionTitle}>Photos</Text>
-          {photos.length > 0 && !beforeOpen && <ExposureCounter count={photos.length} />}
-        </View>
-        {photos.length > 0 && !beforeOpen && (
-          <Pressable
-            onPress={saveAll}
-            disabled={savingAll !== null}
-            hitSlop={8}
-            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
-          >
-            <Text style={styles.saveAllText}>
-              {savingAll ? `Saving ${savingAll}…` : 'Save all'}
-            </Text>
-          </Pressable>
-        )}
-      </View>
-
-      {beforeOpen ? (
-        <View style={styles.canisterCard}>
-          <View style={styles.canisterHeader}>
-            <View style={styles.canisterExposureBadge}>
-              <Text style={styles.canisterExpLabel}>EXP</Text>
-              <Text style={styles.canisterExpNumber}>00</Text>
+      {/* The film strip: counter, status and actions on dark film stock. */}
+      <View
+        style={[
+          styles.band,
+          { width: screenWidth },
+        ]}
+      >
+        <Sprockets width={screenWidth} />
+        <View style={styles.bandBody}>
+          <View style={styles.headerRow}>
+            <View style={styles.titleWrap}>
+              <ExposureCounter count={beforeOpen ? 0 : photos.length} />
+              {uploadOpen && !photosExpired && (
+                <View style={styles.livePill}>
+                  <Text style={styles.livePillText}>Open now</Text>
+                </View>
+              )}
+              {beforeOpen && (
+                <View style={styles.canisterCountdownPill}>
+                  <Text style={styles.canisterCountdownText}>{countdownText}</Text>
+                </View>
+              )}
+              <InfoTip
+                title="Adding photos"
+                text="Everyone in the event can add photos from when it starts until two days after it ends."
+              />
             </View>
-            <View style={styles.canisterCountdownPill}>
-              <Text style={styles.canisterCountdownText}>{countdownText}</Text>
-            </View>
-          </View>
-          <Text style={styles.canisterSubtext}>
-            The shared roll is sealed until the event starts. From then until two days after it ends, everyone can drop in their shots.
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.statusWrap}>
-          <View style={styles.statusLineRow}>
-            {isUrgentWindow && <View style={styles.urgentDot} />}
-            <Text style={[styles.statusLine, isUrgentWindow && styles.urgentStatusLine]}>
-              {statusLine}
-            </Text>
-          </View>
-          {mutedSummaryLine && (
-            <Text style={styles.mutedSummaryLine}>{mutedSummaryLine}</Text>
-          )}
-          {expiryLine && (
-            <View style={styles.allowanceRow}>
-              <Text style={[styles.mutedSummaryLine, expiringSoon && styles.urgentStatusLine]}>
-                {expiryLine}
-              </Text>
-              {expiringSoon && isLeader && (
+            {photos.length > 0 && !beforeOpen && (
+              <View style={styles.headerActions}>
+                {canKeepForever && (
+                  <Pressable
+                    onPress={keepForever}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                  >
+                    <Text style={styles.keepText}>Keep forever</Text>
+                  </Pressable>
+                )}
                 <Pressable
-                  accessibilityRole="link"
-                  onPress={() => showProPrompt('expiry')}
-                  style={({ pressed }) => [styles.allowanceLink, pressed && { opacity: 0.6 }]}
+                  onPress={saveAll}
+                  disabled={savingAll !== null}
+                  hitSlop={8}
+                  style={({ pressed }) => [pressed && { opacity: 0.6 }]}
                 >
-                  <Text style={styles.allowanceLinkText}>Keep them with Pro</Text>
+                  <Text style={styles.saveAllText}>
+                    {savingAll ? `Saving ${savingAll}…` : 'Save all'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+
+          {beforeOpen ? null : (
+            <View style={styles.statusWrap}>
+              {/* One line, the most urgent thing first. */}
+              {photosExpired || expiringSoon ? (
+                // Coral and tappable: the way to keep them is one tap away.
+                <Pressable
+                  disabled={photosExpired}
+                  onPress={keepForever}
+                  accessibilityRole={photosExpired ? undefined : 'link'}
+                  style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                >
+                  <Text style={[styles.statusLine, expiringSoon && styles.expiryLine]}>
+                    {expiryLine}
+                  </Text>
+                </Pressable>
+              ) : (
+                <View style={styles.statusLineRow}>
+                  {isUrgentWindow && <View style={styles.urgentDot} />}
+                  <Text style={[styles.statusLine, isUrgentWindow && styles.urgentStatusLine]}>
+                    {mutedSummaryLine ? `${statusLine} ${mutedSummaryLine}` : statusLine}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Host tools, on the strip they act on. */}
+          {isLeader && !beforeOpen && (showReopen || photos.length > 0) && (
+            <View style={styles.toolRow}>
+              {showReopen && (
+                <Pressable
+                  onPress={() => {
+                    hapticLight();
+                    onReopenRoll?.();
+                  }}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [styles.toolChip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
+                >
+                  <Text style={styles.toolChipText}>Reopen for 24h</Text>
+                </Pressable>
+              )}
+              {photos.length > 0 && (
+                <Pressable
+                  onPress={() => {
+                    hapticLight();
+                    openCoverPicker();
+                  }}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [styles.toolChip, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
+                >
+                  <Text style={styles.toolChipText}>{hasCover ? 'Change event photo' : 'Set event photo'}</Text>
                 </Pressable>
               )}
             </View>
           )}
         </View>
-      )}
 
-      {/* Before the roll opens, the host sets the cover from the event info sheet. */}
-      {(uploadOpen || (isLeader && !beforeOpen && !photosExpired)) && (
-        <View style={styles.actionRow}>
-          {uploadOpen && (
+      {/* Add photos and the photos themselves, on the same strip of film. */}
+      {uploadOpen && (
+        <View style={[styles.actionRow, styles.bandInset]}>
+          {uploadOpen && !canAdd && (
+            <Text style={[type.caption, { flexBasis: '100%' }]}>{POST_BLOCKED_NOTE.photos}</Text>
+          )}
+          {uploadOpen && canAdd && (
             <Button
               title={uploading ? `Uploading ${uploading}…` : 'Add photos'}
               onPress={addPhotos}
               disabled={uploading !== null}
-              style={styles.actionButton}
-            />
-          )}
-          {isLeader && !beforeOpen && !uploadOpen && !photosExpired && onReopenRoll && (
-            <Button
-              title="Reopen for 24 hours"
-              onPress={onReopenRoll}
-              style={styles.actionButton}
-            />
-          )}
-          {isLeader && photos.length > 0 && !beforeOpen && (
-            <Button
-              title={hasCover ? 'Change event photo' : 'Set event photo'}
-              variant="secondary"
-              onPress={openCoverPicker}
-              style={styles.actionButton}
+              style={styles.addButton}
             />
           )}
         </View>
       )}
 
       {uploadOpen && allowanceNote && (
-        <View style={styles.allowanceRow}>
+        <View style={[styles.allowanceRow, styles.bandInset]}>
           <Text style={styles.allowanceText}>{allowanceNote}</Text>
           {!allowance?.isPro && (
             <Pressable
@@ -861,24 +1182,24 @@ export default function EventAlbum({
               onPress={() => navigation.navigate('Upgrade', { reason: 'storage' })}
               style={({ pressed }) => [styles.allowanceLink, pressed && { opacity: 0.6 }]}
             >
-              <Text style={styles.allowanceLinkText}>Get Pro</Text>
+              <Text style={styles.allowanceLinkText}>See plans</Text>
             </Pressable>
           )}
         </View>
       )}
 
-      {notice && <Text style={styles.notice}>{notice}</Text>}
+      {notice && <Text style={[styles.notice, styles.bandInset]}>{notice}</Text>}
 
       {/* Edge-to-edge photo grid. Sealed until the event starts, even if the
           host has already added a cover. */}
       {beforeOpen ? null : !loaded ? (
         <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.lg }} />
       ) : displayPhotos.length > 0 ? (
-        <View style={[styles.gridWrap, { width: screenWidth }]}>
+        <View style={[styles.gridWrap, { width: gridWidth }]}>
           {!hasCover ? (
             /* Uniform 3-column square grid: all photos same equal size, none bigger than the other */
             <View style={styles.uniformGrid}>
-              {displayPhotos.map((photo, index) => {
+              {gridPhotos.map((photo, index) => {
                 const colIndex = index % 3;
                 const isLastInRow = colIndex === 2;
                 return (
@@ -887,7 +1208,10 @@ export default function EventAlbum({
                     photo={photo}
                     imageStyle={styles.gridImage}
                     isDeveloping={developingIds.has(photo.id)}
-                    onPress={() => setViewerIndex(index)}
+                    reported={reportByPhoto.has(photo.id)}
+                    reaction={badgeOf(photo)}
+                    isNew={isNewPhoto(photo)}
+                    onPress={() => openTile(index)}
                     style={{
                       width: colWidth,
                       height: colWidth,
@@ -897,6 +1221,7 @@ export default function EventAlbum({
                   />
                 );
               })}
+              {capped && moreTile(gridPhotos.length)}
             </View>
           ) : displayPhotos.length === 1 ? (
             /* Single cover photo */
@@ -904,8 +1229,12 @@ export default function EventAlbum({
               photo={displayPhotos[0]}
               imageStyle={styles.gridImage}
               isDeveloping={developingIds.has(displayPhotos[0].id)}
-              onPress={() => setViewerIndex(0)}
-              style={{ width: screenWidth, height: Math.round(screenWidth * 0.75) }}
+              reported={reportByPhoto.has(displayPhotos[0].id)}
+              reaction={badgeOf(displayPhotos[0])}
+              isNew={isNewPhoto(displayPhotos[0])}
+              onPress={() => openTile(0)}
+              // Same 2x2 square as when there are more photos.
+              style={{ width: featureSize, height: featureSize }}
             >
               <View style={styles.gridCoverTag}>
                 <Text style={styles.gridCoverTagText}>Cover</Text>
@@ -918,7 +1247,10 @@ export default function EventAlbum({
                 photo={displayPhotos[0]}
                 imageStyle={styles.gridImage}
                 isDeveloping={developingIds.has(displayPhotos[0].id)}
-                onPress={() => setViewerIndex(0)}
+                reported={reportByPhoto.has(displayPhotos[0].id)}
+                reaction={badgeOf(displayPhotos[0])}
+                isNew={isNewPhoto(displayPhotos[0])}
+                onPress={() => openTile(0)}
                 style={{
                   width: featureSize,
                   height: featureSize,
@@ -933,7 +1265,10 @@ export default function EventAlbum({
                 photo={displayPhotos[1]}
                 imageStyle={styles.gridImage}
                 isDeveloping={developingIds.has(displayPhotos[1].id)}
-                onPress={() => setViewerIndex(1)}
+                reported={reportByPhoto.has(displayPhotos[1].id)}
+                reaction={badgeOf(displayPhotos[1])}
+                isNew={isNewPhoto(displayPhotos[1])}
+                onPress={() => openTile(1)}
                 style={{
                   width: sideRemainingWidth,
                   height: featureSize,
@@ -948,7 +1283,10 @@ export default function EventAlbum({
                   photo={displayPhotos[0]}
                   imageStyle={styles.gridImage}
                   isDeveloping={developingIds.has(displayPhotos[0].id)}
-                  onPress={() => setViewerIndex(0)}
+                  reported={reportByPhoto.has(displayPhotos[0].id)}
+                  reaction={badgeOf(displayPhotos[0])}
+                  isNew={isNewPhoto(displayPhotos[0])}
+                  onPress={() => openTile(0)}
                   style={{
                     width: featureSize,
                     height: featureSize,
@@ -971,22 +1309,28 @@ export default function EventAlbum({
                     photo={displayPhotos[1]}
                     imageStyle={styles.gridImage}
                     isDeveloping={developingIds.has(displayPhotos[1].id)}
-                    onPress={() => setViewerIndex(1)}
+                    reported={reportByPhoto.has(displayPhotos[1].id)}
+                    reaction={badgeOf(displayPhotos[1])}
+                    isNew={isNewPhoto(displayPhotos[1])}
+                    onPress={() => openTile(1)}
                     style={{ width: sideRemainingWidth, height: colWidth }}
                   />
                   <DevelopingPhotoItem
                     photo={displayPhotos[2]}
                     imageStyle={styles.gridImage}
                     isDeveloping={developingIds.has(displayPhotos[2].id)}
-                    onPress={() => setViewerIndex(2)}
+                    reported={reportByPhoto.has(displayPhotos[2].id)}
+                    reaction={badgeOf(displayPhotos[2])}
+                    isNew={isNewPhoto(displayPhotos[2])}
+                    onPress={() => openTile(2)}
                     style={{ width: sideRemainingWidth, height: colWidth }}
                   />
                 </View>
               </View>
 
-              {displayPhotos.length > 3 && (
+              {(gridPhotos.length > 3 || capped) && (
                 <View style={styles.trailingGrid}>
-                  {displayPhotos.slice(3).map((photo, idx) => {
+                  {gridPhotos.slice(3).map((photo, idx) => {
                     const realIndex = idx + 3;
                     const colIndex = idx % 3;
                     const isLastInRow = colIndex === 2;
@@ -996,7 +1340,10 @@ export default function EventAlbum({
                         photo={photo}
                         imageStyle={styles.gridImage}
                         isDeveloping={developingIds.has(photo.id)}
-                        onPress={() => setViewerIndex(realIndex)}
+                        reported={reportByPhoto.has(photo.id)}
+                        reaction={badgeOf(photo)}
+                        isNew={isNewPhoto(photo)}
+                        onPress={() => openTile(realIndex)}
                         style={{
                           width: colWidth,
                           height: colWidth,
@@ -1006,16 +1353,19 @@ export default function EventAlbum({
                       />
                     );
                   })}
+                  {capped && moreTile(gridPhotos.length - 3)}
                 </View>
               )}
             </>
           )}
         </View>
       ) : uploadOpen ? (
-        <View style={styles.emptyWrap}>
+        <View style={[styles.emptyWrap, styles.bandInset]}>
           <EmptyNote>No photos yet. Somebody take one.</EmptyNote>
         </View>
       ) : null}
+        <Sprockets width={screenWidth} />
+      </View>
 
       <Modal
         visible={viewerPhoto !== null}
@@ -1024,10 +1374,11 @@ export default function EventAlbum({
         onRequestClose={closeViewer}
       >
         {viewerPhoto && (
-          <SafeAreaView
-            style={styles.viewer}
-            edges={Platform.OS === 'android' ? ['bottom'] : ['top', 'bottom']}
-          >
+          // Safe-area padding comes from the app's insets, not a SafeAreaView:
+          // inside a Modal that measured the top as 0 some times and the real
+          // inset others, so the header jumped down and the photo shrank.
+          // The top is padded in viewerTop below.
+          <View style={[styles.viewer, { paddingBottom: insets.bottom }]}>
             <Animated.View
               collapsable={false}
               style={{
@@ -1067,23 +1418,25 @@ export default function EventAlbum({
 
               <View style={styles.viewerTopRight}>
                 <Pressable
-                  onPress={() => saveOne(viewerPhoto)}
+                  onPress={() => setViewerMenu(true)}
                   disabled={busySaving}
-                  hitSlop={8}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={busySaving ? 'Saving' : 'More options'}
                   style={({ pressed }) => [
-                    styles.viewerCornerSave,
-                    pressed && { opacity: 0.6 },
+                    styles.viewerIconBtn,
+                    (pressed || busySaving) && { opacity: 0.5 },
                   ]}
                 >
-                  <Text style={styles.viewerCornerSaveText}>
-                    {busySaving ? 'Saving…' : 'Save'}
-                  </Text>
+                  <MoreIcon size={22} color={colors.ink} />
                 </Pressable>
                 <Pressable
                   onPress={closeViewer}
                   hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
                   style={({ pressed }) => [
-                    styles.viewerCloseBtn,
+                    styles.viewerIconBtn,
                     pressed && { opacity: 0.6 },
                   ]}
                 >
@@ -1091,33 +1444,6 @@ export default function EventAlbum({
                 </Pressable>
               </View>
             </View>
-
-            {/* The host's action on the photo itself, centered under the top
-                bar. Report and delete sit at the bottom. */}
-            {isLeader && !viewerIsVideo && (
-              <View style={styles.viewerCoverRow}>
-                <Pressable
-                  onPress={() => toggleCoverPhoto(viewerPhoto.id)}
-                  hitSlop={8}
-                  style={({ pressed }) => [
-                    styles.viewerCoverAction,
-                    viewerPhoto.id === coverPhotoId && styles.viewerCoverActionActiveWrap,
-                    pressed && { opacity: 0.7 },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.viewerCoverActionText,
-                      viewerPhoto.id === coverPhotoId && styles.viewerCoverActionActive,
-                    ]}
-                  >
-                    {viewerPhoto.id === coverPhotoId
-                      ? '✓ Event photo · tap to remove'
-                      : 'Set as event photo'}
-                  </Text>
-                </Pressable>
-              </View>
-            )}
 
             <View style={styles.viewerCenterArea}>
               <FlatList
@@ -1249,42 +1575,109 @@ export default function EventAlbum({
                   <ChevronRightIcon size={22} color={colors.ink} />
                 </Pressable>
               )}
+              {/* The event photo is marked on the photo itself, like its
+                  tile in the roll. Changing it is in the ⋯ menu. */}
+              {viewerPhoto.id === coverPhotoId && (
+                <View style={styles.viewerCoverTag} pointerEvents="none">
+                  <Text style={styles.viewerCoverTagText}>Event photo</Text>
+                </View>
+              )}
+
+              {/* Reactions float over the bottom of the photo, on see-through
+                  pills, so the photo stays the whole screen. */}
+              {reactions && (
+                <View
+                  style={[
+                    styles.reactionBar,
+                    { bottom: reactionBottom },
+                  ]}
+                  pointerEvents="box-none"
+                >
+                  {REACTIONS.map((emoji) => {
+                    const mine = reactions.get(viewerPhoto.id)?.mine.has(emoji) ?? false;
+                    const count = reactions.get(viewerPhoto.id)?.counts[emoji] ?? 0;
+                    const name = REACTION_NAMES[emoji];
+                    const active = bouncing === `${viewerPhoto.id}${emoji}`;
+                    return (
+                      <Pressable
+                        key={emoji}
+                        onPress={() => react(viewerPhoto.id, emoji)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: mine }}
+                        accessibilityLabel={
+                          mine ? `Remove ${name} reaction` : `React with ${name}${count > 0 ? `, ${count}` : ''}`
+                        }
+                        style={({ pressed }) => [
+                          styles.reactionPill,
+                          mine && styles.reactionPillOn,
+                          pressed && { opacity: 0.7 },
+                        ]}
+                      >
+                        <Animated.View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 6,
+                            transform: [{ scale: active ? bounce : 1 }],
+                          }}
+                        >
+                          <Text style={{ fontSize: 22 }}>{emoji}</Text>
+                          {count > 0 && (
+                            <Text style={[styles.reactionCount, mine && styles.reactionCountOn]}>
+                              {count}
+                            </Text>
+                          )}
+                        </Animated.View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
             </View>
 
             {notice && <Text style={styles.viewerNotice}>{notice}</Text>}
 
-            {(canDeleteViewer || canReportViewer) && (
-              <View style={styles.viewerBottom}>
-                {canReportViewer && (
-                  <Pressable
-                    onPress={() => setReporting(true)}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-                  >
-                    <Text style={styles.viewerReport}>Report</Text>
-                  </Pressable>
-                )}
-                {canDeleteViewer && (
-                  <Pressable
-                    onPress={() => setConfirmDeleteId(viewerPhoto.id)}
-                    hitSlop={8}
-                    style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-                  >
-                    <Text style={styles.viewerDelete}>
-                      {viewerIsVideo ? 'Delete video' : 'Delete photo'}
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
             </Animated.View>
+            <ActionMenuSheet
+              visible={viewerMenu}
+              onClose={() => setViewerMenu(false)}
+              options={[
+                {
+                  label: viewerIsVideo ? 'Save video' : 'Save photo',
+                  onPress: () => saveOne(viewerPhoto),
+                },
+                ...(isLeader && !viewerIsVideo
+                  ? [
+                      {
+                        label:
+                          viewerPhoto.id === coverPhotoId
+                            ? 'Remove as event photo'
+                            : 'Set as event photo',
+                        onPress: () => toggleCoverPhoto(viewerPhoto.id),
+                      },
+                    ]
+                  : []),
+                ...(canReportViewer
+                  ? [{ label: 'Report', onPress: () => setReporting(true) }]
+                  : []),
+                ...(canDeleteViewer
+                  ? [
+                      {
+                        label: viewerIsVideo ? 'Delete video' : 'Delete photo',
+                        destructive: true,
+                        onPress: () => setConfirmDeleteId(viewerPhoto.id),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
             <ReportSheet
               visible={reporting}
               target="photo"
               targetId={viewerPhoto.id}
               targetUserId={viewerPhoto.uploader_id}
               subject={viewerIsVideo ? 'this video' : 'this photo'}
+              hostId={event.creator_id}
               onClose={() => setReporting(false)}
             />
             {/* Inside the viewer, like the report sheet: iOS shows a pop-up
@@ -1293,13 +1686,13 @@ export default function EventAlbum({
             <ConfirmDialog
               visible={confirmDeleteId !== null}
               title={viewerIsVideo ? 'Delete this video?' : 'Delete this photo?'}
-              message="It comes out of the roll for everyone."
+              message="It's removed for everyone in the event."
               confirmLabel="Delete"
               destructive
               onConfirm={deletePhoto}
               onCancel={() => setConfirmDeleteId(null)}
             />
-          </SafeAreaView>
+          </View>
         )}
       </Modal>
 
@@ -1368,7 +1761,7 @@ export default function EventAlbum({
                       }}
                     >
                       <Image
-                        source={{ uri: photo.url ?? undefined }}
+                        source={{ uri: photo.thumbUrl ?? photo.url ?? undefined }}
                         style={[
                           styles.gridImage,
                           isSelected && styles.pickerSelectedImage,
@@ -1427,83 +1820,57 @@ export default function EventAlbum({
   );
 }
 
-const makeStyles = (c: Palette, t: TypeTokens) =>
-  StyleSheet.create({
-    container: {
-      marginTop: spacing.md,
+const makeStyles = (c: Palette, t: TypeTokens, dark = false) => {
+  const FILM = filmColors(c, dark);
+  return StyleSheet.create({
+    container: {},
+    band: {
+      backgroundColor: FILM.base,
+      // Full width like the photo grid below it: a strip of film, square ends.
+      marginHorizontal: -spacing.lg,
+      paddingVertical: 5,
+      overflow: 'hidden',
+    },
+    bandClosed: {
+      marginBottom: spacing.md,
+    },
+    bandBody: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm,
+      gap: spacing.xs,
     },
     headerRow: {
-      position: 'relative',
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingVertical: spacing.xs,
-      borderRadius: radii.sm,
-      overflow: 'hidden',
     },
     titleWrap: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: spacing.sm,
     },
-    sectionTitle: {
-      fontSize: 15,
-      fontFamily: fonts.body,
-      color: c.inkMuted,
+    livePill: {
+      backgroundColor: c.live,
+      borderRadius: radii.full,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
     },
-    countText: {
-      fontSize: 15,
-      fontFamily: fonts.body,
-      color: c.inkMuted,
+    livePillText: {
+      ...t.caption,
+      fontSize: 11,
+      fontFamily: fonts.bodySemiBold,
+      color: c.onLive,
     },
     saveAllText: {
       ...t.body,
       fontSize: 14,
       fontFamily: fonts.bodySemiBold,
-      color: c.ink,
-    },
-    canisterCard: {
-      backgroundColor: c.card,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.line,
-      borderRadius: radii.md,
-      padding: spacing.md,
-      marginTop: spacing.xs,
-      marginBottom: spacing.md,
-      gap: spacing.xs,
-    },
-    canisterHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    canisterExposureBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: c.paper,
-      borderWidth: 1,
-      borderColor: c.line,
-      borderRadius: radii.sm,
-      paddingHorizontal: 7,
-      paddingVertical: 3,
-      gap: 4,
-    },
-    canisterExpLabel: {
-      fontSize: 9,
-      fontFamily: fonts.bodySemiBold,
-      letterSpacing: 0.8,
-      color: c.inkMuted,
-      textTransform: 'uppercase',
-    },
-    canisterExpNumber: {
-      fontSize: 12,
-      fontFamily: fonts.headingMedium,
-      color: c.ink,
-      fontVariant: ['tabular-nums'],
+      color: FILM.text,
     },
     canisterCountdownPill: {
-      backgroundColor: c.paper,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.line,
+      backgroundColor: FILM.plate,
+      borderWidth: 1,
+      borderColor: FILM.hole,
       borderRadius: radii.full,
       paddingHorizontal: 8,
       paddingVertical: 3,
@@ -1512,19 +1879,19 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       ...t.caption,
       fontSize: 11,
       fontFamily: fonts.bodyMedium,
-      color: c.accent,
+      color: FILM.text,
     },
     canisterSubtext: {
       ...t.caption,
-      color: c.inkMuted,
+      color: FILM.textMuted,
       lineHeight: 16,
-      marginTop: 2,
     },
     statusWrap: {
-      marginTop: 4,
-      marginBottom: spacing.sm,
       gap: 2,
+      marginTop: spacing.sm,
     },
+    expiryLine: { color: c.accentText, fontFamily: fonts.bodySemiBold },
+    keepText: { ...t.body, fontSize: 14, fontFamily: fonts.bodySemiBold, color: c.accentText },
     statusLineRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1532,33 +1899,40 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     },
     statusLine: {
       ...t.caption,
-      color: c.inkMuted,
+      color: FILM.textMuted,
     },
     urgentDot: {
       width: 6,
       height: 6,
-      borderRadius: 3,
-      backgroundColor: c.accent,
+      borderRadius: radii.full,
+      backgroundColor: c.live,
     },
     urgentStatusLine: {
-      color: c.accentText,
+      color: FILM.text,
       fontFamily: fonts.bodySemiBold,
     },
-    mutedSummaryLine: {
+    bandLinkText: {
       ...t.caption,
-      color: c.inkMuted,
-      fontSize: 13,
+      fontFamily: fonts.bodySemiBold,
+      color: FILM.text,
+      textDecorationLine: 'underline',
     },
     actionRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: spacing.sm,
-      marginTop: spacing.xs,
+      marginTop: spacing.sm,
       marginBottom: spacing.md,
     },
     actionButton: {
       flex: 1,
       height: 44,
       paddingHorizontal: spacing.xs,
+    },
+    addButton: {
+      flexBasis: '100%',
+      width: '100%',
+      height: 48,
     },
     allowanceRow: {
       flexDirection: 'row',
@@ -1586,7 +1960,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: 1,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       paddingVertical: spacing.sm,
       paddingHorizontal: spacing.md,
       marginBottom: spacing.md,
@@ -1594,9 +1968,11 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       overflow: 'hidden',
     },
     gridWrap: {
-      marginHorizontal: -spacing.lg,
-      marginTop: spacing.xs,
+      marginHorizontal: FILM_FRAME,
+      marginTop: FILM_FRAME,
+      marginBottom: FILM_FRAME - GRID_GAP,
     },
+    bandInset: { paddingHorizontal: spacing.lg },
     uniformGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -1614,6 +1990,42 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     featureRow: {
       flexDirection: 'row',
       marginBottom: GRID_GAP,
+    },
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+    // One row, the buttons sharing it evenly, with room above and below.
+    toolRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.xs },
+    // Rounded squares like the app's other buttons and the photo frames.
+    toolChip: {
+      flex: 1,
+      alignItems: 'center',
+      backgroundColor: FILM.plate,
+      borderRadius: radii.control,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 8,
+      minHeight: 36,
+      justifyContent: 'center',
+    },
+    toolChipText: { fontFamily: fonts.bodySemiBold, fontSize: 14, color: FILM.text },
+    moreTile: {
+      backgroundColor: '#000000',
+      overflow: 'hidden',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // A soft shadow keeps the count readable over a busy photo.
+    moreCount: {
+      fontFamily: fonts.display,
+      fontSize: 26,
+      color: '#FFFFFF',
+      textShadowColor: 'rgba(0,0,0,0.6)',
+      textShadowRadius: 6,
+    },
+    moreLabel: {
+      fontFamily: fonts.bodyMedium,
+      fontSize: 13,
+      color: '#FFFFFF',
+      textShadowColor: 'rgba(0,0,0,0.6)',
+      textShadowRadius: 6,
     },
     trailingGrid: {
       flexDirection: 'row',
@@ -1655,19 +2067,57 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       alignItems: 'center',
       gap: spacing.lg,
     },
-    viewerCornerSave: {
-      paddingVertical: 6,
-      paddingHorizontal: 10,
+    // ⋯ and ✕: plain icons with a full 44pt target.
+    viewerIconBtn: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
-    viewerCornerSaveText: {
-      ...t.body,
-      fontFamily: fonts.bodySemiBold,
+    viewerCoverTag: {
+      position: 'absolute',
+      top: spacing.sm,
+      left: spacing.lg,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+      borderRadius: radii.tag,
+    },
+    viewerCoverTagText: { color: '#FFFFFF', fontSize: 12, fontFamily: fonts.bodySemiBold },
+    // Over the photo: see-through dark pills that read on any picture,
+    // light or dark, in either theme.
+    reactionBar: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: spacing.lg,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      zIndex: 40,
+    },
+    reactionPill: {
+      minHeight: 44,
+      minWidth: 56,
+      paddingHorizontal: spacing.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radii.full,
+      borderWidth: 1.5,
+      borderColor: 'transparent',
+      backgroundColor: 'rgba(0,0,0,0.38)',
+    },
+    reactionPillOn: {
+      borderColor: '#F0997B',
+      backgroundColor: 'rgba(240,153,123,0.28)',
+    },
+    reactionCount: {
       fontSize: 14,
-      color: c.ink,
+      fontFamily: fonts.bodySemiBold,
+      color: '#FFFFFF',
+      fontVariant: ['tabular-nums'],
     },
-    viewerCloseBtn: {
-      padding: 4,
-    },
+    reactionCountOn: { color: '#FFFFFF' },
     viewerScrollContent: {
       flexGrow: 1,
       justifyContent: 'center',
@@ -1687,7 +2137,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       marginTop: -22,
       width: 44,
       height: 44,
-      borderRadius: 22,
+      borderRadius: radii.full,
       backgroundColor: c.card,
       borderWidth: 1,
       borderColor: c.line,
@@ -1712,7 +2162,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: c.card,
       borderWidth: 1,
       borderColor: c.line,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       paddingVertical: spacing.sm,
       paddingHorizontal: spacing.md,
       marginHorizontal: spacing.lg,
@@ -1720,49 +2170,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       textAlign: 'center',
       overflow: 'hidden',
     },
-    viewerCoverRow: {
-      alignItems: 'center',
-      paddingBottom: spacing.sm,
-    },
     // Report on the left, delete on the right, side by side.
-    viewerBottom: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: spacing.md,
-      paddingHorizontal: spacing.md,
-      gap: spacing.xl,
-    },
-    viewerCoverAction: {
-      paddingVertical: 8,
-      paddingHorizontal: 16,
-      borderRadius: radii.sm,
-      backgroundColor: c.card,
-      borderWidth: 1,
-      borderColor: c.line,
-    },
-    viewerCoverActionActiveWrap: {
-      borderColor: c.accent,
-    },
-    viewerCoverActionText: {
-      ...t.body,
-      fontFamily: fonts.bodySemiBold,
-      fontSize: 14,
-      color: c.ink,
-    },
-    viewerCoverActionActive: {
-      color: c.accentText,
-    },
-    viewerReport: {
-      ...t.body,
-      fontFamily: fonts.bodySemiBold,
-      color: c.ink,
-    },
-    viewerDelete: {
-      ...t.body,
-      fontFamily: fonts.bodySemiBold,
-      color: c.danger,
-    },
     gridCoverTag: {
       position: 'absolute',
       top: 4,
@@ -1770,7 +2178,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       backgroundColor: 'rgba(0,0,0,0.65)',
       paddingHorizontal: 6,
       paddingVertical: 2,
-      borderRadius: 4,
+      borderRadius: radii.tag,
     },
     gridCoverTagText: {
       color: '#FFFFFF',
@@ -1827,7 +2235,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       right: 6,
       width: 22,
       height: 22,
-      borderRadius: 11,
+      borderRadius: radii.full,
       backgroundColor: c.accent,
       alignItems: 'center',
       justifyContent: 'center',
@@ -1848,7 +2256,7 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     pickerFloatingBtn: {
       height: 48,
       paddingHorizontal: spacing.xl,
-      borderRadius: radii.sm,
+      borderRadius: radii.control,
       backgroundColor: c.accent,
       alignItems: 'center',
       justifyContent: 'center',
@@ -1865,3 +2273,4 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       fontSize: 15,
     },
   });
+};
