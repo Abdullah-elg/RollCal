@@ -4,38 +4,57 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Delete your account · RollCal</title>
-  <link rel="icon" href="/favicon.png">
+  <meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111513" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="/favicon.png?v=2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css?v=2">
+  <link rel="stylesheet" href="/home.css?v=3">
+  <link rel="stylesheet" href="/legal.css?v=2">
 </head>
-<body>
-  <main>
-    <a class="brand" href="/"><img src="/icon.png" alt="">RollCal</a>
+<body class="home">
+  <header class="nav">
+    <a class="brand" href="/"><img src="/icon.png?v=2" alt="">RollCal</a>
+    <a class="nav-link" href="mailto:support@rollcal.app">Contact</a>
+  </header>
+  <main class="legal">
+    <p class="kicker">Your account</p>
+    <h1>Delete your account</h1>
+    <p class="updated">Last updated November 27, 2026</p>
     <!-- Google Play asks for a web page where people can request deletion,
          including people who no longer have the app. -->
-    <h1>Delete your account</h1>
-    <p><strong>In the app:</strong> open Settings, then tap Delete account at the bottom of the Account section. Your account is deleted straight away.</p>
-    <p><strong>Without the app:</strong> email <a href="mailto:support@rollcal.app?subject=Delete%20my%20RollCal%20account">support@rollcal.app</a> from the address you signed up with, and we’ll delete it within 30 days.</p>
+    <p class="intro">You can delete your RollCal account and everything linked to it at any time.</p>
+
+    <h2>In the app</h2>
+    <p>Open <strong>Settings</strong>, then tap <strong>Delete account</strong> at the bottom of the Account section. Your account is deleted straight away.</p>
+    <h2>Without the app</h2>
+    <p>Email <a href="mailto:support@rollcal.app?subject=Delete%20my%20RollCal%20account">support@rollcal.app</a> from the address you signed up with, and we’ll delete it within 30 days.</p>
+
+    <h2>If you pay for a plan</h2>
+    <p>Deleting your account doesn’t cancel a RollCal Plus or Pro subscription. Cancel it first in your App Store or Google Play subscription settings. Event Passes end with the events they were bought for, and those are deleted with your account.</p>
+
     <h2>What’s deleted</h2>
-    <p>Your profile, your messages, photos and videos you uploaded, events you created and everything in them, your friends list, bills and payment details, support requests and notification settings.</p>
+    <p>Your profile, your messages, photos and videos you uploaded and your reactions, events you created and everything in them (including their video recaps and any Event Passes), your friends list, bills and payment details, support requests and notification settings. A video recap of someone else’s event that includes your photos is deleted too.</p>
     <h2>What’s kept</h2>
-    <p>Reports other people made about you are kept so we can keep RollCal safe, but they’re no longer linked to your account. Emails you sent us stay in our support inbox. Copies in our backups are overwritten within 30 days. Photos other people already saved to their own phones stay with them.</p>
+    <p>Reports other people made about you are kept so we can keep RollCal safe, but they’re no longer linked to your account. Emails you sent us stay in our support inbox. Copies in our backups are overwritten within 30 days. Photos and videos other people already saved to their own phones stay with them.</p>
+
     <h2 id="some-data">Delete some of your data and keep your account</h2>
     <p>You can delete these yourself in the app at any time:</p>
     <ul>
-      <li><strong>Photos and videos</strong> you added to an event roll: open the photo, then Delete photo.</li>
-      <li><strong>Bills</strong> you created: open the bill, then Delete bill.</li>
-      <li><strong>Events</strong> you host: open the event, then Cancel event. This deletes everything in it.</li>
+      <li><strong>Photos and videos</strong> you added to an event roll: open the photo, tap <strong>⋯</strong>, then <strong>Delete photo</strong>.</li>
+      <li><strong>Reactions</strong>: open the photo and tap your reaction again to remove it.</li>
+      <li><strong>Bills</strong> you created: open the bill, then <strong>Delete bill</strong>.</li>
+      <li><strong>Events</strong> you host: open the event, then <strong>Cancel event</strong>. This deletes everything in it.</li>
       <li><strong>Events you joined</strong>: leave the event.</li>
-      <li><strong>Receiving methods</strong> (Interac, PayPal and so on): Settings, Receiving methods, then Remove.</li>
+      <li><strong>Receiving methods</strong> (Interac, PayPal and so on): <strong>Settings</strong>, <strong>Receiving methods</strong>, then <strong>Remove</strong>.</li>
       <li><strong>Friends</strong>: remove them from your friends list.</li>
-      <li><strong>Profile photo</strong>: Edit profile, then Remove photo.</li>
+      <li><strong>Profile photo</strong>: <strong>Edit profile</strong>, then <strong>Remove photo</strong>.</li>
     </ul>
     <p>For anything else, such as chat messages, email <a href="mailto:support@rollcal.app">support@rollcal.app</a> from the address you signed up with and say what you’d like deleted. We’ll do it within 30 days.</p>
-    <p class="muted">See the <a href="/privacy/">Privacy Policy</a> for more.</p>
+    <p>See the <a href="/privacy/">Privacy Policy</a> for more.</p>
     <footer>
-      <a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="mailto:support@rollcal.app">support@rollcal.app</a>
+      <a href="/terms/">Terms</a><a href="/pro-terms/">Plan Terms</a><a href="/privacy/">Privacy</a><a href="/child-safety/">Child Safety</a><a href="/delete-account/">Delete account</a><a href="mailto:support@rollcal.app">support@rollcal.app</a>
     </footer>
   </main>
 </body>

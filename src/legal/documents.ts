@@ -1,5 +1,5 @@
-// The Terms of Service, Pro Terms and Privacy Policy, shown in the app (sign
-// up, Settings, the upgrade screen). Plain language on purpose.
+// The Terms of Service, Plan Terms (RollCal Plus, Event Passes and Pro) and
+// Privacy Policy, shown in the app (sign up, Settings, the plans screen). Plain language on purpose.
 //
 // Before launch: have a lawyer review all three documents, and publish the
 // same text at public web addresses (npm run build:legal writes them to
@@ -8,7 +8,7 @@
 const OPERATOR = 'RollCal';
 const CONTACT = 'support@rollcal.app';
 const PROVINCE = 'Ontario';
-const UPDATED = 'November 26, 2026';
+const UPDATED = 'November 27, 2026';
 
 export type LegalDoc = 'terms' | 'pro' | 'privacy';
 
@@ -37,7 +37,8 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         paragraphs: [
           'You own the photos, videos, messages and other things you add (“your content”).',
           'So that the app can work, you give us a worldwide, non-exclusive, royalty-free licence to host, store, copy, process and display your content, only to run and improve RollCal. This licence ends when your content is deleted, except for copies we must keep by law or that remain for a short time in backups.',
-          'When you add photos or videos to an event, everyone in that event can view, download and save them. Copies people have already saved stay with them even if you later delete yours.',
+          'When you add photos or videos to an event, everyone in that event can view, react to, download and save them. Copies people have already saved stay with them even if you later delete yours.',
+          'When someone makes a video recap of an event, it is saved with the event so everyone in it can watch, save and share it, and it may include your photos and videos. It is deleted when the event, or any photo or video in it, is deleted or removed.',
           'Only add content you have the right to share, and only share photos or videos of other people when they are comfortable with it.',
         ],
       },
@@ -56,9 +57,11 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         ],
       },
       {
-        heading: 'Photo storage',
+        heading: 'Plans, limits and storage',
         paragraphs: [
-          'Storage limits and how long event photos and videos are kept depend on your plan and are shown in the app. These may change; we will tell you in the app before anything you can see is deleted because of them.',
+          'RollCal is free to use. On the free plan, an event can have up to 10 people (counting the host and everyone going) and 200 photos and videos, videos can be up to 15 seconds long, each account can store up to 2 GB, and an event’s photos and videos are kept for 30 days after it ends. The app warns you before they are deleted.',
+          'RollCal Plus and Event Passes raise these limits, as shown on the plans screen in the app. When an event is full, no one else can join or be let in until there is room, and the host is told.',
+          'Limits may change. We will tell you in the app before a change means anything you can see is deleted.',
           'RollCal is not a backup service. Save copies of anything you want to keep. To the extent the law allows, we are not responsible for content that is lost or deleted.',
         ],
       },
@@ -71,10 +74,10 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         ],
       },
       {
-        heading: 'Receipt scanning and recap captions',
+        heading: 'Receipt scanning and video recaps',
         paragraphs: [
           'When you scan a receipt, the photo is sent to an artificial-intelligence service run by Google so it can be read. Readings can be wrong or incomplete; review every line before you share a bill. See the Privacy Policy for how the photo is handled.',
-          'Video recaps can show a short caption on each photo, written by an artificial-intelligence service run by Google from a small preview of the photo. Captions can be wrong; if one is inappropriate, report the photo and we will remove it.',
+          'On events with a paid plan, video recaps can show a short caption on each photo, written by an artificial-intelligence service run by Google from a small preview of the photo. The same service rates how well each photo would look in a recap, which helps pick the highlights along with people’s reactions. Captions and picks are made by a machine and can be wrong; if a caption is inappropriate, report the photo and we will remove it.',
         ],
       },
       {
@@ -86,9 +89,9 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         ],
       },
       {
-        heading: 'RollCal Pro',
+        heading: 'Paid plans',
         paragraphs: [
-          'Pro is an optional paid subscription. If you subscribe, the Pro Terms apply as well as these terms.',
+          'RollCal Plus is an optional subscription, and Event Passes are optional one-time purchases that upgrade a single event. RollCal Pro is an earlier subscription that existing members keep. If you buy any of them, the Plan Terms apply as well as these terms. Guests never have to pay to join, view or add to an event.',
         ],
       },
       {
@@ -137,75 +140,86 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
   },
 
   pro: {
-    title: 'RollCal Pro Terms',
+    title: 'Plan Terms',
     updated: UPDATED,
-    intro: 'These terms apply when you subscribe to RollCal Pro, in addition to the Terms of Service.',
+    intro: 'These terms apply when you buy RollCal Plus or an Event Pass, or keep RollCal Pro, in addition to the Terms of Service.',
     sections: [
       {
-        heading: 'What Pro includes',
+        heading: 'The plans',
         paragraphs: [
-          'Pro adds the features listed on the Pro screen in the app. We may add, change or remove Pro features over time; if we remove a major one, we will tell you in advance.',
+          'RollCal Plus is a subscription for people who host often. Events you host can have up to 100 people, keep their photos and videos for as long as the event exists, and get full-size photos, videos up to 1 minute, video recaps with captions, and unlimited receipt scans.',
+          'An Event Pass is a one-time purchase that upgrades one event you host, for everyone in it. The Party Pass allows up to 75 people, the Big Day Pass up to 300, and the Unlimited Pass has no limit on people. Each pass also keeps the event’s photos and videos for as long as the event exists, and adds full-size photos, videos up to 1 minute and video recaps with captions.',
+          'RollCal Pro is an earlier subscription. If you already have it, you keep it, with what it includes today, until it ends.',
+          'The plans screen in the app shows exactly what each plan includes before you buy. We may add, change or remove features over time; if we remove a major one from a plan you are paying for, we will tell you in advance.',
+        ],
+      },
+      {
+        heading: 'How Event Passes work',
+        paragraphs: [
+          'You choose the event when you buy a pass, and it applies only to that event. It can’t be moved to another event or another person.',
+          'A pass lasts as long as the event does. If the event is deleted, including when the host deletes their account, the pass ends with it.',
+          'If you have RollCal Plus, you may be offered a lower price on passes. The price you pay is always shown before you confirm.',
         ],
       },
       {
         heading: 'During the beta',
         paragraphs: [
-          'While RollCal is in beta, Pro can’t be bought in the app. We may switch it on for free when you ask. No payment is taken, and we will tell you in the app before free beta access ends. The sections below about price, trials and renewal apply once Pro is sold through the App Store and Google Play.',
+          'While RollCal is in beta, Plus and Event Passes can’t be bought in the app yet. We may switch a plan on for free when you ask. No payment is taken, and we will tell you in the app before free beta access ends. The sections below about prices, trials and renewal apply once plans are sold through the App Store and Google Play.',
         ],
       },
       {
         heading: 'Fair use of storage',
         paragraphs: [
-          'Pro includes up to 200 GB of stored photos and videos across all your events (free accounts include 2 GB). If you reach it, new uploads pause until you remove something; nothing you have already uploaded is deleted because of it.',
+          'Plans include a generous amount of storage for photos and videos: 50 GB across your account with Plus, 250 GB with Pro, and 10 GB, 30 GB or 60 GB for an event with a Party, Big Day or Unlimited Pass. If a limit is reached, new uploads pause until something is removed. Nothing already uploaded is deleted because of it.',
         ],
       },
       {
-        heading: 'Price and payment',
+        heading: 'Prices and payment',
         paragraphs: [
-          'Pro is priced at 4.99 US dollars a month or 49.99 US dollars a year. The app also shows these prices converted into your chosen currency at a recent exchange rate, as a guide only.',
+          'RollCal Plus costs 4.99 US dollars a month or 34.99 US dollars a year. The Party Pass costs 5.99 US dollars, the Big Day Pass 19.99 US dollars and the Unlimited Pass 29.99 US dollars, each paid once. The app may also show these prices converted into your chosen currency, as a guide only.',
           'Apple or Google charge you in the currency of your App Store or Google Play account, at the local price shown before you confirm. That price is set through the store and can differ from the converted guide. Taxes may be added where they apply.',
-          'Payment is taken by Apple or Google from the account you use in their store when you confirm the purchase.',
+          'Payment is taken by Apple or Google from the account you use in their store when you confirm the purchase. We never see your card details.',
         ],
       },
       {
         heading: 'Free trial',
         paragraphs: [
-          'If a free trial is offered, it lasts 7 days. Unless you cancel at least 24 hours before it ends, your subscription starts and you are charged when the trial ends. Each person can have one free trial.',
+          'The yearly Plus plan may come with a 7-day free trial. Unless you cancel at least 24 hours before it ends, your subscription starts and you are charged the yearly price when the trial ends. Each person can have one free trial.',
         ],
       },
       {
         heading: 'Automatic renewal',
         paragraphs: [
-          'Your subscription renews automatically at the end of each month or year, at the price then in effect, unless you cancel at least 24 hours before the end of the current period. The renewal is charged within the 24 hours before the period ends.',
+          'Plus and Pro renew automatically at the end of each month or year, at the price then in effect, unless you cancel at least 24 hours before the end of the current period. The renewal is charged within the 24 hours before the period ends. Event Passes are paid once and never renew.',
         ],
       },
       {
         heading: 'Cancelling',
         paragraphs: [
-          'Cancel any time in your App Store or Google Play subscription settings. Deleting the app or your RollCal account does not cancel a store subscription. After you cancel, Pro stays on until the end of the period you have paid for.',
+          'Cancel Plus or Pro any time in your App Store or Google Play subscription settings. Deleting the app or your RollCal account does not cancel a store subscription. After you cancel, your plan stays on until the end of the period you have paid for.',
         ],
       },
       {
         heading: 'Refunds',
         paragraphs: [
-          'Purchases made through the App Store or Google Play are refunded by Apple or Google under their refund policies; we cannot refund them directly. This does not affect any refund right you have by law.',
+          'Purchases made through the App Store or Google Play, including Event Passes, are refunded by Apple or Google under their refund policies; we cannot refund them directly. This does not affect any refund right you have by law.',
         ],
       },
       {
         heading: 'Price changes',
         paragraphs: [
-          'If the price changes, you will be told in advance as the App Store or Google Play requires, and asked to agree where the law or store rules require it. You can cancel before the new price applies.',
+          'If the price of a subscription changes, you will be told in advance as the App Store or Google Play requires, and asked to agree where the law or store rules require it. You can cancel before the new price applies. A price change never affects a pass you have already bought.',
         ],
       },
       {
-        heading: 'When Pro ends',
+        heading: 'When a plan ends',
         paragraphs: [
-          'When your subscription ends, free plan limits apply again. Where you are over a free limit, such as storage, we will tell you in the app and give you at least 30 days to save or remove content before anything is deleted.',
+          'When Plus or Pro ends, free plan limits apply again to events you host that don’t have a pass. No one is removed from an event, but new people can’t join one that is over the free limit. Where photos and videos would no longer be kept, or you are over the free storage limit, we will tell you in the app and give you at least 30 days to save or remove them before anything is deleted.',
         ],
       },
       {
         heading: 'Contact',
-        paragraphs: [`Questions about Pro: ${CONTACT}.`],
+        paragraphs: [`Questions about plans or purchases: ${CONTACT}.`],
       },
     ],
   },
@@ -219,10 +233,11 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
         heading: 'What we collect',
         paragraphs: [
           'Account details: your name, email address, username, profile photo, preferred currency, and, if you sign in with Apple or Google, the details they share with us.',
-          'What you add: events, RSVPs, invitations, friend connections, chat messages and when you last read each event’s chat, photos and videos, bills and their items, and the payment handles you choose to add (such as an email or phone number for Interac e-Transfer or Zelle, a Venmo, PayPal or Cash App username, or details you write in yourself).',
+          'What you add: events, RSVPs, invitations, friend connections, chat messages and when you last read each event’s chat, photos and videos (including how long a video is, to check it fits your plan), reactions to photos, video recaps you make, bills and their items, and the payment handles you choose to add (such as an email or phone number for Interac e-Transfer or Zelle, a Venmo, PayPal or Cash App username, or details you write in yourself).',
           'Locations you choose: an event’s address or map pin. If you use “current location” when picking a place, your device’s location is used once for that and is not stored separately.',
           'When you contact support or report something: what you write, your account email (so we can reply), your phone type and app version, and for reports, what you reported. The person you report is not told who reported them.',
           'If you allow notifications: a notification token for your phone and your notification settings.',
+          'If you buy a plan: which plan or pass you have, which event a pass is for, and when a subscription renews or ends. Apple or Google tell us this; we never see your card details.',
           'Your age: we ask when you were born when you join, to check you are 13 or older. We keep only the fact that you passed, never the date.',
           'If you join an event from a web browser instead of the app (as a guest): the name you give, the photos you add and reports you send, and a sign-in kept in that browser. We don’t ask for your email. You confirm you are 13 or older by ticking a box. A guest can only see and add photos in the events they joined.',
           'We do not use advertising or analytics tracking, and we do not sell your information.',
@@ -237,7 +252,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Who can see it',
         paragraphs: [
-          'People in an event can see that event’s details, members, chat (including who has seen the latest message), photos and bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name and username, so friends can add you. Only you and your friends can see your profile photo, unless you choose to show it to everyone in Settings → Privacy. Your email address is never shown to other people.',
+          'People in an event can see that event’s details, members, chat (including who has seen the latest message), photos and videos and who reacted to them, its saved video recaps, and its bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name and username, so friends can add you. Only you and your friends can see your profile photo, unless you choose to show it to everyone in Settings → Privacy. Your email address is never shown to other people.',
         ],
       },
       {
@@ -246,12 +261,12 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
           'Supabase hosts our database and sign-in. Your information is stored on servers in the United States, so it may be accessed by authorities there under US law.',
           'Photos, videos and profile photos are stored with Cloudflare (R2) and delivered through Cloudflare’s network, which sees the address your phone or browser connects from.',
           'When you scan a receipt, the photo is sent to Google’s Gemini service to read it, under Google’s terms for that service. We do not keep the photo after it has been read.',
-          'When someone in an event plays its video recap, a small preview of each photo in the recap (up to 12) is sent to Google’s Gemini service to write a short caption describing the moment, such as “Dinner by the window”, and to rate how well it would look in the recap (used, with reactions, to pick the highlights). Only the picture is sent, not names or anything else about you. The caption is saved with the photo and shown to the people in that event; it is deleted when the photo is. Captions are written by a machine and can be wrong.',
-          'Apple and Google handle sign-in when you use them, and will handle payment for Pro; we never see your card details.',
+          'On events with a paid plan, when someone makes or plays a video recap, a small preview of each photo in it is sent once to Google’s Gemini service to write a short caption describing the moment, such as “Dinner by the window”, and to rate how well it would look in the recap (used, with reactions, to pick the highlights). Only the picture is sent, not names or anything else about you. The caption is saved with the photo and shown to the people in that event; it is deleted when the photo is. Captions are written by a machine and can be wrong.',
+          'Apple and Google handle sign-in when you use them, and handle payment for paid plans; we never see your card details. When paid plans go on sale, RevenueCat will check purchases with Apple and Google for us. It receives a random ID for your account and your purchase history in RollCal, not your name or email.',
           'Resend sends our emails, such as replies to support messages, from our servers. Email you send us is kept in our Microsoft 365 mailbox, and may pass through Cloudflare on the way.',
           'Our website, rollcal.app, is served by Cloudflare, which sees the address your browser connects from, as any website host does.',
           'When you drop a pin on the map, your phone sends its coordinates to OpenStreetMap’s Nominatim service to find the place’s name, under the OpenStreetMap Foundation’s privacy policy. Nothing else about you is sent.',
-          'Notifications: if you allow them, we keep a token for your phone and send each notification’s text (for example a friend’s name or a preview of a chat message) through Expo’s push service and Apple’s or Google’s notification service, which deliver it to your phone. You can turn notifications off in the app or in your phone’s settings.',
+          'Notifications: if you allow them, we keep a token for your phone and send each notification’s text (for example a friend’s name, a preview of a chat message, or that your event is full) through Expo’s push service and Apple’s or Google’s notification service, which deliver it to your phone. You can turn notifications off in the app or in your phone’s settings.',
           'Maps are shown with Apple Maps on iPhone and Google Maps on Android. They receive the area of the map you are looking at, as any map app does, under Apple’s and Google’s privacy policies.',
           'Exchange rates come from ExchangeRate-API’s public feed. Our servers fetch the day’s rates; nothing about you is sent.',
           'When the app crashes or hits an error, Sentry receives a report of what went wrong, with the app version and your phone’s model and system version, so we can fix it. Reports don’t include your name, email, messages or photos.',
@@ -261,7 +276,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'How long we keep it',
         paragraphs: [
-          'Guest sign-ins from a web browser that add no photos are deleted after 7 days; a guest’s photos are kept like everyone else’s. We keep your information while you have an account. Event photos and videos may be deleted sooner under the storage rules shown in the app. When you delete your account, we delete your profile and the content linked to it, including events you created; copies may remain in backups for up to 30 days before they are overwritten. Reports other people made about you are kept without the link to your account, so we can keep RollCal safe. Copies other people have already saved stay with them.',
+          'Guest sign-ins from a web browser that add no photos are deleted after 7 days; a guest’s photos are kept like everyone else’s. We keep your information while you have an account. Photos and videos in free events are deleted 30 days after the event ends, and the app warns you first. A saved video recap is deleted when its event, or any photo or video in it, is deleted or removed. When you delete your account, we delete your profile and the content linked to it, including events you created; copies may remain in backups for up to 30 days before they are overwritten. Reports other people made about you are kept without the link to your account, so we can keep RollCal safe. Copies other people have already saved stay with them.',
         ],
       },
       {

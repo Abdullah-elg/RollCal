@@ -54,7 +54,7 @@ type Props = NativeStackScreenProps<AppStackParamList, 'Upgrade'>;
 
 const LINKS: { doc: LegalDoc; label: string }[] = [
   { doc: 'terms', label: 'Terms of Service' },
-  { doc: 'pro', label: 'Pro Terms' },
+  { doc: 'pro', label: 'Plan Terms' },
   { doc: 'privacy', label: 'Privacy Policy' },
 ];
 

@@ -3,42 +3,83 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RollCal beta for iPhone</title>
-  <meta name="description" content="Join the RollCal beta on iPhone with TestFlight.">
-  <link rel="icon" href="/favicon.png">
+  <title>Get the RollCal beta on iPhone</title>
+  <meta name="description" content="Join the RollCal beta on iPhone with Apple's TestFlight app. Three steps, about two minutes.">
+  <meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111513" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="/favicon.png?v=2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css?v=2">
+  <link rel="stylesheet" href="/home.css?v=3">
+  <link rel="stylesheet" href="/beta.css?v=2">
 </head>
-<body>
-  <main>
-    <a class="brand" href="/"><img src="/icon.png" alt="">RollCal</a>
-    <h1>RollCal beta for iPhone</h1>
-    <p class="muted">RollCal is in beta. On iPhone you get it through TestFlight, Apple’s app for testing new apps. It takes about two minutes. Do these steps on your iPhone.</p>
+<body class="home">
+  <header class="nav">
+    <a class="brand" href="/"><img src="/icon.png?v=2" alt="">RollCal</a>
+    <a class="nav-link" href="/android/">Android</a>
+  </header>
 
-    <ol class="steps">
+  <main class="beta">
+    <section class="beta-hero">
+      <p class="kicker">iPhone beta</p>
+      <h1>Get RollCal on your iPhone</h1>
+      <p class="lede muted">RollCal is in beta, so it comes through TestFlight, Apple’s free app for trying new apps before they’re in the App Store.</p>
+      <ul class="facts">
+        <li>Do this on your iPhone</li>
+        <li>About 2 minutes</li>
+        <li>Free</li>
+      </ul>
+      <p class="on-computer">On a computer? Open <strong>rollcal.app/ios</strong> on your iPhone instead. The buttons below only work there.</p>
+    </section>
+
+    <ol class="beta-steps">
       <li>
-        <h2>Get TestFlight</h2>
-        <p>Install Apple’s free TestFlight app from the App Store.</p>
-        <p><a class="secondary" href="https://apps.apple.com/app/testflight/id899247664">TestFlight on the App Store</a></p>
+        <div class="step-card">
+          <h2>Install TestFlight</h2>
+          <p>Tap the button and then <strong>Get</strong> in the App Store. If TestFlight is already on your phone, go to step 2.</p>
+          <a class="button" href="https://apps.apple.com/app/testflight/id899247664">Get TestFlight</a>
+        </div>
       </li>
       <li>
-        <h2>Join the RollCal beta</h2>
-        <p>Tap the button below. It opens TestFlight. Tap <strong>Accept</strong>, then <strong>Install</strong>.</p>
-        <!-- TestFlight public link: App Store Connect → RollCal → TestFlight →
-             your external group → Public Link. -->
-        <p><a class="button" href="https://testflight.apple.com/join/9MCWekmz">Join the beta</a></p>
+        <div class="step-card">
+          <h2>Accept the invite</h2>
+          <p>Come back to this page and tap the button. TestFlight opens on the RollCal page. Tap <strong>Accept</strong>, then <strong>Install</strong>.</p>
+          <!-- TestFlight public link: App Store Connect → RollCal → TestFlight →
+               your external group → Public Link. -->
+          <a class="button" href="https://testflight.apple.com/join/9MCWekmz">Join the RollCal beta</a>
+          <p class="hint muted">If the button opens a web page instead, tap <strong>View in TestFlight</strong> on it.</p>
+        </div>
       </li>
       <li>
-        <h2>Open RollCal</h2>
-        <p>RollCal is now on your Home Screen. Sign in or make an account and you’re set.</p>
+        <div class="step-card">
+          <h2>Open RollCal</h2>
+          <p>RollCal is on your Home Screen now, with a small orange dot by its name while it’s a beta. Open it, then sign in or make an account.</p>
+        </div>
       </li>
     </ol>
 
-    <h2>Good to know</h2>
-    <p>New versions show up in TestFlight. Turn on automatic updates there to get them straight away.</p>
-    <p>Found a bug or have an idea? Take a screenshot in RollCal and TestFlight lets you send it to us with a note, or email <a href="mailto:support@rollcal.app">support@rollcal.app</a>.</p>
-    <p class="muted">On Android? <a href="/android/">Get the Android beta</a>.</p>
+    <section class="trouble">
+      <h2>Having trouble?</h2>
+      <details>
+        <summary>“This beta is full” or “isn’t accepting testers”</summary>
+        <p>We’ve hit the tester limit for now. Email <a href="mailto:support@rollcal.app">support@rollcal.app</a> and we’ll add you when a spot opens.</p>
+      </details>
+      <details>
+        <summary>The button doesn’t open TestFlight</summary>
+        <p>Make sure TestFlight is installed (step 1), then open this page in Safari and tap the button again.</p>
+      </details>
+      <details>
+        <summary>How do I get updates?</summary>
+        <p>New versions show up in TestFlight. Open TestFlight, tap RollCal and turn on <strong>Automatic Updates</strong> to get them straight away.</p>
+      </details>
+      <details>
+        <summary>How do I send feedback?</summary>
+        <p>Take a screenshot while using RollCal and tap <strong>Share Beta Feedback</strong>, or email <a href="mailto:support@rollcal.app">support@rollcal.app</a>.</p>
+      </details>
+    </section>
+
+    <p class="other-phone muted">On Android? <a href="/android/">Get the Android beta</a>.</p>
 
     <footer>
       <a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="mailto:support@rollcal.app">support@rollcal.app</a>

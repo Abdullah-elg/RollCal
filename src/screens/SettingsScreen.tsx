@@ -569,7 +569,7 @@ export default function SettingsScreen({ navigation }: Props) {
         {(
           [
             { doc: 'terms', label: 'Terms of Service' },
-            { doc: 'pro', label: 'Pro Terms' },
+            { doc: 'pro', label: 'Plan Terms' },
             { doc: 'privacy', label: 'Privacy Policy' },
           ] as const
         ).map(({ doc, label }, i) => (

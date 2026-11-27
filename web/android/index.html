@@ -3,43 +3,84 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RollCal beta for Android</title>
-  <meta name="description" content="Join the RollCal beta on Android through Google Play.">
-  <link rel="icon" href="/favicon.png">
+  <title>Get the RollCal beta on Android</title>
+  <meta name="description" content="Join the RollCal beta on Android through Google Play. Three steps, about three minutes.">
+  <meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111513" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="/favicon.png?v=2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css?v=2">
+  <link rel="stylesheet" href="/home.css?v=3">
+  <link rel="stylesheet" href="/beta.css?v=2">
 </head>
-<body>
-  <main>
-    <a class="brand" href="/"><img src="/icon.png" alt="">RollCal</a>
-    <h1>RollCal beta for Android</h1>
-    <p class="muted">RollCal is in beta, so Google Play only shows it to testers. Use the same Google account that’s on your phone for every step.</p>
+<body class="home">
+  <header class="nav">
+    <a class="brand" href="/"><img src="/icon.png?v=2" alt="">RollCal</a>
+    <a class="nav-link" href="/ios/">iPhone</a>
+  </header>
 
-    <ol class="steps">
+  <main class="beta">
+    <section class="beta-hero">
+      <p class="kicker">Android beta</p>
+      <h1>Get RollCal on your Android phone</h1>
+      <p class="lede muted">RollCal is in beta, so Google Play only shows it to testers. These steps add you as a tester, then you install it like any other app.</p>
+      <ul class="facts">
+        <li>Do this on your phone</li>
+        <li>About 3 minutes</li>
+        <li>Free</li>
+      </ul>
+      <p class="on-computer">On a computer? Open <strong>rollcal.app/android</strong> on your phone instead, so every step uses the Google account on it.</p>
+    </section>
+
+    <ol class="beta-steps">
       <li>
-        <h2>Join the testers group</h2>
-        <p>Open the group and tap <strong>Join group</strong>. This is what lets Google Play show you the app.</p>
-        <!-- The Google Group added as testers on the Closed testing track in
-             Play Console (rollcal-testers@googlegroups.com). -->
-        <p><a class="button" href="https://groups.google.com/g/rollcal-testers">Join the testers group</a></p>
+        <div class="step-card">
+          <h2>Join the testers group</h2>
+          <p>Tap the button, then <strong>Join group</strong>. This is what lets Google Play show you RollCal.</p>
+          <!-- The Google Group added as testers on the Closed testing track in
+               Play Console (rollcal-testers@googlegroups.com). -->
+          <a class="button" href="https://groups.google.com/g/rollcal-testers">Join the testers group</a>
+          <p class="hint muted">Use the same Google account that’s signed in to Google Play on your phone. If it asks you to sign in, check it’s that one.</p>
+        </div>
       </li>
       <li>
-        <h2>Become a tester</h2>
-        <p>Open this page and tap <strong>Become a tester</strong>.</p>
-        <p><a class="button" href="https://play.google.com/apps/testing/app.rollcal">Become a tester</a></p>
+        <div class="step-card">
+          <h2>Become a tester</h2>
+          <p>Come back to this page, tap the button, then tap <strong>Become a tester</strong>.</p>
+          <a class="button" href="https://play.google.com/apps/testing/app.rollcal">Become a tester</a>
+        </div>
       </li>
       <li>
-        <h2>Download RollCal</h2>
-        <p>Install it from Google Play like any other app. If it says the app isn’t available, wait a few minutes after step 2 and try again.</p>
-        <p><a class="button" href="https://play.google.com/store/apps/details?id=app.rollcal">Get it on Google Play</a></p>
+        <div class="step-card">
+          <h2>Install RollCal</h2>
+          <p>Tap the button and then <strong>Install</strong> in Google Play. Open RollCal, then sign in or make an account.</p>
+          <a class="button" href="https://play.google.com/store/apps/details?id=app.rollcal">Open in Google Play</a>
+        </div>
       </li>
     </ol>
 
-    <h2>Good to know</h2>
-    <p>Updates come through Google Play like any other app.</p>
-    <p>Please keep RollCal installed while you’re testing. Found a bug or have an idea? Email <a href="mailto:support@rollcal.app">support@rollcal.app</a>, or leave private feedback on the RollCal page in Google Play.</p>
-    <p class="muted">On iPhone? <a href="/ios/">Get the iPhone beta</a>.</p>
+    <section class="trouble">
+      <h2>Having trouble?</h2>
+      <details>
+        <summary>Google Play says the app isn’t available</summary>
+        <p>It can take a few minutes after step 2. Wait a little, close Google Play completely, then try step 3 again.</p>
+      </details>
+      <details>
+        <summary>I have more than one Google account</summary>
+        <p>Every step has to use the same account. In Google Play, tap your profile picture at the top right and switch to the account you joined the group with, then try step 3 again.</p>
+      </details>
+      <details>
+        <summary>“Become a tester” page says something went wrong</summary>
+        <p>Make sure you joined the group in step 1 with the same account, then try again. Still stuck? Email <a href="mailto:support@rollcal.app">support@rollcal.app</a>.</p>
+      </details>
+      <details>
+        <summary>How do I get updates and send feedback?</summary>
+        <p>Updates come through Google Play like any other app. Please keep RollCal installed while you’re testing. For feedback, email <a href="mailto:support@rollcal.app">support@rollcal.app</a> or leave private feedback on the RollCal page in Google Play.</p>
+      </details>
+    </section>
+
+    <p class="other-phone muted">On iPhone? <a href="/ios/">Get the iPhone beta</a>.</p>
 
     <footer>
       <a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="mailto:support@rollcal.app">support@rollcal.app</a>

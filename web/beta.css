@@ -1,0 +1,62 @@
+/* The beta install pages (/ios, /android). Shares the colours in style.css
+   and the top bar in home.css. */
+main.beta { max-width: 680px; padding: 8px 20px 64px; }
+
+.beta-hero { padding: 24px 0 8px; }
+.beta-hero .kicker { margin-bottom: 12px; }
+.beta-hero h1 { font-size: clamp(34px, 6vw, 48px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; margin-bottom: 14px; }
+.beta-hero .lede { font-size: 19px; margin-bottom: 20px; }
+
+/* "Do this on your phone" and the time it takes. */
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; padding: 0; list-style: none; }
+.facts li {
+  margin: 0; padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 600;
+  background: var(--card); border: 1px solid var(--line); color: var(--ink);
+}
+
+/* Each step is a card, joined by a thin line like frames on a strip. */
+.beta-steps { list-style: none; counter-reset: step; padding: 0; margin: 32px 0 0; position: relative; }
+.beta-steps > li { counter-increment: step; position: relative; padding-left: 60px; margin: 0 0 16px; }
+.beta-steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: 18px;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--accent); color: var(--on-accent);
+  font-weight: 800; font-size: 18px; line-height: 40px; text-align: center;
+}
+/* The connector runs from each number down to the next; none after the last. */
+.beta-steps > li:not(:last-child)::after {
+  content: ""; position: absolute; left: 19px; top: 58px; bottom: -34px; width: 2px; background: var(--line);
+}
+@media (max-width: 480px) {
+  .beta-steps > li { padding-left: 50px; }
+  .beta-steps > li::before { width: 34px; height: 34px; line-height: 34px; font-size: 16px; }
+  .beta-steps > li:not(:last-child)::after { left: 16px; top: 52px; }
+}
+.step-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; }
+.step-card h2 { margin: 0 0 6px; font-size: 21px; letter-spacing: -0.01em; }
+.step-card p { color: var(--muted); }
+.step-card p:last-child { margin-bottom: 0; }
+.step-card strong { color: var(--ink); }
+.step-card .button { margin-top: 6px; min-width: 0; width: 100%; max-width: 320px; }
+.step-card .hint { font-size: 15px; margin-top: 10px; }
+
+/* Shown only on computers: these steps need the phone. */
+.on-computer {
+  display: none; margin: 16px 0 0; padding: 14px 16px; border-radius: 12px;
+  background: var(--card); border: 1px dashed var(--line); font-size: 15px; color: var(--muted);
+}
+@media (hover: hover) and (pointer: fine) and (min-width: 900px) { .on-computer { display: block; } }
+
+/* Having trouble? */
+.trouble { margin-top: 48px; }
+.trouble h2 { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 12px; }
+.trouble details { border-top: 1px solid var(--line); padding: 14px 0; }
+.trouble details:last-of-type { border-bottom: 1px solid var(--line); }
+.trouble summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+.trouble summary::-webkit-details-marker { display: none; }
+.trouble summary::after { content: "+"; color: var(--muted); font-weight: 400; font-size: 22px; line-height: 1; }
+.trouble details[open] summary::after { content: "−"; }
+.trouble details p { color: var(--muted); margin: 10px 0 0; }
+
+.other-phone { margin-top: 32px; }
+@media (max-width: 480px) { .step-card { padding: 18px; } }
