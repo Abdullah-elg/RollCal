@@ -5,7 +5,7 @@ export { yearlySavingPercent };
 import { supabase } from './supabase';
 import type { Plan, Profile } from '../types';
 
-// RollCal's plans (Basic, Plus, Pro, Event Pass): what they cost, what they add, and the one Pro limit that's
+// RollCal's plans (Free, Plus, Event Passes, and Pro for people already on it): what they cost, what they add, and the one Pro limit that's
 // live so far (receipt scans). In-app purchases aren't set up yet, so the
 // upgrade screen shows Pro as coming soon and profiles.is_pro is set by hand.
 
@@ -99,7 +99,7 @@ export const PRO_PROMPTS: Record<ProPromptReason, { title: string; body: string 
   },
   expiry: {
     title: 'This event’s photos will be deleted soon.',
-    body: 'On Basic, event photos are kept for a year. Get Plus and every event you host keeps them for good.',
+    body: 'Free events keep photos for 30 days after they end. Get an Event Pass for this event, or Plus for every event you host, and they’re kept for good.',
   },
   people: {
     title: 'Your event is filling up.',

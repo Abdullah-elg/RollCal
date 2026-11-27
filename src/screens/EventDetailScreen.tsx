@@ -496,13 +496,19 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           ? ended ? "You didn't go" : "You're not going"
           : 'See who';
 
+  // Photos, chat and bills are for the host and people going or maybe
+  // (the server checks the same). "Can't go" still sees the event, so they
+  // can change their answer.
   const isMember =
     isLeader ||
-    myStatus !== null ||
-    invitations.some(
-      (row) =>
-        row.profile.id === session?.user.id && row.invitation.status === 'accepted'
-    );
+    myStatus === 'going' ||
+    myStatus === 'maybe' ||
+    (myStatus === null &&
+      invitations.some(
+        (row) =>
+          row.profile.id === session?.user.id && row.invitation.status === 'accepted'
+      ));
+  const cantGo = !isLeader && myStatus === 'not_going';
 
   const openInvite = () => {
     setShareOnly(false);
@@ -814,6 +820,11 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           {started && (
             <>
           <View style={styles.albumGap} />
+          {cantGo ? (
+            <Text style={[type.bodyMuted, styles.cantGoNote]}>
+              Photos, chat and bills are for people going or maybe. Change your answer to join in.
+            </Text>
+          ) : (
           <EventAlbum
             event={event}
             isLeader={isLeader}
@@ -827,6 +838,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             previewCount={9}
             onShowAll={() => navigation.navigate('EventPhotos', { eventId: event.id })}
           />
+          )}
             </>
           )}
           {/* Who's going and the chat, side by side as two tiles. */}
@@ -980,7 +992,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             </>
           )}
 
-          {isMember && (event.bills_enabled !== false || bills.length > 0) && (
+          {/* Bills someone already paid toward stay visible after "can't go". */}
+          {((isMember && event.bills_enabled !== false) || bills.length > 0) && (
             <>
               <View style={bills.length > 0 ? styles.sectionGap : styles.splitGap} />
               {bills.length > 0 && <SectionLabel>Bills</SectionLabel>}
@@ -1003,7 +1016,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
                   <ChevronRightIcon size={Math.round(16 * iconScale)} color={colors.inkMuted} />
                 </Pressable>
               ))}
-              {event.bills_enabled !== false && (
+              {isMember && event.bills_enabled !== false && (
                 <Pressable
                   accessibilityRole="button"
                   style={({ pressed }) => [styles.billRow, pressed && styles.pressedRow]}
@@ -1022,6 +1035,11 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           {!started && (
             <>
           <View style={styles.albumGap} />
+          {cantGo ? (
+            <Text style={[type.bodyMuted, styles.cantGoNote]}>
+              Photos, chat and bills are for people going or maybe. Change your answer to join in.
+            </Text>
+          ) : (
           <EventAlbum
             event={event}
             isLeader={isLeader}
@@ -1035,6 +1053,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
             previewCount={9}
             onShowAll={() => navigation.navigate('EventPhotos', { eventId: event.id })}
           />
+          )}
             </>
           )}
         </View>
@@ -1720,6 +1739,7 @@ const makeStyles = (c: Palette, t: TypeTokens, dark = false) =>
     sectionGap: { height: SECTION_GAP },
     // The photo strip is a strong shape of its own; it needs less air above.
     albumGap: { height: spacing.lg },
+    cantGoNote: { textAlign: 'center', paddingHorizontal: spacing.lg },
     // Between rows of the same group (who's going, chat, split a bill).
     rowGap: { height: spacing.xs },
     // Split a bill on its own, under the tiles: a little more air.

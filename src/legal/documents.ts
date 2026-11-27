@@ -59,7 +59,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Plans, limits and storage',
         paragraphs: [
-          'RollCal is free to use. On the free plan, an event can have up to 10 people (counting the host and everyone going) and 200 photos and videos, videos can be up to 15 seconds long, each account can store up to 2 GB, and an event’s photos and videos are kept for 30 days after it ends. The app warns you before they are deleted.',
+          'RollCal is free to use. On the free plan, an event can have up to 10 people (the host and everyone going or maybe) and 200 photos and videos, videos can be up to 15 seconds long, each account can store up to 2 GB, and an event’s photos and videos are kept for 30 days after it ends. The app warns you before they are deleted.',
           'RollCal Plus and Event Passes raise these limits, as shown on the plans screen in the app. When an event is full, no one else can join or be let in until there is room, and the host is told.',
           'Limits may change. We will tell you in the app before a change means anything you can see is deleted.',
           'RollCal is not a backup service. Save copies of anything you want to keep. To the extent the law allows, we are not responsible for content that is lost or deleted.',
@@ -147,7 +147,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'The plans',
         paragraphs: [
-          'RollCal Plus is a subscription for people who host often. Events you host can have up to 100 people, keep their photos and videos for as long as the event exists, and get full-size photos, videos up to 1 minute, video recaps with captions, and unlimited receipt scans.',
+          'RollCal Plus is a subscription for people who host often. Events you host can have up to 100 people, keep their photos and videos for as long as the event exists, and get full-size photos, videos up to 1 minute, video recaps with captions, and 15 receipt scans a month.',
           'An Event Pass is a one-time purchase that upgrades one event you host, for everyone in it. The Party Pass allows up to 75 people, the Big Day Pass up to 300, and the Unlimited Pass has no limit on people. Each pass also keeps the event’s photos and videos for as long as the event exists, and adds full-size photos, videos up to 1 minute and video recaps with captions.',
           'RollCal Pro is an earlier subscription. If you already have it, you keep it, with what it includes today, until it ends.',
           'The plans screen in the app shows exactly what each plan includes before you buy. We may add, change or remove features over time; if we remove a major one from a plan you are paying for, we will tell you in advance.',
@@ -252,7 +252,7 @@ export const LEGAL: Record<LegalDoc, LegalDocument> = {
       {
         heading: 'Who can see it',
         paragraphs: [
-          'People in an event can see that event’s details, members, chat (including who has seen the latest message), photos and videos and who reacted to them, its saved video recaps, and its bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name and username, so friends can add you. Only you and your friends can see your profile photo, unless you choose to show it to everyone in Settings → Privacy. Your email address is never shown to other people.',
+          'People in an event (the host and everyone going or maybe) can see that event’s details, members, chat (including who has seen the latest message), photos and videos and who reacted to them, its saved video recaps, and its bills, including a converted receipt’s original currency and the rate used. Payment handles you attach to a bill are visible to the people in that event. Anyone with a RollCal account can find you by your name or username and see your name and username, so friends can add you. Only you and your friends can see your profile photo, unless you choose to show it to everyone in Settings → Privacy. Your email address is never shown to other people.',
         ],
       },
       {

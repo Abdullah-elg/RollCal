@@ -6,6 +6,8 @@
 // recap_video_allowed(event) must say yes (the event or the person is on a
 // paid plan), or nothing is sent to the model.
 //
+// At most 300 photos per person per day (claim_caption_quota).
+//
 // Called by the app with the signed-in user's JWT:
 //   supabase.functions.invoke('caption-photos', { body: { photoIds } })
 // Only photos the person can see are captioned (looked up as them, under
@@ -181,6 +183,23 @@ Deno.serve(async (req: Request) => {
     return json(403, { error: 'Video recaps come with Plus or an Event Pass.', code: 'recap_locked', captions, scores });
   }
 
+  // A daily cap per person (300 photos, see membership-and-caps.sql), far
+  // above any real use. Past it, the recap just plays without new captions.
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const { data: granted, error: quotaError } = await admin.rpc('claim_caption_quota', {
+    p_user: userId,
+    p_count: todo.length,
+  });
+  if (quotaError) {
+    console.warn('caption quota check failed', quotaError.message);
+    return json(200, { captions, scores });
+  }
+  if (typeof granted !== 'number' || granted <= 0) {
+    console.warn('daily caption cap reached');
+    return json(200, { captions, scores });
+  }
+  todo.splice(granted);
+
   // Links to the small previews, from the media Worker as the person (it
   // checks they may see each one).
   const links = new Map<string, string>();
@@ -215,7 +234,6 @@ Deno.serve(async (req: Request) => {
   }
   step(`${links.size} picture links`);
 
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const queue = todo.filter((p) => links.has(p.id));
   const work = async () => {
     while (queue.length > 0) {
@@ -226,7 +244,8 @@ Deno.serve(async (req: Request) => {
         continue;
       }
       try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+        // No redirects: the allowed-host check above only covers this URL.
+        const res = await fetch(url, { signal: AbortSignal.timeout(8_000), redirect: 'error' });
         if (!res.ok) continue;
         const bytes = new Uint8Array(await res.arrayBuffer());
         if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) continue;

@@ -49,7 +49,7 @@ export async function getOpenUploadEvents(userId: string): Promise<Event[]> {
 
 // Uploads one picked photo or video, with a small preview for the grid, and
 // records it in photos. The database fills in its size and type from the
-// stored file and refuses videos on Basic; if the row is refused, the file
+// stored file and refuses long videos on the free plan; if the row is refused, the file
 // is thrown away so it doesn't count against the allowance. Goes to R2
 // through the media Worker (lib/media), or Supabase Storage if the Worker
 // can't be reached. Returns the new row's id.
