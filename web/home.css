@@ -246,3 +246,112 @@ main.wide { max-width: 1080px; padding: 16px 24px 64px; }
   .scene { animation: none; }
   .s4 { opacity: 1; }
 }
+
+/* ---------- Motion ----------
+   Only the drawings move, each once, acting out what they show. Text never
+   animates. Everything here is skipped with reduce motion. */
+@media (prefers-reduced-motion: no-preference) {
+  /* Hero: the strip is set down, and its frames develop like film. */
+  .strip { animation: set-down 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both; }
+  .frame { animation: develop 1.8s ease-out both; }
+  .f1 { animation-delay: 0.5s; }
+  .f2 { animation-delay: 0.8s; }
+  .f3 { animation-delay: 1.1s; }
+  .f4 { animation-delay: 1.4s; }
+  .frame span { animation: show 0.5s ease-out both; animation-delay: inherit; }
+
+  /* Small touches. */
+  .feature { transition: transform 0.25s ease, box-shadow 0.25s ease; }
+  .feature:hover { transform: translateY(-3px); box-shadow: 0 16px 30px -24px rgba(22, 26, 23, 0.5); }
+  .button, .beta-btn { transition: transform 0.12s ease, opacity 0.15s ease; }
+  .button:active, .beta-btn:active { transform: scale(0.97); }
+
+  /* Drawings wait, paused on their first frame, until scrolled to. */
+  .motion [data-reveal] .mini-event,
+  .motion [data-reveal] .faces i,
+  .motion [data-reveal] .faces em,
+  .motion [data-reveal] .mini-roll i,
+  .motion [data-reveal] .react,
+  .motion [data-reveal] .mr-frame,
+  .motion [data-reveal] .mr-play,
+  .motion .receipt[data-reveal],
+  .motion .receipt[data-reveal] .r-line i,
+  .motion .receipt[data-reveal] .r-total,
+  .motion .receipt[data-reveal] .r-paid { animation-play-state: paused; }
+  .motion [data-reveal].in, .motion [data-reveal].in * { animation-play-state: running !important; }
+
+  /* 1. The event card drops in, then friends join. */
+  .motion .mini-event { animation: drop-card 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .motion .faces i { animation: pop 0.35s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+  .motion .faces i:nth-child(1) { animation-delay: 0.55s; }
+  .motion .faces i:nth-child(2) { animation-delay: 0.7s; }
+  .motion .faces i:nth-child(3) { animation-delay: 0.85s; }
+  .motion .faces i:nth-child(4) { animation-delay: 1s; }
+  .motion .faces em { animation: show 0.4s ease-out 1.15s both; }
+
+  /* 2. Photos land in the roll one by one, then someone reacts. */
+  .motion .mini-roll i { animation: land 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+  .motion .mini-roll .t1 { animation-delay: 0.05s; }
+  .motion .mini-roll .t2 { animation-delay: 0.17s; }
+  .motion .mini-roll .t3 { animation-delay: 0.29s; }
+  .motion .mini-roll .t4 { animation-delay: 0.41s; }
+  .motion .mini-roll .t5 { animation-delay: 0.53s; }
+  .motion .mini-roll .t6 { animation-delay: 0.65s; }
+  .motion .react { animation: pop-pill 0.4s cubic-bezier(0.3, 1.6, 0.5, 1) 1.05s both; }
+
+  /* 3. The recap rises and its play button pulses once. */
+  .motion .mr-frame { animation: rise-frame 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .motion .mr-play { animation: pulse 0.9s ease-out 0.8s both; }
+
+  /* The receipt: set down, each line claimed, then stamped paid. */
+  .motion .receipt[data-reveal] { animation: set-receipt 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .motion .receipt .r-line i { animation: pop 0.35s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+  .motion .receipt .r-line:nth-of-type(1) i { animation-delay: 0.5s; }
+  .motion .receipt .r-line:nth-of-type(2) i { animation-delay: 0.7s; }
+  .motion .receipt .r-line:nth-of-type(3) i { animation-delay: 0.9s; }
+  .motion .receipt .r-line:nth-of-type(4) i:nth-child(1) { animation-delay: 1.1s; }
+  .motion .receipt .r-line:nth-of-type(4) i:nth-child(2) { animation-delay: 1.18s; }
+  .motion .receipt .r-line:nth-of-type(4) i:nth-child(3) { animation-delay: 1.26s; }
+  .motion .receipt .r-total { animation: show 0.4s ease-out 1.5s both; }
+  .motion .receipt .r-paid { animation: stamp 0.45s cubic-bezier(0.3, 1.4, 0.5, 1) 1.9s both; }
+}
+
+@keyframes set-down {
+  from { opacity: 0; transform: translateY(28px) rotate(2deg); }
+  to { opacity: 1; transform: translateY(0) rotate(-3deg); }
+}
+@keyframes develop {
+  from { filter: grayscale(1) brightness(1.7) contrast(0.6); }
+  to { filter: none; }
+}
+@keyframes show { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { from { opacity: 0; transform: scale(0.3); } to { opacity: 1; transform: scale(1); } }
+@keyframes pop-pill {
+  from { opacity: 0; transform: translateX(-50%) scale(0.4); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+@keyframes drop-card {
+  from { opacity: 0; transform: translateY(-22px) rotate(-7deg); }
+  to { opacity: 1; transform: translateY(0) rotate(-2deg); }
+}
+@keyframes land {
+  from { opacity: 0; transform: translateY(-10px) scale(0.85); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes rise-frame {
+  from { opacity: 0; transform: translateY(26px) rotate(3deg); }
+  to { opacity: 1; transform: translateY(0) rotate(-3deg); }
+}
+@keyframes pulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.6); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); box-shadow: 0 0 0 14px rgba(255, 255, 255, 0); }
+}
+@keyframes set-receipt {
+  from { opacity: 0; transform: translateY(30px) rotate(1deg); }
+  to { opacity: 1; transform: translateY(0) rotate(-2deg); }
+}
+@keyframes stamp {
+  from { opacity: 0; transform: scale(1.8) rotate(-12deg); }
+  to { opacity: 1; transform: scale(1) rotate(-4deg); }
+}

@@ -42,7 +42,7 @@ for (const [doc, slug] of Object.entries(PAGES)) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css?v=2">
-  <link rel="stylesheet" href="/home.css?v=3">
+  <link rel="stylesheet" href="/home.css?v=4">
   <link rel="stylesheet" href="/legal.css?v=2">
 </head>
 <body class="home">
