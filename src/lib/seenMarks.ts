@@ -7,7 +7,7 @@ import { Marks } from './marks';
 import { supabase } from './supabase';
 
 // prefix "inbox" -> { "<item key>": when }
-export async function loadServerMarks(prefix: 'inbox' | 'photos'): Promise<Marks> {
+export async function loadServerMarks(prefix: 'inbox' | 'photos' | 'event'): Promise<Marks> {
   try {
     const { data, error } = await supabase
       .from('seen_marks')
@@ -25,7 +25,7 @@ export async function loadServerMarks(prefix: 'inbox' | 'photos'): Promise<Marks
 // firstOnly: keep the mark already there (first seen); otherwise the server
 // keeps whichever is later.
 export async function saveServerMarks(
-  prefix: 'inbox' | 'photos',
+  prefix: 'inbox' | 'photos' | 'event',
   marks: Marks,
   firstOnly: boolean
 ): Promise<void> {

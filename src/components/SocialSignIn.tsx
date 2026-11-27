@@ -69,7 +69,7 @@ export default function SocialSignIn({
         ) : (
           <>
             <GoogleLogo />
-            <Text style={styles.googleText}>Continue with Google</Text>
+            <Text style={styles.googleText} maxFontSizeMultiplier={1.3}>Continue with Google</Text>
           </>
         )}
       </Pressable>
@@ -131,7 +131,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       marginBottom: spacing.sm,
     },
     google: {
-      height: 48,
+      minHeight: 48, // grows with large text instead of cutting it off
+      paddingVertical: spacing.sm,
       borderRadius: radii.control,
       borderWidth: 1,
       borderColor: c.line,
@@ -146,6 +147,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       ...t.body,
       fontFamily: fonts.bodySemiBold,
       color: c.ink,
+      flexShrink: 1, // wraps beside the G at large text sizes
+      textAlign: 'center',
     },
     terms: {
       ...t.caption,

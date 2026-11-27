@@ -73,6 +73,11 @@ export type ReminderPrefs = {
   albumClosed: boolean;
   // A week and a day before a free event's photos are deleted.
   photosExpiring: boolean;
+  // Sent by the server (come-back-moments.sql): the morning after an
+  // event, its photos are ready; and a month and a year later, a memory.
+  // The keys match the push kinds, so the sender can skip them.
+  photosReady: boolean;
+  memory: boolean;
   // Friend activity. Unlike the two groups above, these can't be scheduled
   // ahead of time - they're things other people do - so they're delivered
   // when the app next loads your friend data. See notifyFriendActivity.
@@ -98,6 +103,8 @@ const DEFAULT_PREFS: ReminderPrefs = {
   albumHourLeft: false,
   albumClosed: false,
   photosExpiring: true,
+  photosReady: true,
+  memory: true,
   friendRequest: true,
   friendAccepted: true,
   eventInvite: true,
@@ -119,6 +126,8 @@ export const ALBUM_PREF_KEYS = [
   'albumHourLeft',
   'albumClosed',
   'photosExpiring',
+  'photosReady',
+  'memory',
 ] as const;
 
 export const FRIEND_PREF_KEYS = [
@@ -834,6 +843,8 @@ export type NotificationTarget =
   | { kind: 'bill'; billId: string }
   | { kind: 'chat'; eventId: string; title: string }
   | { kind: 'event'; eventId: string }
+  // Photos ready the morning after, and memories: straight to the photos.
+  | { kind: 'photos'; eventId: string }
   // A photo reported to you as the event's host.
   | { kind: 'hostReport'; reportId: string }
   | { kind: 'friends' };
@@ -845,6 +856,7 @@ export function targetOf(data: unknown): NotificationTarget | null {
     return { kind: 'chat', eventId: d.eventId, title: typeof d.title === 'string' ? d.title : '' };
   }
   if (d.type === 'event' && typeof d.eventId === 'string') return { kind: 'event', eventId: d.eventId };
+  if (d.type === 'photos' && typeof d.eventId === 'string') return { kind: 'photos', eventId: d.eventId };
   if (d.type === 'hostReport' && typeof d.reportId === 'string') {
     return { kind: 'hostReport', reportId: d.reportId };
   }
@@ -882,7 +894,14 @@ export function onNotificationTap(open: (target: NotificationTarget) => void): (
 // ---------------------------------------------------------------------------
 
 // The kinds the server sends; each phone can turn them off in Settings.
-const PUSH_KINDS = ['friendRequest', 'friendAccepted', 'chatMessage', 'albumOpen'] as const;
+const PUSH_KINDS = [
+  'friendRequest',
+  'friendAccepted',
+  'chatMessage',
+  'albumOpen',
+  'photosReady',
+  'memory',
+] as const;
 const PUSH_TOKEN_KEY = 'rollcal.pushToken';
 // Android 13+ shows no prompt until a channel exists, and older builds
 // asked before making one, so Android phones were marked "asked" without

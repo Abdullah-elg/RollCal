@@ -139,7 +139,7 @@ export const PLAN_COMPARISON: PlanRow[] = [
   { feature: 'Videos', free: 'Up to 15 s', plus: 'Up to 1 min', pro: 'Up to 5 min', ...P('Up to 1 min') },
   { feature: 'Video recaps', free: '5-second preview', plus: true, pro: true, ...P(true) },
   { feature: 'Photos kept', free: '30 days', plus: 'Forever', pro: 'Forever', ...P('Forever') },
-  { feature: 'Receipt scans', free: '1 / month', plus: '15 / month', pro: 'Unlimited', ...P(false) },
+  { feature: 'Receipt scans', free: '1 / month', plus: '15 / month', pro: 'Unlimited', ...P('+5 for the event') },
   { feature: 'Storage', free: '2 GB', plus: '50 GB', pro: '250 GB', ...P('10 GB', '30 GB', '60 GB') },
   { feature: 'Quiet mode', free: true, plus: true, pro: true, ...P(true) },
 ];
@@ -147,8 +147,9 @@ export const PLAN_COMPARISON: PlanRow[] = [
 // Free scans left this calendar month; null for Pro (no limit) or when it
 // couldn't be checked, which only hides the count, since the scan function
 // enforces the allowance itself (receipt_scans_left in plans.sql).
-export async function loadScansLeft(): Promise<number | null> {
-  const { data, error } = await supabase.rpc('receipt_scans_left');
+// With an event, its Event Pass scans are counted in too.
+export async function loadScansLeft(eventId?: string): Promise<number | null> {
+  const { data, error } = await supabase.rpc('receipt_scans_left', eventId ? { p_event: eventId } : {});
   return error ? null : (data as number | null);
 }
 

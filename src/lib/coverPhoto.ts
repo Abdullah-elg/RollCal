@@ -1,4 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
+import type { CoverCrop } from './coverCrop';
 import { uploadPhotoAsset } from './photos';
 import { supabase } from './supabase';
 
@@ -6,53 +7,54 @@ import { supabase } from './supabase';
 // A host can add one before the event; like every photo it stays out of the
 // roll until the roll opens at the start (see isRollOpen).
 
+// The crop is how the full photo is framed in the 2:1 cover (null: centred).
+// Choosing a photo without a frame resets it (see cover-crop.sql).
 export async function setCoverPhoto(
   eventId: string,
-  photoId: string | null
+  photoId: string | null,
+  crop?: CoverCrop | null
 ): Promise<{ error: string | null }> {
   const { error } = await supabase
     .from('events')
-    .update({ cover_photo_id: photoId })
+    .update(crop === undefined ? { cover_photo_id: photoId } : { cover_photo_id: photoId, cover_crop: crop })
     .eq('id', eventId);
   return { error: error ? error.message : null };
 }
 
+// Just the new frame for the photo that's already the cover.
+export async function setCoverCrop(eventId: string, crop: CoverCrop): Promise<{ error: string | null }> {
+  const { error } = await supabase.from('events').update({ cover_crop: crop }).eq('id', eventId);
+  return { error: error ? error.message : null };
+}
+
 // Host picks one image from their library for the cover. Null if they
-// cancel. Kept apart from the upload so a new event can hold the photo
-// until the event exists.
+// cancel. No crop here: the whole photo goes in the roll, and the cover's
+// frame is chosen next in CoverCropper (the system crop is square on iOS
+// whatever shape is asked for, so it never matched the cover).
 export async function pickCoverAsset(): Promise<ImagePicker.ImagePickerAsset | null> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: 'images',
-    allowsEditing: true,
-    aspect: [4, 3],
+    allowsEditing: false,
     quality: 1,
   });
   return result.canceled || result.assets.length === 0 ? null : result.assets[0];
 }
 
-// Uploads a picked image and makes it the event's cover.
+// Uploads a picked image (whole, into the roll) and makes it the event's
+// cover, framed by `crop`.
 export async function uploadCoverAsset(
   eventId: string,
   userId: string,
-  asset: ImagePicker.ImagePickerAsset
+  asset: ImagePicker.ImagePickerAsset,
+  crop: CoverCrop | null = null
 ): Promise<{ photoId: string | null; error: string | null }> {
   try {
     const photoId = await uploadPhotoAsset(eventId, userId, asset, 0.8);
-    const { error } = await setCoverPhoto(eventId, photoId);
+    const { error } = await setCoverPhoto(eventId, photoId, crop);
     return { photoId, error };
   } catch (err) {
     return { photoId: null, error: err instanceof Error ? err.message : 'Upload failed.' };
   }
-}
-
-// Pick and upload in one go, for an event that already exists.
-export async function pickAndUploadCover(
-  eventId: string,
-  userId: string
-): Promise<{ photoId: string | null; error: string | null }> {
-  const asset = await pickCoverAsset();
-  if (!asset) return { photoId: null, error: null };
-  return uploadCoverAsset(eventId, userId, asset);
 }
 
 // Photos (cover included) only show up in the roll, counts and activity once

@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,7 +31,10 @@ import { JoinMode } from '../lib/joinRequests';
 import PostRulePicker from '../components/PostRulePicker';
 import { PostRule } from '../lib/postRules';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { pickAndUploadCover, pickCoverAsset, setCoverPhoto, uploadCoverAsset } from '../lib/coverPhoto';
+import { pickCoverAsset, setCoverCrop, setCoverPhoto, uploadCoverAsset } from '../lib/coverPhoto';
+import { COVER_ASPECT, CoverCrop, parseCoverCrop } from '../lib/coverCrop';
+import CoverImage from '../components/CoverImage';
+import CoverCropper from '../components/CoverCropper';
 import { ImagePickerAsset } from 'expo-image-picker';
 import { CameraIcon, ChevronRightIcon } from '../components/icons';
 import { removeEventFiles } from '../lib/photos';
@@ -86,8 +88,17 @@ export default function CreateEventScreen({ navigation, route }: Props) {
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
-  // New event: the picked photo, uploaded once the event exists.
+  // How the cover is framed (Manage event: saved on the event).
+  const [coverCrop, setCoverCropState] = useState<CoverCrop | null>(null);
+  // New event: the picked photo and its frame, uploaded once the event exists.
   const [pendingCover, setPendingCover] = useState<ImagePickerAsset | null>(null);
+  const [pendingCrop, setPendingCrop] = useState<CoverCrop | null>(null);
+  // The framing step: a just-picked photo, or re-framing the current one.
+  const [cropping, setCropping] = useState<
+    | { kind: 'new'; asset: ImagePickerAsset }
+    | { kind: 'adjust'; uri: string; width?: number; height?: number; crop: CoverCrop | null }
+    | null
+  >(null);
   const [deleteAt, setDeleteAt] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<'cancel' | 'delete' | null>(null);
   const [loadedRules, setLoadedRules] = useState<{ photos: PostRule; chat: PostRule }>({
@@ -148,6 +159,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
         setEndsAt(new Date(data.ends_at));
         setOriginalStart(new Date(data.starts_at));
         setCoverPhotoId(data.cover_photo_id ?? null);
+        setCoverCropState(parseCoverCrop(data.cover_crop));
         setDeleteAt(data.delete_at ?? null);
       }
       setInitializing(false);
@@ -175,34 +187,68 @@ export default function CreateEventScreen({ navigation, route }: Props) {
     };
   }, [coverPhotoId]);
 
-  const uploadCover = async () => {
-    if (!editEventId || !session?.user.id) return;
+  // Pick a photo, then frame it (CoverCropper) before it's used.
+  const pickCover = async () => {
+    const asset = await pickCoverAsset();
+    if (asset) setCropping({ kind: 'new', asset });
+  };
+
+  // Re-frame the photo that's already the cover.
+  const adjustCover = () => {
+    if (editEventId && coverUrl) {
+      setCropping({ kind: 'adjust', uri: coverUrl, crop: coverCrop });
+    } else if (pendingCover) {
+      setCropping({
+        kind: 'adjust',
+        uri: pendingCover.uri,
+        width: pendingCover.width,
+        height: pendingCover.height,
+        crop: pendingCrop,
+      });
+    }
+  };
+
+  const onCropped = async (crop: CoverCrop) => {
+    const step = cropping;
+    setCropping(null);
+    if (!step) return;
+    if (!editEventId) {
+      // New event: hold the photo and frame until the event exists.
+      if (step.kind === 'new') setPendingCover(step.asset);
+      setPendingCrop(crop);
+      return;
+    }
+    if (!session?.user.id) return;
+    if (step.kind === 'adjust') {
+      const before = coverCrop;
+      setCoverCropState(crop);
+      const { error: cropError } = await setCoverCrop(editEventId, crop);
+      if (cropError) {
+        setCoverCropState(before);
+        Alert.alert('Could not update the event photo', cropError);
+      }
+      return;
+    }
     setUploadingCover(true);
-    const { photoId, error: uploadError } = await pickAndUploadCover(editEventId, session.user.id);
+    const { photoId, error: uploadError } = await uploadCoverAsset(
+      editEventId,
+      session.user.id,
+      step.asset,
+      crop
+    );
     setUploadingCover(false);
     if (uploadError) {
       Alert.alert('Upload failed', uploadError);
     } else if (photoId) {
-      hapticLight();
+      setCoverCropState(crop);
       setCoverPhotoId(photoId);
-    }
-  };
-
-  const pickCover = async () => {
-    if (editEventId) {
-      await uploadCover();
-      return;
-    }
-    const asset = await pickCoverAsset();
-    if (asset) {
-      hapticLight();
-      setPendingCover(asset);
     }
   };
 
   const removeCover = async () => {
     if (!editEventId) {
       setPendingCover(null);
+      setPendingCrop(null);
       return;
     }
     hapticLight();
@@ -341,7 +387,12 @@ export default function CreateEventScreen({ navigation, route }: Props) {
       return;
     }
     if (pendingCover) {
-      const { error: coverError } = await uploadCoverAsset(data.id, session!.user.id, pendingCover);
+      const { error: coverError } = await uploadCoverAsset(
+        data.id,
+        session!.user.id,
+        pendingCover,
+        pendingCrop
+      );
       if (coverError) {
         Alert.alert(
           'Event created',
@@ -374,6 +425,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
   ].join(' · ');
   const hasCover = editEventId ? !!coverPhotoId : !!pendingCover;
   const coverSrc = editEventId ? coverUrl : pendingCover?.uri ?? null;
+  const shownCrop = editEventId ? coverCrop : pendingCrop;
 
   if (initializing) {
     return (
@@ -399,7 +451,7 @@ export default function CreateEventScreen({ navigation, route }: Props) {
           style={({ pressed }) => [styles.cover, pressed && { opacity: 0.85 }]}
         >
           {coverSrc ? (
-            <Image source={{ uri: coverSrc }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            <CoverImage uri={coverSrc} crop={shownCrop} style={StyleSheet.absoluteFill} />
           ) : hasCover ? null : (
             <View style={styles.coverEmpty}>
               <CameraIcon size={22} color={colors.inkMuted} />
@@ -414,6 +466,9 @@ export default function CreateEventScreen({ navigation, route }: Props) {
           )}
           {hasCover && !uploadingCover && (
             <View style={styles.coverActions}>
+              <Pressable onPress={adjustCover} hitSlop={6} accessibilityRole="button" style={styles.coverChip}>
+                <Text style={styles.coverChipText}>Adjust</Text>
+              </Pressable>
               <Pressable onPress={pickCover} hitSlop={6} accessibilityRole="button" style={styles.coverChip}>
                 <Text style={styles.coverChipText}>Change</Text>
               </Pressable>
@@ -590,6 +645,15 @@ export default function CreateEventScreen({ navigation, route }: Props) {
           setShowMap(false);
         }}
       />
+      <CoverCropper
+        visible={!!cropping}
+        uri={cropping ? (cropping.kind === 'new' ? cropping.asset.uri : cropping.uri) : null}
+        imageWidth={cropping ? (cropping.kind === 'new' ? cropping.asset.width : cropping.width) : undefined}
+        imageHeight={cropping ? (cropping.kind === 'new' ? cropping.asset.height : cropping.height) : undefined}
+        initialCrop={cropping?.kind === 'adjust' ? cropping.crop : null}
+        onCancel={() => setCropping(null)}
+        onDone={onCropped}
+      />
     </FormScreen>
   );
 }
@@ -637,7 +701,10 @@ const makeStyles = (c: Palette) =>
     block: { marginBottom: spacing.lg },
     fieldBlock: { marginBottom: spacing.lg - spacing.md },
     cover: {
-      height: 180,
+      // The same shape as the cover on the event; full width, or the box
+      // shrinks to its content once it has no fixed height.
+      width: '100%',
+      aspectRatio: COVER_ASPECT,
       borderRadius: radii.card,
       overflow: 'hidden',
       backgroundColor: c.card,

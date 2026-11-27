@@ -92,6 +92,16 @@ const ALBUM_ROWS: ToggleRow[] = [
     label: 'Before photos are deleted',
     caption: 'A week and a day before a free event’s photos are deleted',
   },
+  {
+    key: 'photosReady',
+    label: 'When the photos are ready',
+    caption: 'The morning after an event, with how many photos there are',
+  },
+  {
+    key: 'memory',
+    label: 'Memories',
+    caption: 'A month and a year after an event, a look back at its photos',
+  },
 ];
 
 const FRIEND_ROWS: ToggleRow[] = [

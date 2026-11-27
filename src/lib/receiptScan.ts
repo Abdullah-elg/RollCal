@@ -55,7 +55,8 @@ export async function scanReceipt(
   onReading();
 
   const { data, error } = await supabase.functions.invoke('scan-receipt', {
-    body: { image: photo.base64, mimeType: photo.mimeType ?? 'image/jpeg' },
+    // The event lets its Event Pass scans be used once the person's own run out.
+    body: { image: photo.base64, mimeType: photo.mimeType ?? 'image/jpeg', eventId },
     // The function gives each model 20 seconds; never spin forever.
     timeout: 75_000,
   });

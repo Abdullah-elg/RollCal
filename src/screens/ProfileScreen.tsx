@@ -28,7 +28,7 @@ import { loadMemories, Memory } from '../lib/memories';
 import { anniversaryLabel } from '../lib/memoriesArrange';
 import { signedLinks } from '../lib/signedUrls';
 import { TabScreenProps } from '../navigation/types';
-import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, radii, spacing, TITLE_MAX_SCALE, TypeTokens } from '../theme';
 
 type Props = TabScreenProps<'ProfileTab'>;
 
@@ -183,7 +183,7 @@ export default function ProfileScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.topBar}>
-        <Text style={styles.displayTitle}>Profile</Text>
+        <Text style={styles.displayTitle} maxFontSizeMultiplier={TITLE_MAX_SCALE}>Profile</Text>
         <Pressable
           accessibilityLabel="Settings"
           accessibilityRole="button"

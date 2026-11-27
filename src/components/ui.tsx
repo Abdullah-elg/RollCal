@@ -457,8 +457,11 @@ export function ErrorText({ message }: { message: string | null }) {
 
 const makeStyles = (c: Palette, t: TypeTokens) =>
   StyleSheet.create({
+    // At least 48 tall, and taller when the phone's text size is large,
+    // so the label is never cut off.
     button: {
-      height: 48,
+      minHeight: 48,
+      paddingVertical: spacing.sm,
       borderRadius: radii.control,
       alignItems: 'center',
       justifyContent: 'center',
@@ -495,7 +498,8 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       borderColor: c.line,
       borderRadius: radii.control,
       paddingHorizontal: spacing.md,
-      height: 48,
+      minHeight: 48,
+      paddingVertical: spacing.sm,
     },
     fieldAccessory: {
       position: 'absolute',

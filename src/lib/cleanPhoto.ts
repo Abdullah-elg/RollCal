@@ -1,5 +1,6 @@
 import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { fitSize } from './fitSize';
 
 // Phone photos carry hidden metadata: where they were taken (GPS), when, and
 // the phone's make and serial-style details. Anyone who downloads a photo
@@ -54,13 +55,13 @@ export async function cleanPhoto(
   try {
     image = await context.renderAsync();
     if (maxSide && Math.max(image.width, image.height) > maxSide) {
-      const resize =
-        image.width >= image.height ? { width: maxSide } : { height: maxSide };
+      const resize = fitSize(image.width, image.height, maxSide);
       image.release();
       image = await context.resize(resize).renderAsync();
     }
-    const wide = image.width >= image.height;
-    const longest = Math.max(image.width, image.height);
+    const fullW = image.width;
+    const fullH = image.height;
+    const longest = Math.max(fullW, fullH);
     const saved = await image.saveAsync({ compress: quality, format: SaveFormat.JPEG });
     image.release();
     image = null;
@@ -69,7 +70,7 @@ export async function cleanPhoto(
     let thumb: ArrayBuffer | null | undefined;
     if (thumbSide) {
       try {
-        if (longest > thumbSide) context.resize(wide ? { width: thumbSide } : { height: thumbSide });
+        if (longest > thumbSide) context.resize(fitSize(fullW, fullH, thumbSide));
         image = await context.renderAsync();
         const small = await image.saveAsync({ compress: THUMB_QUALITY, format: SaveFormat.JPEG });
         image.release();

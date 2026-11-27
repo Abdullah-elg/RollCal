@@ -382,6 +382,8 @@ export default function RootNavigator() {
       navRef.navigate('EventChat', { eventId: target.eventId, title: target.title });
     } else if (target.kind === 'event') {
       navRef.navigate('EventDetail', { eventId: target.eventId });
+    } else if (target.kind === 'photos') {
+      navRef.navigate('EventPhotos', { eventId: target.eventId });
     } else if (target.kind === 'hostReport') {
       navRef.navigate('HostReport', { reportId: target.reportId });
     } else navRef.navigate('Tabs', { screen: 'FriendsTab' });

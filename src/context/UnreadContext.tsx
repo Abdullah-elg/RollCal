@@ -15,8 +15,10 @@ import { loadWaitingHostReports } from '../lib/hostReports';
 import { setAppBadge } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import {
+  loadChangedEvents,
   loadUnreadChats,
   loadUnreadPhotos,
+  markEventSeen as markEventSeenLib,
   markChatRead,
   markPhotosRead as markPhotosReadLib,
 } from '../lib/unread';
@@ -29,6 +31,9 @@ type UnreadContextValue = {
   unreadChats: string[];
   // Events that have new photos.
   unreadPhotos: string[];
+  // Events whose name, place, time or description the host changed since
+  // you last opened them.
+  changedEvents: string[];
   // Friend requests waiting on an answer.
   friendRequests: number;
   // Invitations waiting on an answer.
@@ -40,6 +45,8 @@ type UnreadContextValue = {
   markRead: (eventId: string, timestamp: string) => Promise<void>;
   // Called when event photos are viewed, clearing new photos mark.
   markPhotosRead: (eventId: string, timestamp: string) => Promise<void>;
+  // Called when an event is opened, clearing its "changed" mark.
+  markEventSeen: (eventId: string) => Promise<void>;
 };
 
 export type WaitingHostReport = { id: string; event_id: string; photo_id: string };
@@ -51,6 +58,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
   const userId = session?.user.id ?? null;
   const [unreadChats, setUnreadChats] = useState<string[]>([]);
   const [unreadPhotos, setUnreadPhotos] = useState<string[]>([]);
+  const [changedEvents, setChangedEvents] = useState<string[]>([]);
   const [friendRequests, setFriendRequests] = useState(0);
   const [pendingInvites, setPendingInvites] = useState(0);
   const [hostReports, setHostReports] = useState<WaitingHostReport[]>([]);
@@ -59,6 +67,7 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     if (!userId) {
       setUnreadChats([]);
       setUnreadPhotos([]);
+      setChangedEvents([]);
       setFriendRequests(0);
       setPendingInvites(0);
       setHostReports([]);
@@ -84,12 +93,14 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     setPendingInvites(invites?.length ?? 0);
     setHostReports(waiting.map(({ id, event_id, photo_id }) => ({ id, event_id, photo_id })));
     const eventIds = (events ?? []).map((e) => e.id);
-    const [unreadChatSet, unreadPhotoSet] = await Promise.all([
+    const [unreadChatSet, unreadPhotoSet, changedSet] = await Promise.all([
       loadUnreadChats(userId, eventIds),
       loadUnreadPhotos(userId, eventIds),
+      loadChangedEvents(userId, eventIds),
     ]);
     setUnreadChats([...unreadChatSet]);
     setUnreadPhotos([...unreadPhotoSet]);
+    setChangedEvents([...changedSet]);
   }, [userId]);
 
   useEffect(() => {
@@ -128,11 +139,22 @@ export function UnreadProvider({ children }: { children: ReactNode }) {
     [userId]
   );
 
+  const markEventSeen = useCallback(
+    async (eventId: string) => {
+      if (!userId) return;
+      setChangedEvents((prev) => prev.filter((id) => id !== eventId));
+      await markEventSeenLib(userId, eventId, new Date().toISOString());
+    },
+    [userId]
+  );
+
   return (
     <UnreadContext.Provider
       value={{
         unreadChats,
         unreadPhotos,
+        changedEvents,
+        markEventSeen,
         friendRequests,
         pendingInvites,
         hostReports,

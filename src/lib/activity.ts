@@ -80,7 +80,9 @@ export async function loadEventActivity(
       .from('rsvps')
       .select('user_id, status, created_at')
       .eq('event_id', eventId)
-      .in('status', ['going', 'host'])
+      // "host" isn't an RSVP status (going | maybe | not_going); asking for
+      // it made the whole request fail, so "joined today" never showed.
+      .in('status', ['going', 'maybe'])
       .neq('user_id', userId);
 
     if (rsvps && rsvps.length > 0) {

@@ -41,6 +41,7 @@ import {
 } from '../theme';
 import { Event } from '../types';
 import { placeLabel } from '../lib/place';
+import { TITLE_MAX_SCALE } from '../theme';
 
 type Props = TabScreenProps<'CalendarTab'>;
 type ViewMode = 'month' | 'day';
@@ -234,7 +235,7 @@ export default function CalendarScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.header}>
-        <Text style={type.title}>Calendar</Text>
+        <Text style={type.title} maxFontSizeMultiplier={TITLE_MAX_SCALE}>Calendar</Text>
         <View style={styles.headerRight}>
           <View style={styles.toggle}>
             {(['month', 'day'] as ViewMode[]).map((m) => (

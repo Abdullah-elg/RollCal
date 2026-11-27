@@ -103,8 +103,8 @@ export default function BillReviewScreen({ navigation, route }: Props) {
   useFocusEffect(
     useCallback(() => {
       if (isPro) return;
-      loadScansLeft().then(setScansLeft);
-    }, [isPro, plan])
+      loadScansLeft(eventId).then(setScansLeft);
+    }, [isPro, plan, eventId])
   );
 
   const parsed = lines.map((l) => ({
@@ -250,8 +250,10 @@ export default function BillReviewScreen({ navigation, route }: Props) {
     isPro || scansLeft === null
       ? 'Scan the receipt and the lines fill in, or type them below.'
       : scansLeft > 0
-        ? `${scansLeft} ${scansLeft === 1 ? 'scan' : 'scans'} left this month. Or type the lines below.`
-        : `You’ve used this month’s scans. Type the lines below, or get ${plan === 'plus' ? 'Pro' : 'Plus'} to keep scanning.`;
+        ? `${scansLeft} ${scansLeft === 1 ? 'scan' : 'scans'} left. Or type the lines below.`
+        : plan === 'plus'
+          ? 'You’ve used this month’s scans. Type the lines below, or add an Event Pass for 5 more.'
+          : 'You’ve used this month’s scans. Type the lines below, or get Plus or an Event Pass for more.';
 
   const lineError = (l: Line, i: number): string | null => {
     if (!submitted) return null;

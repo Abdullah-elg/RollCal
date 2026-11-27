@@ -11,7 +11,11 @@
   "compatibility_date": "2026-10-19",
   "observability": { "enabled": true },
   "routes": [{ "pattern": "media.rollcal.app", "custom_domain": true }],
-  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "rollcal-media" }],
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "rollcal-media" },
+    // A private second copy of every file, kept in step every hour.
+    { "binding": "BACKUP", "bucket_name": "rollcal-media-backup" }
+  ],
   // Per person, per Cloudflare location: uploads take about 3 calls a file.
   "ratelimits": [
     { "name": "UPLOAD_LIMIT", "namespace_id": "4101", "simple": { "limit": 150, "period": 60 } },
@@ -23,5 +27,5 @@
     "API_URL": "https://api.rollcal.app"
   },
   // Every 5 minutes: delete files whose rows are gone, and drop unfinished uploads.
-  "triggers": { "crons": ["*/5 * * * *"] }
+  "triggers": { "crons": ["*/5 * * * *", "23 * * * *"] }
 }

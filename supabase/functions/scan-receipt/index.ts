@@ -1,7 +1,7 @@
 // RollCal "Scan a receipt": a photo in, a bill draft out.
 //
 // Called from the bill review screen with the signed-in user's JWT:
-//   supabase.functions.invoke('scan-receipt', { body: { image, mimeType } })
+//   supabase.functions.invoke('scan-receipt', { body: { image, mimeType, eventId } })
 // where image is the photo as base64. Nothing is stored: the photo goes to
 // Gemini, the answer is checked and turned into whole cents, and the draft
 // comes back for the person to check before they share it.
@@ -114,6 +114,17 @@ Deno.serve(async (req: Request) => {
   const userId = userIdFrom(authorization);
   if (!userId) return json(401, { error: 'Not signed in' });
 
+  // Read first: the event the bill is for decides whether its Event Pass
+  // scans can be used (pass-scans.sql).
+  let body: { image?: unknown; mimeType?: unknown; eventId?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return json(400, { error: 'Send the photo as JSON.' });
+  }
+  const eventId =
+    typeof body.eventId === 'string' && /^[0-9a-f-]{36}$/i.test(body.eventId) ? body.eventId : null;
+
   const supabase = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { Authorization: authorization } },
   });
@@ -121,7 +132,9 @@ Deno.serve(async (req: Request) => {
   // same time can't all use the last one. scans_left is what's left after
   // this one, or null for Pro (no limit, nothing recorded). Asked as the
   // user, so the database also checks their token here.
-  const { data: claim, error: claimError } = await supabase.rpc('claim_receipt_scan').single();
+  const { data: claim, error: claimError } = await supabase
+    .rpc('claim_receipt_scan', eventId ? { p_event: eventId } : {})
+    .single();
   step('claimed a scan');
   if (claimError || !claim) return json(401, { error: 'Not signed in' });
   const { allowed, scan_id: scanId, scans_left: left } = claim as {
@@ -131,7 +144,7 @@ Deno.serve(async (req: Request) => {
   };
   if (!allowed) {
     return json(403, {
-      error: 'You’ve used your free scans this month. Get Pro to scan as many as you like.',
+      error: 'You’ve used your scans. Get Plus or an Event Pass to scan more, or type the lines in.',
       code: 'scan_limit',
     });
   }
@@ -166,12 +179,6 @@ Deno.serve(async (req: Request) => {
   };
   const unreadable = { error: 'Couldn’t read the receipt right now. Try again, or type it in.' };
 
-  let body: { image?: unknown; mimeType?: unknown };
-  try {
-    body = await req.json();
-  } catch {
-    return notCounted(400, { error: 'Send the photo as JSON.' });
-  }
   const image = typeof body.image === 'string' ? body.image : '';
   const mimeType =
     typeof body.mimeType === 'string' && /^image\/(jpeg|png|webp|heic|heif)$/.test(body.mimeType)
@@ -239,7 +246,7 @@ Deno.serve(async (req: Request) => {
   if (!scan.is_receipt || draft.items.length === 0) {
     let after = left;
     if (left !== null) {
-      const { data, error } = await supabase.rpc('receipt_scans_left');
+      const { data, error } = await supabase.rpc('receipt_scans_left', eventId ? { p_event: eventId } : {});
       if (!error && typeof data === 'number') after = data;
     }
     const allowance =

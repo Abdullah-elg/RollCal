@@ -73,7 +73,7 @@ photos kept forever) while they're in it.
 | Split a bill (type the lines, by item or evenly), claim what you had, see what you owe | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Payment handles (Interac, Venmo, PayPal…), send, mark paid, confirm | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Live updates, currency conversion, a reminder every 12 h | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **AI receipt scans** | 1 a month | — | — | — | 15 a month |
+| **AI receipt scans** | 1 a month | +5 for the event | +5 | +5 | 15 a month |
 | Auto-reminders to people who haven't paid (planned) | — | — | — | — | ✓ |
 | "Settle the whole event" totals across bills (planned) | — | ✓ | ✓ | ✓ | ✓ |
 | Export bills to CSV or PDF (planned) | — | — | — | — | ✓ |

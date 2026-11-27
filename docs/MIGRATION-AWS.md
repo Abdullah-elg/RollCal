@@ -26,10 +26,11 @@ the move is a checked plan, not a rewrite. Nothing here has to happen now.
 | Supabase Auth (email, Apple, Google, guests) | Amazon Cognito, or self-hosted Supabase Auth (GoTrue) | **Medium.** See *Accounts* below. |
 | Supabase Data API (PostgREST) used by 30 files | Self-hosted PostgREST (open source) on ECS Fargate or App Runner, behind `api.rollcal.app` | Medium. The app's queries keep working unchanged. |
 | Supabase Realtime (`src/lib/live.ts`) | Self-hosted Supabase Realtime, or API Gateway WebSockets / AppSync with `live.ts` rewritten | Medium. One file either way. |
-| Server functions (8, Deno) | AWS Lambda (Node.js 22) behind `api.rollcal.app/functions/v1/...` | Low. Each uses only `Deno.serve` and `Deno.env`. |
+| Server functions (8 in use, Deno; `join` is an old SociaLink redirect to delete) | AWS Lambda (Node.js 22) behind `api.rollcal.app/functions/v1/...` | Low. Each uses only `Deno.serve` and `Deno.env`. `scan-receipt` and `caption-photos` call Google Gemini over HTTPS, which works the same from Lambda (or swap to Amazon Bedrock). |
 | `pg_cron` jobs (8) | `pg_cron` on RDS (supported), or EventBridge Scheduler | Low. |
 | `pg_net` (database → function calls) | Lambda invoked from EventBridge or SQS (rewrite `private.call_function`), or the `aws_lambda` RDS extension | Low–medium. One function. The exchange-rate fetch (`fx_refresh` in `currency.sql`) also uses pg_net and moves to a scheduled Lambda. |
 | Supabase Vault (4 keys) | AWS Secrets Manager | Low. |
+| Photos in Supabase Storage | None left (emptied 2026-11-27); everything is in R2 | Done. |
 | Cloudflare R2 + media Worker | S3 + CloudFront + a Lambda for uploads and signed links, behind `media.rollcal.app` | Medium. Same keys and paths. The Worker's logic ports almost line for line. |
 | Cloudflare Pages (`web/`) | S3 + CloudFront, or Amplify Hosting | Low. Static files. Port `_redirects` and `_headers` to CloudFront functions. |
 | Emails via Resend | Amazon SES | Low. |

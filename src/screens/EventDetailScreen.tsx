@@ -10,7 +10,6 @@ import {
   Alert,
   Animated,
   Easing,
-  Image,
   Modal,
   PixelRatio,
   Platform,
@@ -66,6 +65,8 @@ import {
   removeInvitation,
 } from '../lib/invitations';
 import { setCoverPhoto } from '../lib/coverPhoto';
+import { COVER_ASPECT, parseCoverCrop } from '../lib/coverCrop';
+import CoverImage from '../components/CoverImage';
 import { reopenRoll, rollState } from '../lib/roll';
 import {
   answerJoinRequest,
@@ -77,7 +78,7 @@ import { eventEnded, rsvpLabel } from '../lib/rsvpLabels';
 import { guestName } from '../lib/guests';
 import { supabase } from '../lib/supabase';
 import { AppStackParamList } from '../navigation/types';
-import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, radii, spacing, TypeTokens, TITLE_MAX_SCALE } from '../theme';
 import { Event, RsvpStatus } from '../types';
 import { placeLabel } from '../lib/place';
 
@@ -170,7 +171,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const { colors, type, mode } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
-  const { unreadChats, markPhotosRead } = useUnread();
+  const { unreadChats, markPhotosRead, markEventSeen } = useUnread();
   const styles = useMemo(() => makeStyles(colors, type, mode === 'dark'), [colors, type, mode]);
 
   const [event, setEvent] = useState<Event | null>(null);
@@ -337,6 +338,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
 
     if (session?.user.id) {
       markPhotosRead(eventId, new Date().toISOString());
+      // Opening the event is seeing any change to its name, place or time.
+      markEventSeen(eventId);
     }
   }, [eventId, session?.user.id]);
 
@@ -413,7 +416,8 @@ export default function EventDetailScreen({ navigation, route }: Props) {
     if (!event) return;
     hapticLight();
     setCoverPhotoId(photoId);
-    setEvent((prev) => (prev ? { ...prev, cover_photo_id: photoId } : prev));
+    // A photo picked from the roll starts centred (its old frame is cleared).
+    setEvent((prev) => (prev ? { ...prev, cover_photo_id: photoId, cover_crop: null } : prev));
     const { error } = await setCoverPhoto(event.id, photoId);
     if (error) Alert.alert('Could not update the event photo', error);
   };
@@ -702,13 +706,11 @@ export default function EventDetailScreen({ navigation, route }: Props) {
         }
       >
         {coverPhoto && (
-          <View style={[styles.coverContainer, { width: screenWidth }]}>
-            <Image
-              source={{ uri: coverPhoto }}
-              style={styles.coverImage}
-              resizeMode="cover"
-            />
-          </View>
+          <CoverImage
+            uri={coverPhoto}
+            crop={parseCoverCrop(event.cover_crop)}
+            style={[styles.coverContainer, { width: screenWidth }]}
+          />
         )}
 
         <View style={styles.bodyWrap}>
@@ -719,6 +721,7 @@ export default function EventDetailScreen({ navigation, route }: Props) {
           )}
           <View style={styles.titleRow}>
             <Text
+              maxFontSizeMultiplier={TITLE_MAX_SCALE}
               style={[
                 coverPhoto ? styles.titleWithCover : styles.bigDisplayTitle,
                 { flex: 1 },
@@ -1465,13 +1468,8 @@ const makeStyles = (c: Palette, t: TypeTokens, dark = false) =>
       paddingBottom: spacing.xxl,
     },
     coverContainer: {
-      height: 220,
+      aspectRatio: COVER_ASPECT, // what the host framed in the cover cropper
       backgroundColor: c.card,
-    },
-    coverImage: {
-      width: '100%',
-      height: '100%',
-      borderRadius: 0,
     },
     bodyWrap: {
       paddingHorizontal: spacing.lg,

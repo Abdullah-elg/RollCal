@@ -52,8 +52,8 @@ Updated 2026-11-23. Tick items off here as they ship (details go in
 
 ## Social redesign (in progress)
 
-Stage 1 the look (done 2026-11-24) · Stage 2 reactions and activity · Stage 3 come-back moments
-(photos ready reveal, memory reminders). See docs/UI-COLOUR-REVIEW.md.
+Stage 1 the look (done 2026-11-24) · Stage 2 reactions and activity (done) · Stage 3 come-back moments
+(photos ready reveal, memory reminders; built 2026-11-27, supabase/come-back-moments.sql). See docs/UI-COLOUR-REVIEW.md.
 
 ### After all 3 stages: the UI and colour review list (user's request, 2026-11-24)
 
@@ -66,18 +66,18 @@ Items marked (S1) are covered by Stage 1 and get ticked there.
 5. ~~(S1)~~ Done in Stage 1: One main button on the event page, by phase.
 6. ~~(S1)~~ Done in Stage 1: Photos card on a dark film-strip band with the EXP counter.
 7. ~~(S1)~~ Done in Stage 1: Home: "Recent memories" strip under upcoming events.
-8. Sign-in screen: add the app icon or sample photos.
-9. Large text: event card date wraps instead of cutting off; bell not squeezed; icons grow with text.
-10. Event page: pencil next to the share icon on the right.
-11. Website homepage: phone screenshots, App Store / Google Play badges, three "how it works" steps.
-12. Website desktop: two columns (words left, phone mockup right).
-13. Website footer: "Child Safety" wraps on phones.
-14. Website wording: body text says "photos"; "Share the roll" can stay as the headline.
+8. ~~Done~~: Sign-in screen has the app icon.
+9. ~~Done (2026-11-27)~~: Large text: card dates wrap, big titles capped at 1.3x, buttons and fields grow.
+10. ~~Done~~: Event page: pencil next to the share icon.
+11. ~~Done (2026-11-27)~~: Website homepage: drawings, Google Play badge (App Store badge after launch), three steps.
+12. ~~Done~~: Website desktop: two columns.
+13. ~~Done (2026-11-27)~~: Website footer links never break mid-link.
+14. ~~Done~~: Website wording.
 15. Join page: check again once web guests go live.
 
 ## Video recap
 - Phase 1 done (26 Nov 2026): the in-app player ("Play as a video" on the Recap screen), seamless with cross-fades and captions.
-- Phase 2 iOS done (26 Nov 2026): "Share video" makes a 1080x1920 MP4 on the phone (modules/recap-video). Android still to do (Media3 Transformer).
+- Phase 2 done: "Share video" makes a 1080x1920 MP4 on the phone (modules/recap-video): iOS 26 Nov 2026, Android 27 Nov 2026 (MediaCodec + OpenGL).
 - Optional: AI captions that describe each photo (Gemini, about a cent per recap; needs a privacy-policy update first).
 - Phase 3: music (bundled royalty-free tracks), styles, and choosing the photos.
 - Pricing ideas tied to recaps: see docs/MONETIZATION.md.

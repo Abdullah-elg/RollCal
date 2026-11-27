@@ -1,0 +1,16 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/abdullahelganainy/Desktop/Work/SociaLink/modules/recap-video/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest17621796526219792519.xml:2:13-83
+INJECTED from /Users/abdullahelganainy/Desktop/Work/SociaLink/modules/recap-video/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest17621796526219792519.xml:2:13-83
+	package
+		INJECTED from /Users/abdullahelganainy/Desktop/Work/SociaLink/modules/recap-video/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest17621796526219792519.xml
+	xmlns:android
+		ADDED from /Users/abdullahelganainy/Desktop/Work/SociaLink/modules/recap-video/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest17621796526219792519.xml:2:23-81
+uses-sdk
+INJECTED from /Users/abdullahelganainy/Desktop/Work/SociaLink/modules/recap-video/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest17621796526219792519.xml reason: use-sdk injection requested
+INJECTED from /Users/abdullahelganainy/Desktop/Work/SociaLink/modules/recap-video/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest17621796526219792519.xml
+INJECTED from /Users/abdullahelganainy/Desktop/Work/SociaLink/modules/recap-video/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest17621796526219792519.xml
+	android:targetSdkVersion
+		INJECTED from /Users/abdullahelganainy/Desktop/Work/SociaLink/modules/recap-video/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest17621796526219792519.xml
+	android:minSdkVersion
+		INJECTED from /Users/abdullahelganainy/Desktop/Work/SociaLink/modules/recap-video/android/build/intermediates/tmp/ProcessLibraryManifest/release/tempAndroidManifest17621796526219792519.xml

@@ -92,6 +92,8 @@ export type Event = {
   uploads_closed: boolean;
   uploads_reopened_until?: string | null;
   cover_photo_id?: string | null;
+  // How the cover photo is framed in the 2:1 cover (src/lib/coverCrop.ts).
+  cover_crop?: unknown;
   // Set when the host deleted an event that's over: it goes at this time
   // (see supabase/event-delete.sql). Missing before that migration ran.
   delete_at?: string | null;

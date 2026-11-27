@@ -110,6 +110,11 @@ export const radii = {
   lg: 12,
 } as const;
 
+// Big screen titles grow with the phone's text size, but only up to this
+// much (like iOS large titles), so the largest accessibility sizes don't
+// break a word like "RollCal" across lines. Body text keeps growing fully.
+export const TITLE_MAX_SCALE = 1.3;
+
 // Text styles are built from the active palette so they follow the theme.
 export function makeType(c: Palette) {
   return {

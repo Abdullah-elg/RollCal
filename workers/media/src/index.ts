@@ -14,6 +14,9 @@
 
 interface Env {
   MEDIA: R2Bucket;
+  // A second, private copy of every file (see backUp). Optional so the
+  // Worker still runs where the bucket hasn't been made yet.
+  BACKUP?: R2Bucket;
   UPLOAD_LIMIT: RateLimit;
   LINK_LIMIT: RateLimit;
   SUPABASE_URL: string;
@@ -429,6 +432,69 @@ async function cleanUp(env: Env): Promise<void> {
   }
 }
 
+// Backup: every hour, copy new or changed files into the BACKUP bucket.
+// Photos have no other copy, so this is what lets a file deleted by mistake
+// (a bug, a compromised account) be put back. Files people delete on
+// purpose leave the backup too, 30 days after they leave the main bucket,
+// as the privacy policy promises ("backups are overwritten within 30 days").
+// A file that's gone from the main bucket gets a small marker,
+// gone/<key>, holding when it was first missed.
+const BACKUP_CRON = '23 * * * *';
+const BACKUP_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+const BACKUP_MAX_COPIES = 300; // per run, to stay well inside Worker limits
+
+async function listAll(bucket: R2Bucket, prefix?: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ prefix, cursor, limit: 1000 });
+    for (const o of page.objects) out.set(o.key, o.etag);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return out;
+}
+
+async function backUp(env: Env): Promise<void> {
+  const backup = env.BACKUP;
+  if (!backup) return;
+  const [main, copies, gone] = await Promise.all([
+    listAll(env.MEDIA),
+    listAll(backup),
+    listAll(backup, 'gone/'),
+  ]);
+  for (const k of gone.keys()) copies.delete(k);
+
+  // New or changed files.
+  let copied = 0;
+  for (const [key, etag] of main) {
+    if (copied >= BACKUP_MAX_COPIES) break;
+    if (copies.get(key) === etag) continue;
+    const obj = await env.MEDIA.get(key);
+    if (!obj) continue;
+    await backup.put(key, obj.body, { httpMetadata: obj.httpMetadata, customMetadata: { source_etag: etag } });
+    copied++;
+  }
+
+  // Back in the main bucket: forget it was missing.
+  const back = [...gone.keys()].filter((g) => main.has(g.slice('gone/'.length)));
+  if (back.length) await backup.delete(back);
+
+  // Gone from the main bucket: mark it, and drop the copy after 30 days.
+  const now = Date.now();
+  for (const key of copies.keys()) {
+    if (main.has(key)) continue;
+    const marker = `gone/${key}`;
+    if (!gone.has(marker)) {
+      await backup.put(marker, String(now));
+      continue;
+    }
+    const m = await backup.get(marker);
+    const since = m ? Number(await m.text()) : now;
+    if (now - since >= BACKUP_KEEP_MS) await backup.delete([key, marker]);
+  }
+  console.log(`backup: ${copied} copied, ${main.size} files`);
+}
+
 // The web join page (rollcal.app/join) uploads and asks for links from the
 // browser; only RollCal's own site may. The app isn't a browser and needs
 // none of this.
@@ -462,8 +528,9 @@ export default {
     return withCors(req, await route(req, env));
   },
 
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(cleanUp(env));
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    if (event.cron === BACKUP_CRON) ctx.waitUntil(backUp(env));
+    else ctx.waitUntil(cleanUp(env));
   },
 } satisfies ExportedHandler<Env>;
 

@@ -1,5 +1,5 @@
-// The recap as a video file, written on the phone (iOS for now). null where
-// the native part isn't there (Android, or an older build), so the app can
+// The recap as a video file, written on the phone (iOS and Android). null where
+// the native part isn't there (an older build), so the app can
 // hide "Save video" instead of failing.
 import { requireOptionalNativeModule } from 'expo-modules-core';
 

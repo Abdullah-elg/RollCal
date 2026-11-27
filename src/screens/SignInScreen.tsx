@@ -16,7 +16,7 @@ import { Button, ErrorText, Field, FormScreen, PasswordField } from '../componen
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { AuthStackParamList } from '../navigation/types';
-import { fonts, Palette, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, spacing, TITLE_MAX_SCALE, TypeTokens } from '../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'SignIn'>;
 
@@ -47,7 +47,7 @@ export default function SignInScreen({ navigation }: Props) {
         automaticallyAdjustKeyboardInsets
       >
         <Image source={require('../../assets/icon.png')} style={styles.icon} />
-        <Text style={styles.wordmark}>RollCal</Text>
+        <Text style={styles.wordmark} maxFontSizeMultiplier={TITLE_MAX_SCALE}>RollCal</Text>
         <Text style={[type.bodyMuted, { marginBottom: spacing.xl }]}>
           Every event ends in one shared roll.
         </Text>

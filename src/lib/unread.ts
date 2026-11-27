@@ -152,3 +152,59 @@ export async function loadUnreadPhotos(
   }
   return unread;
 }
+
+// ---------------------------------------------------------------------------
+// Event changes: the host changed the name, place, time or description
+// (details_changed_at, event-changes.sql). Lights the event's ring until you
+// open the event. Your own changes don't count.
+
+const eventSeenKey = (userId: string) => `rollcal.eventSeen.${userId}`;
+// With no mark yet (a fresh install), only recent changes count, so old
+// events don't all light up at once.
+const NEW_CHANGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function getLocalEventSeenMap(userId: string): Promise<ReadMap> {
+  try {
+    const raw = await AsyncStorage.getItem(eventSeenKey(userId));
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function markEventSeen(userId: string, eventId: string, timestamp: string): Promise<void> {
+  try {
+    const map = await getLocalEventSeenMap(userId);
+    if (!map[eventId] || timestamp > map[eventId]) {
+      map[eventId] = timestamp;
+      await AsyncStorage.setItem(eventSeenKey(userId), JSON.stringify(map));
+    }
+    await saveServerMarks('event', { [eventId]: timestamp }, false);
+  } catch {
+    // A lost mark only means the ring stays lit until the event is opened again.
+  }
+}
+
+export async function loadChangedEvents(userId: string, eventIds: string[]): Promise<Set<string>> {
+  if (eventIds.length === 0) return new Set();
+  const [{ data, error }, local, server] = await Promise.all([
+    supabase
+      .from('events')
+      .select('id, details_changed_at, details_changed_by')
+      .in('id', eventIds)
+      .not('details_changed_at', 'is', null),
+    getLocalEventSeenMap(userId),
+    loadServerMarks('event'),
+  ]);
+  // Before event-changes.sql runs the columns don't exist: nothing lights.
+  if (error) return new Set();
+  const seen = latestOf(local, server);
+  const cutoff = new Date(Date.now() - NEW_CHANGE_MS).toISOString();
+  const changed = new Set<string>();
+  for (const e of data ?? []) {
+    if (!e.details_changed_at || e.details_changed_by === userId) continue;
+    const seenAt = seen[e.id];
+    if (seenAt ? e.details_changed_at > seenAt : e.details_changed_at > cutoff) changed.add(e.id);
+  }
+  return changed;
+}

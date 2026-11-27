@@ -3,6 +3,8 @@
 // with a note if the server can't be reached.
 
 import { useFocusEffect } from '@react-navigation/native';
+import CoverImage from '../components/CoverImage';
+import { COVER_ASPECT, parseCoverCrop } from '../lib/coverCrop';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
@@ -53,7 +55,7 @@ import {
 } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import { TabScreenProps } from '../navigation/types';
-import { fonts, Palette, radii, spacing, TypeTokens } from '../theme';
+import { fonts, Palette, radii, spacing, TypeTokens, TITLE_MAX_SCALE } from '../theme';
 import { Event } from '../types';
 import { signedLinks, signedUrls } from '../lib/signedUrls';
 import { loadMemories } from '../lib/memories';
@@ -92,7 +94,7 @@ export default function HomeScreen({ navigation }: Props) {
   const { profile, session } = useAuth();
   const userId = session!.user.id;
   const { colors, type } = useTheme();
-  const { unreadChats, unreadPhotos, hostReports, refresh: refreshUnread } = useUnread();
+  const { unreadChats, unreadPhotos, changedEvents, hostReports, refresh: refreshUnread } = useUnread();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(colors, type), [colors, type]);
 
@@ -342,10 +344,18 @@ export default function HomeScreen({ navigation }: Props) {
   const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
   const weekAgo = now - sevenDaysMs;
   const invitedIds = useMemo(() => new Set(invites.map((i) => i.event.id)), [invites]);
-  // A photo reported to you as host keeps its event's dot until you deal with it.
+  // What lights an event's ring and dot: new chat messages, new photos, a
+  // change to its name, place or time, and a photo reported to you as host
+  // (until you deal with it).
   const unreadSet = useMemo(
-    () => new Set([...unreadChats, ...unreadPhotos, ...hostReports.map((r) => r.event_id)]),
-    [unreadChats, unreadPhotos, hostReports]
+    () =>
+      new Set([
+        ...unreadChats,
+        ...unreadPhotos,
+        ...changedEvents,
+        ...hostReports.map((r) => r.event_id),
+      ]),
+    [unreadChats, unreadPhotos, changedEvents, hostReports]
   );
 
   const visible = useMemo(
@@ -463,7 +473,11 @@ export default function HomeScreen({ navigation }: Props) {
           ]}
           onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
         >
-          <Image source={{ uri: meta.coverUrl }} style={styles.photoCardImage} />
+          <CoverImage
+            uri={meta.coverUrl}
+            crop={parseCoverCrop(event.cover_crop)}
+            style={StyleSheet.absoluteFill}
+          />
           {/* Drawn over the whole card (clear on the top half) rather than as a
               strip pinned to the bottom, which could leave a sliver of photo
               showing under it after pixel rounding. */}
@@ -542,7 +556,7 @@ export default function HomeScreen({ navigation }: Props) {
       <View style={styles.topBar}>
         <Text style={styles.greetingText}>Hey, {profile?.first_name || profile?.display_name || '…'}</Text>
         <View style={styles.titleRow}>
-          <Text style={styles.displayTitle} numberOfLines={2}>
+          <Text style={styles.displayTitle} numberOfLines={2} maxFontSizeMultiplier={TITLE_MAX_SCALE}>
             Your events
           </Text>
           <Pressable
@@ -615,14 +629,9 @@ export default function HomeScreen({ navigation }: Props) {
           renderSectionHeader={({ section: { title } }) => (
             <SectionLabel style={styles.sectionHeaderWrap}>{title}</SectionLabel>
           )}
-          ItemSeparatorComponent={({ leadingItem, trailingItem, section }) =>
-            // Photo cards carry their own edges, so no hairline next to them.
-            isPhotoCard(leadingItem, section) || isPhotoCard(trailingItem, section) ? (
-              <View style={styles.cardGap} />
-            ) : (
-              <View style={styles.rowDivider} />
-            )
-          }
+          // Every event is its own card with its own edges, so just a gap
+          // between them (the old inset hairline was left from flat rows).
+          ItemSeparatorComponent={() => <View style={styles.cardGap} />}
           // Space after each section only (a SectionSeparator also lands
           // between a heading and its first row).
           // The last section has nothing under it but the strips, which
@@ -819,7 +828,13 @@ function EventCard({
     >
       {image ? (
         <View style={styles.cardPhotoWrap}>
-          <FadeImage uri={image} style={styles.cardPhoto} />
+          {/* The host's framing when it's the chosen cover; centred for the
+              first photo used in its place. */}
+          <CoverImage
+            uri={image}
+            crop={meta?.coverUrl ? parseCoverCrop(event.cover_crop) : null}
+            style={StyleSheet.absoluteFill}
+          />
           <View style={styles.badgeSlot}>{badge}</View>
           {hasUnread && <View style={styles.cardUnreadDot} />}
         </View>
@@ -988,8 +1003,8 @@ const makeCardStyles = (c: Palette, t: TypeTokens) =>
       overflow: 'hidden',
       marginVertical: spacing.xs,
     },
-    cardPhotoWrap: { height: 160, backgroundColor: c.line },
-    cardPhoto: { width: '100%', height: '100%', resizeMode: 'cover' },
+    // The same 2:1 shape as every other cover (COVER_ASPECT).
+    cardPhotoWrap: { width: '100%', aspectRatio: COVER_ASPECT, backgroundColor: c.line },
     badgeSlot: { position: 'absolute', top: spacing.sm, left: spacing.sm },
     cardUnreadDot: {
       position: 'absolute',
@@ -1131,11 +1146,6 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
     cardGap: {
       height: spacing.xs,
     },
-    rowDivider: {
-      height: 1,
-      backgroundColor: c.line,
-      marginLeft: 56, // Inset past the date block
-    },
     dateBlock: {
       alignItems: 'center',
       minWidth: 44,
@@ -1179,18 +1189,13 @@ const makeStyles = (c: Palette, t: TypeTokens) =>
       marginRight: 2,
     },
     photoCard: {
-      height: 180,
+      aspectRatio: COVER_ASPECT, // the shape the host framed the cover in
       width: '100%',
       borderRadius: radii.card,
       overflow: 'hidden',
       position: 'relative',
       marginVertical: spacing.xs,
       backgroundColor: c.card,
-    },
-    photoCardImage: {
-      width: '100%',
-      height: '100%',
-      resizeMode: 'cover',
     },
     photoCardContent: {
       position: 'absolute',

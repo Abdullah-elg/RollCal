@@ -31,6 +31,7 @@ import {
   spacing,
   TypeTokens,
 } from '../theme';
+import { TITLE_MAX_SCALE } from '../theme';
 
 type Props = TabScreenProps<'FriendsTab'>;
 
@@ -75,7 +76,7 @@ export default function FriendsScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.header}>
-        <Text style={type.title}>Friends</Text>
+        <Text style={type.title} maxFontSizeMultiplier={TITLE_MAX_SCALE}>Friends</Text>
         {profile?.username ? (
           <Text style={[type.caption, { marginTop: spacing.xs }]}>
             You're @{profile.username}. Share it so people can find you.
